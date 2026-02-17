@@ -3,6 +3,7 @@ package com.mindfulhome.ui.search
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -44,7 +46,8 @@ fun SearchOverlay(
     apps: List<AppInfo>,
     visible: Boolean,
     onAppClick: (AppInfo) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onAddToDock: (AppInfo) -> Unit = {}
 ) {
     AnimatedVisibility(
         visible = visible,
@@ -112,7 +115,7 @@ fun SearchOverlay(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (app.icon != null) {
-                            androidx.compose.foundation.Image(
+                            Image(
                                 painter = rememberDrawablePainter(drawable = app.icon),
                                 contentDescription = null,
                                 modifier = Modifier.size(40.dp)
@@ -121,8 +124,16 @@ fun SearchOverlay(
                         Spacer(modifier = Modifier.width(16.dp))
                         Text(
                             text = app.label,
-                            style = MaterialTheme.typography.bodyLarge
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
                         )
+                        IconButton(onClick = { onAddToDock(app) }) {
+                            Icon(
+                                Icons.Default.PushPin,
+                                contentDescription = "Add to dock",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
             }

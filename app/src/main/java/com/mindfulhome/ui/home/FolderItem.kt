@@ -1,5 +1,6 @@
 package com.mindfulhome.ui.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +21,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.model.AppInfo
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -27,12 +29,15 @@ import com.mindfulhome.model.AppInfo
 fun FolderItem(
     name: String,
     apps: List<AppInfo>,
-    onClick: () -> Unit,
+    onClick: () -> Unit = {},
+    gesturesEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val clickModifier = if (gesturesEnabled) Modifier.clickable(onClick = onClick) else Modifier
+
     Column(
         modifier = modifier
-            .clickable(onClick = onClick)
+            .then(clickModifier)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -51,10 +56,8 @@ fun FolderItem(
             ) {
                 apps.take(4).forEach { app ->
                     if (app.icon != null) {
-                        androidx.compose.foundation.Image(
-                            painter = com.google.accompanist.drawablepainter.rememberDrawablePainter(
-                                drawable = app.icon
-                            ),
+                        Image(
+                            painter = rememberDrawablePainter(drawable = app.icon),
                             contentDescription = null,
                             modifier = Modifier
                                 .size(22.dp)

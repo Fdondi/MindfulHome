@@ -96,6 +96,7 @@ class AppRepository(private val database: AppDatabase) {
     // Folders
     fun allFolders(): Flow<List<AppFolder>> = folderDao.getAllFolders()
     fun appsInFolder(folderId: Long): Flow<List<FolderApp>> = folderDao.getAppsInFolder(folderId)
+    fun allFolderApps(): Flow<List<FolderApp>> = folderDao.getAllFolderApps()
 
     suspend fun createFolder(name: String, position: Int = 0): Long {
         return folderDao.insertFolder(AppFolder(name = name, position = position))
@@ -109,11 +110,48 @@ class AppRepository(private val database: AppDatabase) {
         folderDao.removeAppFromFolder(folderId, packageName)
     }
 
+    suspend fun deleteFolder(folderId: Long) {
+        folderDao.clearFolder(folderId)
+        folderDao.deleteFolder(folderId)
+    }
+
+    suspend fun renameFolder(folderId: Long, name: String) {
+        folderDao.renameFolder(folderId, name)
+    }
+
+    suspend fun updateFolderPosition(folderId: Long, position: Int) {
+        folderDao.updateFolderPosition(folderId, position)
+    }
+
     // Layout
     fun homeLayout(): Flow<List<HomeLayoutItem>> = layoutDao.getLayout()
     fun dockedApps(): Flow<List<HomeLayoutItem>> = layoutDao.getDockedApps()
 
-    suspend fun setDocked(packageName: String, position: Int) {
-        layoutDao.upsert(HomeLayoutItem(packageName = packageName, position = position, isDocked = true))
+    suspend fun setDocked(packageName: String, dockPosition: Int) {
+        val existing = layoutDao.getByPackageName(packageName)
+        if (existing != null) {
+            layoutDao.upsert(existing.copy(isDocked = true, dockPosition = dockPosition))
+        } else {
+            layoutDao.upsert(
+                HomeLayoutItem(
+                    packageName = packageName,
+                    isDocked = true,
+                    dockPosition = dockPosition
+                )
+            )
+        }
+    }
+
+    suspend fun removeDocked(packageName: String) {
+        val existing = layoutDao.getByPackageName(packageName)
+        if (existing != null) {
+            layoutDao.upsert(existing.copy(isDocked = false))
+        }
+    }
+
+    suspend fun dockedCount(): Int = layoutDao.dockedCount()
+
+    suspend fun updateGridPositions(items: List<HomeLayoutItem>) {
+        layoutDao.upsertAll(items)
     }
 }

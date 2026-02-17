@@ -72,11 +72,23 @@ interface AppFolderDao {
     @Query("SELECT * FROM folder_apps WHERE folderId = :folderId ORDER BY position")
     fun getAppsInFolder(folderId: Long): Flow<List<FolderApp>>
 
+    @Query("SELECT * FROM folder_apps")
+    fun getAllFolderApps(): Flow<List<FolderApp>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun addAppToFolder(folderApp: FolderApp)
 
     @Query("DELETE FROM folder_apps WHERE folderId = :folderId AND packageName = :packageName")
     suspend fun removeAppFromFolder(folderId: Long, packageName: String)
+
+    @Query("DELETE FROM folder_apps WHERE folderId = :folderId")
+    suspend fun clearFolder(folderId: Long)
+
+    @Query("UPDATE app_folders SET name = :name WHERE id = :folderId")
+    suspend fun renameFolder(folderId: Long, name: String)
+
+    @Query("UPDATE app_folders SET position = :position WHERE id = :folderId")
+    suspend fun updateFolderPosition(folderId: Long, position: Int)
 }
 
 @Dao
@@ -85,11 +97,20 @@ interface HomeLayoutDao {
     @Query("SELECT * FROM home_layout ORDER BY position")
     fun getLayout(): Flow<List<HomeLayoutItem>>
 
-    @Query("SELECT * FROM home_layout WHERE isDocked = 1 ORDER BY position")
+    @Query("SELECT * FROM home_layout WHERE isDocked = 1 ORDER BY dockPosition")
     fun getDockedApps(): Flow<List<HomeLayoutItem>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(item: HomeLayoutItem)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAll(items: List<HomeLayoutItem>)
+
+    @Query("SELECT * FROM home_layout WHERE packageName = :packageName")
+    suspend fun getByPackageName(packageName: String): HomeLayoutItem?
+
+    @Query("SELECT COUNT(*) FROM home_layout WHERE isDocked = 1")
+    suspend fun dockedCount(): Int
 
     @Query("DELETE FROM home_layout WHERE packageName = :packageName")
     suspend fun remove(packageName: String)

@@ -22,16 +22,23 @@ import com.mindfulhome.model.AppInfo
 @Composable
 fun AppItem(
     appInfo: AppInfo,
-    onClick: () -> Unit,
+    onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
+    gesturesEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val clickModifier = if (gesturesEnabled) {
+        Modifier.combinedClickable(
+            onClick = onClick,
+            onLongClick = onLongClick
+        )
+    } else {
+        Modifier
+    }
+
     Column(
         modifier = modifier
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
+            .then(clickModifier)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

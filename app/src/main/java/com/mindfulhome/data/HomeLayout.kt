@@ -8,5 +8,6 @@ data class HomeLayoutItem(
     @PrimaryKey
     val packageName: String,
     val position: Int = 0,
-    val isDocked: Boolean = false
+    val isDocked: Boolean = false,
+    val dockPosition: Int = 0
 )
