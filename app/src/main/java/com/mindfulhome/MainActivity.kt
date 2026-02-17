@@ -41,6 +41,10 @@ class MainActivity : ComponentActivity() {
     // The last timer duration set by the user (persists across navigation)
     private var lastDurationMinutes by mutableStateOf(5)
 
+    // Tracks whether the activity went to the background (another app was visible).
+    // Used to show the timer when the user returns from any app.
+    private var wasInBackground = false
+
     companion object {
         var shouldShowTimer by mutableStateOf(true)
     }
@@ -59,7 +63,6 @@ class MainActivity : ComponentActivity() {
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(repository)
 
-        handleIntent(intent)
         requestNotificationPermissionIfNeeded()
 
         // Ensure a session log exists (covers cold launch without unlock receiver)
@@ -81,7 +84,7 @@ class MainActivity : ComponentActivity() {
                     else -> "home"
                 }
 
-                NavHost(navController = navCtrl, startDestination = startDestination) {
+                NavHost(navController = navCtrl, startDestination = startDestination, route = "root") {
 
                     composable("onboarding") {
                         OnboardingScreen(
@@ -162,25 +165,26 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        handleIntent(intent)
     }
 
-    private fun handleIntent(intent: Intent?) {
-        if (intent?.action == TimerService.INTENT_ACTION_NUDGE_CHAT) {
-            val packageName = intent.getStringExtra(TimerService.EXTRA_PACKAGE_NAME) ?: ""
-            // Navigate to negotiation screen for the nudge
-            lifecycleScope.launch {
-                // Small delay to ensure NavController is ready
-                kotlinx.coroutines.delay(100)
-                navController?.navigate("negotiate/$packageName")
-            }
-        }
+    override fun onStop() {
+        super.onStop()
+        wasInBackground = true
     }
 
     override fun onResume() {
         super.onResume()
-        // Session timer keeps running — it tracks total phone-use time,
-        // not per-app time. It stops when the screen locks (new session).
+        if (wasInBackground) {
+            wasInBackground = false
+            // Returning from another app — start a new session with a fresh timer
+            shouldShowTimer = true
+            SessionLogger.startSession()
+            lifecycleScope.launch {
+                navController?.navigate("timer") {
+                    popUpTo("root") { inclusive = true }
+                }
+            }
+        }
     }
 
     private fun requestNotificationPermissionIfNeeded() {
