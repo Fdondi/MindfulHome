@@ -22,7 +22,9 @@ import androidx.navigation.compose.rememberNavController
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
+import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
+import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.ui.home.HomeScreen
 import com.mindfulhome.ui.logs.LogsScreen
 import com.mindfulhome.ui.negotiation.NegotiationScreen
@@ -41,12 +43,12 @@ class MainActivity : ComponentActivity() {
     // The last timer duration set by the user (persists across navigation)
     private var lastDurationMinutes by mutableStateOf(5)
 
-    // Tracks whether the activity went to the background (another app was visible).
-    // Used to show the timer when the user returns from any app.
-    private var wasInBackground = false
-
     companion object {
         var shouldShowTimer by mutableStateOf(true)
+
+        // Survives activity recreation (lives in the companion, not the instance).
+        // Set in onStop, cleared in onResume.
+        var wentToBackground = false
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -99,6 +101,17 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable("timer") {
+                        val savedSession = SettingsManager.getLastSession(this@MainActivity)
+                        val savedAppLabel = savedSession?.let { session ->
+                            try {
+                                val appInfo = packageManager.getApplicationInfo(
+                                    session.packageName, 0
+                                )
+                                packageManager.getApplicationLabel(appInfo).toString()
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
                         TimerScreen(
                             onTimerSet = { durationMinutes ->
                                 shouldShowTimer = false
@@ -109,7 +122,29 @@ class MainActivity : ComponentActivity() {
                                 navCtrl.navigate("home") {
                                     popUpTo("timer") { inclusive = true }
                                 }
-                            }
+                            },
+                            savedAppLabel = savedAppLabel,
+                            savedMinutes = savedSession?.remainingMinutes ?: 0,
+                            onResumeSession = savedSession?.let { session ->
+                                {
+                                    shouldShowTimer = false
+                                    lastDurationMinutes = session.remainingMinutes
+                                    SettingsManager.clearLastSession(this@MainActivity)
+                                    TimerService.start(
+                                        this@MainActivity,
+                                        session.remainingMinutes,
+                                        session.packageName,
+                                    )
+                                    navCtrl.navigate("home") {
+                                        popUpTo("timer") { inclusive = true }
+                                    }
+                                    val launchIntent = packageManager
+                                        .getLaunchIntentForPackage(session.packageName)
+                                    if (launchIntent != null) {
+                                        startActivity(launchIntent)
+                                    }
+                                }
+                            },
                         )
                     }
 
@@ -169,15 +204,29 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() {
         super.onStop()
-        wasInBackground = true
+
+        // Save the running session before the activity may be destroyed
+        val timerState = TimerService.timerState.value
+        val currentPkg = TimerService.currentPackage.value
+        if (timerState is TimerState.Counting && currentPkg.isNotEmpty()) {
+            val remainingMinutes = (timerState.remainingMs / 60_000).toInt()
+            if (remainingMinutes >= 1) {
+                SettingsManager.saveLastSession(this, currentPkg, remainingMinutes)
+            }
+        }
+
+        wentToBackground = true
+        shouldShowTimer = true
     }
 
     override fun onResume() {
         super.onResume()
-        if (wasInBackground) {
-            wasInBackground = false
-            // Returning from another app — start a new session with a fresh timer
-            shouldShowTimer = true
+        if (wentToBackground) {
+            wentToBackground = false
+
+            // Stop the running timer service (session was already saved in onStop)
+            TimerService.stop(this)
+
             SessionLogger.startSession()
             lifecycleScope.launch {
                 navController?.navigate("timer") {

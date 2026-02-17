@@ -4,12 +4,9 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.IBinder
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
@@ -55,17 +52,6 @@ class TimerService : Service() {
         val timestamp: Long = System.currentTimeMillis(),
     )
 
-    // Stop the session when the screen turns off — the user is done with the phone
-    private val screenOffReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action == Intent.ACTION_SCREEN_OFF) {
-                Log.d(TAG, "Screen off — stopping timer session")
-                SessionLogger.log("Screen turned off — ending session")
-                stopTimer()
-            }
-        }
-    }
-
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -73,8 +59,6 @@ class TimerService : Service() {
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(repository)
-
-        registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -105,6 +89,7 @@ class TimerService : Service() {
     // ── Timer lifecycle ──────────────────────────────────────────────
 
     private fun startTimer(durationMinutes: Int, packageName: String) {
+        SettingsManager.clearLastSession(this)
         val durationMs = durationMinutes * 60 * 1000L
         _currentPackage.value = packageName
         _timerState.value = TimerState.Counting(durationMs, durationMs)
@@ -210,6 +195,14 @@ class TimerService : Service() {
                 is TimerState.Counting -> {
                     karmaManager.onClosedOnTime(pkg)
                     SessionLogger.log("App closed on time: $appLabel (karma +1)")
+
+                    val remainingMinutes = (state.remainingMs / 60_000).toInt()
+                    if (remainingMinutes >= 1 && pkg.isNotEmpty()) {
+                        SettingsManager.saveLastSession(this@TimerService, pkg, remainingMinutes)
+                        SessionLogger.log(
+                            "Saved resumable session: $appLabel ($remainingMinutes min left)"
+                        )
+                    }
                 }
                 is TimerState.Expired -> {
                     if (state.overrunMs <= KarmaManager.GRACE_WINDOW_MS) {
@@ -443,7 +436,6 @@ class TimerService : Service() {
         nudgeJob?.cancel()
         negotiationManager?.endConversation()
         lmManager?.shutdown()
-        try { unregisterReceiver(screenOffReceiver) } catch (_: Exception) {}
         super.onDestroy()
     }
 

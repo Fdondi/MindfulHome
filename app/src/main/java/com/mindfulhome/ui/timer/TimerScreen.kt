@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
@@ -35,7 +36,10 @@ private const val ITEM_HEIGHT_DP = 64
 
 @Composable
 fun TimerScreen(
-    onTimerSet: (minutes: Int) -> Unit
+    onTimerSet: (minutes: Int) -> Unit,
+    savedAppLabel: String? = null,
+    savedMinutes: Int = 0,
+    onResumeSession: (() -> Unit)? = null,
 ) {
     val items = (1..MAX_MINUTES).toList()
     val listState = rememberLazyListState()
@@ -152,6 +156,31 @@ fun TimerScreen(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.SemiBold
             )
+        }
+
+        // Resume last session button
+        if (savedAppLabel != null && onResumeSession != null && savedMinutes > 0) {
+            Spacer(modifier = Modifier.height(24.dp))
+
+            OutlinedButton(
+                onClick = {
+                    SessionLogger.log(
+                        "Resumed previous session: **$savedAppLabel** ($savedMinutes min)"
+                    )
+                    onResumeSession()
+                },
+                modifier = Modifier
+                    .fillMaxWidth(0.8f)
+                    .height(48.dp),
+                shape = MaterialTheme.shapes.large
+            ) {
+                Text(
+                    text = "Resume $savedAppLabel (${formatMinutes(savedMinutes)})",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center
+                )
+            }
         }
     }
 }
