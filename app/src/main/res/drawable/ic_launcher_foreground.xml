@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Simple lotus/mindfulness icon -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,30 C54,30 44,45 44,55 C44,60.5 48.5,65 54,65 C59.5,65 64,60.5 64,55 C64,45 54,30 54,30Z" />
+    <path
+        android:fillColor="#E0D0FF"
+        android:pathData="M40,40 C40,40 30,50 32,58 C33.5,64 39,66 44,63 C41,58 40,50 40,40Z" />
+    <path
+        android:fillColor="#E0D0FF"
+        android:pathData="M68,40 C68,40 78,50 76,58 C74.5,64 69,66 64,63 C67,58 68,50 68,40Z" />
+</vector>

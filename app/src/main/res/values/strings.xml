@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MindfulHome</string>
+    <string name="timer_channel_name">Usage Timer</string>
+    <string name="timer_channel_description">Shows remaining usage time</string>
+    <string name="nudge_channel_name">Mindful Nudges</string>
+    <string name="nudge_channel_description">Gentle reminders when your timer expires</string>
+</resources>
