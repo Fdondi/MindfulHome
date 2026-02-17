@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -53,6 +55,17 @@ class TimerService : Service() {
         val timestamp: Long = System.currentTimeMillis(),
     )
 
+    // Stop the session when the screen turns off — the user is done with the phone
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                Log.d(TAG, "Screen off — stopping timer session")
+                SessionLogger.log("Screen turned off — ending session")
+                stopTimer()
+            }
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -60,6 +73,8 @@ class TimerService : Service() {
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(repository)
+
+        registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -428,6 +443,7 @@ class TimerService : Service() {
         nudgeJob?.cancel()
         negotiationManager?.endConversation()
         lmManager?.shutdown()
+        try { unregisterReceiver(screenOffReceiver) } catch (_: Exception) {}
         super.onDestroy()
     }
 
