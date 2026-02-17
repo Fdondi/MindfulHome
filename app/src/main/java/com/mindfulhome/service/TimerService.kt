@@ -47,6 +47,10 @@ class TimerService : Service() {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
                 startTimer(durationMinutes, packageName)
             }
+            ACTION_TRACK_APP -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
+                _currentPackage.value = packageName
+            }
             ACTION_EXTEND -> {
                 val extraMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
                 extendTimer(extraMinutes)
@@ -64,7 +68,7 @@ class TimerService : Service() {
         _timerState.value = TimerState.Counting(durationMs, durationMs)
 
         val appLabel = getAppLabel(packageName)
-        SessionLogger.log("Timer started: **$durationMinutes min** for $appLabel")
+        SessionLogger.log("Session timer started: **$durationMinutes min** ($appLabel)")
 
         startForeground(TIMER_NOTIFICATION_ID, buildTimerNotification(durationMs))
 
@@ -108,7 +112,12 @@ class TimerService : Service() {
     private fun onTimerExpired(packageName: String) {
         _timerState.value = TimerState.Expired(0)
         val appLabel = getAppLabel(packageName)
-        SessionLogger.log("Timer expired for $appLabel")
+        SessionLogger.log("**Time's up!** Session timer expired (was using $appLabel)")
+
+        // Send immediate "time's up" notification
+        sendNudgeNotification(0, packageName)
+        _nudgeCount.value = 0
+
         startNudging(packageName)
     }
 
@@ -194,18 +203,23 @@ class TimerService : Service() {
     }
 
     private fun sendNudgeNotification(nudgeCount: Int, packageName: String) {
-        val appLabel = try {
-            val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            packageManager.getApplicationLabel(appInfo).toString()
-        } catch (e: Exception) {
-            "this app"
+        val appLabel = if (packageName.isEmpty()) {
+            "your phone"
+        } else {
+            try {
+                val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                packageManager.getApplicationLabel(appInfo).toString()
+            } catch (e: Exception) {
+                "this app"
+            }
         }
 
         val message = when {
+            nudgeCount == 0 -> "Time's up! Your session has ended."
             nudgeCount <= 1 -> "Your time is up. Ready to put down $appLabel?"
             nudgeCount <= 3 -> "You've been on $appLabel for a while past your limit."
             nudgeCount <= 5 -> "Still on $appLabel... this is starting to cost karma."
-            else -> "$appLabel is losing karma fast. Maybe time for a break?"
+            else -> "Karma is dropping fast. Maybe time for a break?"
         }
 
         // Tapping the notification opens the AI nudge chat
@@ -233,7 +247,7 @@ class TimerService : Service() {
     }
 
     private fun getAppLabel(packageName: String): String {
-        if (packageName.isEmpty()) return "unknown"
+        if (packageName.isEmpty()) return "your phone"
         return try {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
             packageManager.getApplicationLabel(appInfo).toString()
@@ -253,6 +267,7 @@ class TimerService : Service() {
         private const val NUDGE_NOTIFICATION_ID = 1002
 
         const val ACTION_START = "com.mindfulhome.ACTION_START_TIMER"
+        const val ACTION_TRACK_APP = "com.mindfulhome.ACTION_TRACK_APP"
         const val ACTION_EXTEND = "com.mindfulhome.ACTION_EXTEND_TIMER"
         const val ACTION_STOP = "com.mindfulhome.ACTION_STOP_TIMER"
         const val EXTRA_DURATION_MINUTES = "duration_minutes"
@@ -283,6 +298,14 @@ class TimerService : Service() {
                 putExtra(EXTRA_DURATION_MINUTES, extraMinutes)
             }
             context.startForegroundService(intent)
+        }
+
+        fun trackApp(context: Context, packageName: String) {
+            val intent = Intent(context, TimerService::class.java).apply {
+                action = ACTION_TRACK_APP
+                putExtra(EXTRA_PACKAGE_NAME, packageName)
+            }
+            context.startService(intent)
         }
 
         fun stop(context: Context) {

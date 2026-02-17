@@ -80,7 +80,7 @@ fun HomeScreen(
         scope.launch {
             SessionLogger.log("App opened: **${appInfo.label}** (`${appInfo.packageName}`)")
             karmaManager.onAppOpened(appInfo.packageName)
-            TimerService.start(context, durationMinutes, appInfo.packageName)
+            TimerService.trackApp(context, appInfo.packageName)
             PackageManagerHelper.launchApp(context, appInfo.packageName)
         }
     }

@@ -100,6 +100,9 @@ class MainActivity : ComponentActivity() {
                             onTimerSet = { durationMinutes ->
                                 shouldShowTimer = false
                                 lastDurationMinutes = durationMinutes
+                                TimerService.start(
+                                    this@MainActivity, durationMinutes, ""
+                                )
                                 navCtrl.navigate("home") {
                                     popUpTo("timer") { inclusive = true }
                                 }
@@ -176,13 +179,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // When the user comes back to the launcher (presses home), stop the timer
-        // as they've left the app voluntarily
-        val timerState = TimerService.timerState.value
-        if (timerState is com.mindfulhome.model.TimerState.Counting ||
-            timerState is com.mindfulhome.model.TimerState.Expired) {
-            TimerService.stop(this)
-        }
+        // Session timer keeps running — it tracks total phone-use time,
+        // not per-app time. It stops when the screen locks (new session).
     }
 
     private fun requestNotificationPermissionIfNeeded() {
