@@ -1,7 +1,7 @@
 package com.mindfulhome.ui.onboarding
 
 import android.Manifest
-import android.content.ComponentName
+import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -155,7 +155,14 @@ private fun DefaultHomeStep(onNext: () -> Unit) {
     val context = LocalContext.current
     var isDefault by remember { mutableStateOf(isDefaultHome(context)) }
 
-    // Re-check when returning from the chooser
+    // Launcher for the RoleManager request result
+    val roleRequestLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        isDefault = isDefaultHome(context)
+    }
+
+    // Re-check when returning from the chooser / settings
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         isDefault = isDefaultHome(context)
     }
@@ -186,12 +193,14 @@ private fun DefaultHomeStep(onNext: () -> Unit) {
     if (!isDefault) {
         Button(
             onClick = {
-                // Open the home app chooser
-                val intent = Intent(Intent.ACTION_MAIN).apply {
-                    addCategory(Intent.CATEGORY_HOME)
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                val roleManager = context.getSystemService(RoleManager::class.java)
+                if (roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                    !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+                ) {
+                    roleRequestLauncher.launch(
+                        roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                    )
                 }
-                context.startActivity(intent)
             },
             modifier = Modifier.fillMaxWidth(0.6f)
         ) {
@@ -371,11 +380,6 @@ private fun ModelStep(onNext: () -> Unit) {
 }
 
 private fun isDefaultHome(context: android.content.Context): Boolean {
-    val intent = Intent(Intent.ACTION_MAIN).apply {
-        addCategory(Intent.CATEGORY_HOME)
-    }
-    val resolveInfo = context.packageManager.resolveActivity(
-        intent, PackageManager.MATCH_DEFAULT_ONLY
-    )
-    return resolveInfo?.activityInfo?.packageName == context.packageName
+    val roleManager = context.getSystemService(RoleManager::class.java)
+    return roleManager.isRoleHeld(RoleManager.ROLE_HOME)
 }
