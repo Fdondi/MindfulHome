@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -42,6 +43,9 @@ class MainActivity : ComponentActivity() {
 
     // The last timer duration set by the user (persists across navigation)
     private var lastDurationMinutes by mutableStateOf(5)
+
+    // Optional reason provided when starting the timer; consumed by the chat screen
+    private var unlockReason by mutableStateOf("")
 
     companion object {
         var shouldShowTimer by mutableStateOf(true)
@@ -113,9 +117,10 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         TimerScreen(
-                            onTimerSet = { durationMinutes ->
+                            onTimerSet = { durationMinutes, reason ->
                                 shouldShowTimer = false
                                 lastDurationMinutes = durationMinutes
+                                unlockReason = reason
                                 TimerService.start(
                                     this@MainActivity, durationMinutes, ""
                                 )
@@ -169,8 +174,16 @@ class MainActivity : ComponentActivity() {
                         val packageName = backStackEntry.arguments
                             ?.getString("packageName") ?: ""
 
+                        // Consume the unlock reason so it only fires once
+                        val reason = remember {
+                            val r = unlockReason
+                            unlockReason = ""
+                            r
+                        }
+
                         NegotiationScreen(
                             packageName = packageName,
+                            unlockReason = reason,
                             repository = repository,
                             karmaManager = karmaManager,
                             onAppGranted = {

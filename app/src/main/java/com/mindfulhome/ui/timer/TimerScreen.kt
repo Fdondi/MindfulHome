@@ -3,13 +3,14 @@ package com.mindfulhome.ui.timer
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -17,11 +18,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -36,13 +40,14 @@ private const val ITEM_HEIGHT_DP = 64
 
 @Composable
 fun TimerScreen(
-    onTimerSet: (minutes: Int) -> Unit,
+    onTimerSet: (minutes: Int, reason: String) -> Unit,
     savedAppLabel: String? = null,
     savedMinutes: Int = 0,
     onResumeSession: (() -> Unit)? = null,
 ) {
     val items = (1..MAX_MINUTES).toList()
     val listState = rememberLazyListState()
+    var reason by remember { mutableStateOf("") }
 
     val selectedIndex by remember {
         derivedStateOf {
@@ -62,9 +67,9 @@ fun TimerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .imePadding()
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = "How long do you want\nto use your phone?",
@@ -73,11 +78,12 @@ fun TimerScreen(
             color = MaterialTheme.colorScheme.onBackground
         )
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
+        // Minute picker: fills remaining vertical space, shrinks when keyboard is visible
         Box(
             modifier = Modifier
-                .height((ITEM_HEIGHT_DP * VISIBLE_ITEMS).dp)
+                .weight(1f)
                 .fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
@@ -95,7 +101,7 @@ fun TimerScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier
-                    .height((ITEM_HEIGHT_DP * VISIBLE_ITEMS).dp)
+                    .heightIn(max = (ITEM_HEIGHT_DP * VISIBLE_ITEMS).dp)
                     .fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 flingBehavior = rememberSnapFlingBehavior(lazyListState = listState),
@@ -136,12 +142,26 @@ fun TimerScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(24.dp))
+
+        OutlinedTextField(
+            value = reason,
+            onValueChange = { reason = it },
+            modifier = Modifier.fillMaxWidth(0.8f),
+            placeholder = { Text("Why are you unlocking? (optional)") },
+            singleLine = false,
+            maxLines = 2,
+            shape = MaterialTheme.shapes.medium,
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = {
-                SessionLogger.log("Timer set: **$selectedMinutes min**")
-                onTimerSet(selectedMinutes)
+                val trimmedReason = reason.trim()
+                val logSuffix = if (trimmedReason.isNotEmpty()) " — $trimmedReason" else ""
+                SessionLogger.log("Timer set: **$selectedMinutes min**$logSuffix")
+                onTimerSet(selectedMinutes, trimmedReason)
             },
             modifier = Modifier
                 .fillMaxWidth(0.6f)

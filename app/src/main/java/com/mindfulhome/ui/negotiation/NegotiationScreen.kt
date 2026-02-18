@@ -74,6 +74,7 @@ data class ChatMessage(
 @Composable
 fun NegotiationScreen(
     packageName: String,
+    unlockReason: String = "",
     repository: AppRepository,
     karmaManager: KarmaManager,
     onAppGranted: () -> Unit,
@@ -193,8 +194,26 @@ fun NegotiationScreen(
             } else {
                 // General chat
                 SessionLogger.log("AI assistant opened via $modelLabel")
-                addMessage(PromptTemplates.GENERAL_CHAT_GREETING, isFromUser = false)
-                negotiationManager.startGeneralChat(context)
+                if (unlockReason.isNotEmpty()) {
+                    // Reason provided at timer screen — skip the generic greeting
+                    // and feed it as the first user message so the AI responds directly
+                    addMessage(unlockReason, isFromUser = true)
+                    negotiationManager.startGeneralChat(context)
+                    isWaitingForAi = true
+                    val result = negotiationManager.reply(unlockReason)
+                    addMessage(result.responseText, isFromUser = false)
+                    isWaitingForAi = false
+                    if (result.launchedPackage.isNotEmpty()) {
+                        val label = PackageManagerHelper.getAppLabel(
+                            context, result.launchedPackage
+                        )
+                        SessionLogger.log("Launched **$label**")
+                        launchTarget = result.launchedPackage
+                    }
+                } else {
+                    addMessage(PromptTemplates.GENERAL_CHAT_GREETING, isFromUser = false)
+                    negotiationManager.startGeneralChat(context)
+                }
             }
         }
     }
