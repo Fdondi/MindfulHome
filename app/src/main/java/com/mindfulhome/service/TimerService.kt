@@ -4,8 +4,10 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -53,6 +55,14 @@ class TimerService : Service() {
         val timestamp: Long = System.currentTimeMillis(),
     )
 
+    private val screenOffReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                suspendForScreenOff()
+            }
+        }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -60,6 +70,8 @@ class TimerService : Service() {
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(repository)
+
+        registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -230,6 +242,43 @@ class TimerService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
+    }
+
+    private fun suspendForScreenOff() {
+        timerJob?.cancel()
+        nudgeJob?.cancel()
+
+        val pkg = _currentPackage.value
+        val state = _timerState.value
+        val appLabel = getAppLabel(pkg)
+
+        when (state) {
+            is TimerState.Counting -> {
+                val remainingMinutes = (state.remainingMs / 60_000).toInt()
+                if (remainingMinutes >= 1 && pkg.isNotEmpty()) {
+                    SettingsManager.saveLastSession(this, pkg, remainingMinutes)
+                }
+                SessionLogger.log(
+                    "Session suspended (screen off): $appLabel " +
+                        "($remainingMinutes min remaining)"
+                )
+            }
+            is TimerState.Expired -> {
+                SessionLogger.log(
+                    "Session suspended (screen off): $appLabel " +
+                        "(was expired, overrun ${state.overrunMs / 1000}s)"
+                )
+            }
+            is TimerState.Idle -> { }
+        }
+
+        _timerState.value = TimerState.Idle
+        _currentPackage.value = ""
+        _nudgeCount.value = 0
+
+        endNudgeConversation()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     // ── Nudge conversation (notification-only) ───────────────────────
@@ -433,6 +482,9 @@ class TimerService : Service() {
     }
 
     override fun onDestroy() {
+        try {
+            unregisterReceiver(screenOffReceiver)
+        } catch (_: IllegalArgumentException) { }
         timerJob?.cancel()
         nudgeJob?.cancel()
         negotiationManager?.endConversation()
