@@ -12,13 +12,4 @@ sealed class HomeGridItem {
     ) : HomeGridItem() {
         override val key: String get() = "app:${appInfo.packageName}"
     }
-
-    data class FolderEntry(
-        val folderId: Long,
-        val name: String,
-        val apps: List<AppInfo>,
-        override val position: Int
-    ) : HomeGridItem() {
-        override val key: String get() = "folder:$folderId"
-    }
 }

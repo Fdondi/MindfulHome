@@ -23,11 +23,13 @@ class KarmaManager(private val repository: AppRepository) {
     }
 
     suspend fun onNudgeIgnored(packageName: String) {
+        if (repository.getKarma(packageName).isOptedOut) return
         repository.adjustKarma(packageName, KARMA_PER_NUDGE_IGNORED, HIDE_THRESHOLD)
         repository.recordOverrun(packageName)
     }
 
     suspend fun onWeakReason(packageName: String) {
+        if (repository.getKarma(packageName).isOptedOut) return
         repository.adjustKarma(packageName, KARMA_WEAK_REASON, HIDE_THRESHOLD)
     }
 
@@ -47,6 +49,14 @@ class KarmaManager(private val repository: AppRepository) {
 
     suspend fun getKarmaScore(packageName: String): Int {
         return repository.getKarma(packageName).karmaScore
+    }
+
+    suspend fun forgiveApp(packageName: String) {
+        repository.forgiveApp(packageName)
+    }
+
+    suspend fun setOptedOut(packageName: String, optedOut: Boolean) {
+        repository.setOptedOut(packageName, optedOut)
     }
 
     suspend fun dailyRecovery() {

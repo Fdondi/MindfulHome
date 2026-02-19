@@ -34,6 +34,12 @@ interface AppKarmaDao {
     @Query("UPDATE app_karma SET isHidden = :hidden WHERE packageName = :packageName")
     suspend fun setHidden(packageName: String, hidden: Boolean)
 
+    @Query("UPDATE app_karma SET karmaScore = 0, isHidden = 0 WHERE packageName = :packageName")
+    suspend fun resetKarma(packageName: String)
+
+    @Query("UPDATE app_karma SET isOptedOut = :optedOut, isHidden = 0 WHERE packageName = :packageName")
+    suspend fun setOptedOut(packageName: String, optedOut: Boolean)
+
     @Query("UPDATE app_karma SET karmaScore = MIN(karmaScore + 1, 0) WHERE isHidden = 1 AND karmaScore < 0")
     suspend fun dailyKarmaRecovery()
 }
@@ -127,4 +133,35 @@ interface HomeLayoutDao {
 
     @Query("DELETE FROM home_layout WHERE packageName = :packageName")
     suspend fun remove(packageName: String)
+}
+
+@Dao
+interface ShelfDao {
+
+    @Query("SELECT * FROM shelf_items ORDER BY slotPosition, orderInSlot")
+    fun getAll(): Flow<List<ShelfItem>>
+
+    @Query("SELECT * FROM shelf_items WHERE slotPosition = :slot ORDER BY orderInSlot")
+    fun getAppsInSlot(slot: Int): Flow<List<ShelfItem>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: ShelfItem)
+
+    @Query("DELETE FROM shelf_items WHERE packageName = :packageName")
+    suspend fun remove(packageName: String)
+
+    @Query("SELECT COUNT(*) FROM shelf_items WHERE slotPosition = :slot")
+    suspend fun countInSlot(slot: Int): Int
+
+    @Query("SELECT COALESCE(MAX(slotPosition), 0) FROM shelf_items")
+    suspend fun maxSlot(): Int
+
+    @Query("SELECT COUNT(DISTINCT slotPosition) FROM shelf_items")
+    suspend fun slotCount(): Int
+
+    @Query("SELECT * FROM shelf_items WHERE packageName = :packageName")
+    suspend fun getByPackageName(packageName: String): ShelfItem?
+
+    @Query("UPDATE shelf_items SET slotPosition = slotPosition - 1 WHERE slotPosition > :removedSlot")
+    suspend fun compactSlotsAfter(removedSlot: Int)
 }

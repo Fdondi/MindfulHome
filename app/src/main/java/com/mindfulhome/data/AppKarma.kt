@@ -12,5 +12,6 @@ data class AppKarma(
     val totalOverruns: Int = 0,
     val closedOnTimeCount: Int = 0,
     val lastOpenedTimestamp: Long = 0,
-    val isHidden: Boolean = false
+    val isHidden: Boolean = false,
+    val isOptedOut: Boolean = false
 )

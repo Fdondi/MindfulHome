@@ -31,6 +31,7 @@ import com.mindfulhome.ui.home.HomeScreen
 import com.mindfulhome.ui.logs.LogsScreen
 import com.mindfulhome.ui.negotiation.NegotiationScreen
 import com.mindfulhome.ui.onboarding.OnboardingScreen
+import com.mindfulhome.ui.karma.KarmaScreen
 import com.mindfulhome.ui.settings.SettingsScreen
 import com.mindfulhome.ui.theme.MindfulHomeTheme
 import com.mindfulhome.ui.timer.TimerScreen
@@ -49,11 +50,14 @@ class MainActivity : ComponentActivity() {
     private var unlockReason by mutableStateOf("")
 
     companion object {
+        private const val QUICK_RETURN_THRESHOLD_MS = 60_000L
+
         var shouldShowTimer by mutableStateOf(true)
 
         // Survives activity recreation (lives in the companion, not the instance).
         // Set in onStop, cleared in onResume.
         var wentToBackground = false
+        private var backgroundTimestampMs = 0L
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -154,6 +158,24 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             },
+                            repository = repository,
+                            onShelfAppLaunch = { durationMinutes, reason, packageName ->
+                                Log.d("MainActivity", "Shelf launch: pkg=$packageName duration=$durationMinutes")
+                                shouldShowTimer = false
+                                lastDurationMinutes = durationMinutes
+                                unlockReason = reason
+                                TimerService.start(
+                                    this@MainActivity, durationMinutes, packageName
+                                )
+                                navCtrl.navigate("home") {
+                                    popUpTo("timer") { inclusive = true }
+                                }
+                                val launchIntent = packageManager
+                                    .getLaunchIntentForPackage(packageName)
+                                if (launchIntent != null) {
+                                    startActivity(launchIntent)
+                                }
+                            },
                         )
                     }
 
@@ -171,6 +193,9 @@ class MainActivity : ComponentActivity() {
                             },
                             onOpenLogs = {
                                 navCtrl.navigate("logs")
+                            },
+                            onOpenKarma = {
+                                navCtrl.navigate("karma")
                             }
                         )
                     }
@@ -194,6 +219,14 @@ class MainActivity : ComponentActivity() {
                             onDismiss = {
                                 navCtrl.popBackStack()
                             }
+                        )
+                    }
+
+                    composable("karma") {
+                        KarmaScreen(
+                            repository = repository,
+                            karmaManager = karmaManager,
+                            onBack = { navCtrl.popBackStack() }
                         )
                     }
 
@@ -231,6 +264,7 @@ class MainActivity : ComponentActivity() {
         }
 
         wentToBackground = true
+        backgroundTimestampMs = System.currentTimeMillis()
         shouldShowTimer = true
     }
 
@@ -239,13 +273,26 @@ class MainActivity : ComponentActivity() {
         if (wentToBackground) {
             wentToBackground = false
 
-            // Stop the running timer service (session was already saved in onStop)
-            TimerService.stop(this)
+            val awayMs = System.currentTimeMillis() - backgroundTimestampMs
+            val timerWasRunning = TimerService.timerState.value !is TimerState.Idle
 
-            SessionLogger.startSession()
-            lifecycleScope.launch {
-                navController?.navigate("timer") {
-                    popUpTo("root") { inclusive = true }
+            if (awayMs < QUICK_RETURN_THRESHOLD_MS && timerWasRunning) {
+                // Came back quickly — the app choice was probably a mistake.
+                // Keep the timer running and let the user pick another app.
+                shouldShowTimer = false
+                SessionLogger.log("Quick return (${awayMs / 1000}s) — back to app selection")
+                lifecycleScope.launch {
+                    navController?.navigate("home") {
+                        popUpTo("root") { inclusive = true }
+                    }
+                }
+            } else {
+                TimerService.stop(this)
+                SessionLogger.startSession()
+                lifecycleScope.launch {
+                    navController?.navigate("timer") {
+                        popUpTo("root") { inclusive = true }
+                    }
                 }
             }
         }

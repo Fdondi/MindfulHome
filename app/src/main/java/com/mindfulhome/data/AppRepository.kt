@@ -6,15 +6,16 @@ class AppRepository(private val database: AppDatabase) {
 
     private val karmaDao = database.appKarmaDao()
     private val sessionDao = database.usageSessionDao()
-    private val folderDao = database.appFolderDao()
     private val layoutDao = database.homeLayoutDao()
     private val intentDao = database.appIntentDao()
+    private val shelfDao = database.shelfDao()
 
     // Karma
     fun allKarma(): Flow<List<AppKarma>> = karmaDao.getAllKarma()
     fun hiddenApps(): Flow<List<AppKarma>> = karmaDao.getHiddenApps()
 
     suspend fun getKarma(packageName: String): AppKarma {
+        if (packageName.isBlank()) return AppKarma(packageName = packageName)
         return karmaDao.getKarma(packageName) ?: AppKarma(packageName = packageName).also {
             karmaDao.upsert(it)
         }
@@ -22,6 +23,7 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun adjustKarma(packageName: String, delta: Int, hideThreshold: Int = -10) {
         val current = getKarma(packageName)
+        if (current.isOptedOut) return
         val newScore = current.karmaScore + delta
         val shouldHide = newScore <= hideThreshold
         karmaDao.upsert(
@@ -44,12 +46,16 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun recordClosedOnTime(packageName: String) {
         val current = getKarma(packageName)
+        if (current.isOptedOut) {
+            karmaDao.upsert(current.copy(closedOnTimeCount = current.closedOnTimeCount + 1))
+            return
+        }
         val recovered = (current.karmaScore + 1).coerceAtMost(0)
         karmaDao.upsert(
             current.copy(
                 karmaScore = recovered,
                 closedOnTimeCount = current.closedOnTimeCount + 1,
-                isHidden = recovered > -10
+                isHidden = recovered <= -10
             )
         )
     }
@@ -61,6 +67,18 @@ class AppRepository(private val database: AppDatabase) {
                 totalOverruns = current.totalOverruns + 1
             )
         )
+    }
+
+    suspend fun forgiveApp(packageName: String) {
+        karmaDao.resetKarma(packageName)
+    }
+
+    suspend fun setOptedOut(packageName: String, optedOut: Boolean) {
+        getKarma(packageName) // ensure the row exists before updating
+        karmaDao.setOptedOut(packageName, optedOut)
+        if (optedOut) {
+            karmaDao.resetKarma(packageName)
+        }
     }
 
     suspend fun dailyKarmaRecovery() {
@@ -92,36 +110,6 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun getRecentSessions(packageName: String): List<UsageSession> {
         return sessionDao.getRecentSessions(packageName)
-    }
-
-    // Folders
-    fun allFolders(): Flow<List<AppFolder>> = folderDao.getAllFolders()
-    fun appsInFolder(folderId: Long): Flow<List<FolderApp>> = folderDao.getAppsInFolder(folderId)
-    fun allFolderApps(): Flow<List<FolderApp>> = folderDao.getAllFolderApps()
-
-    suspend fun createFolder(name: String, position: Int = 0): Long {
-        return folderDao.insertFolder(AppFolder(name = name, position = position))
-    }
-
-    suspend fun addAppToFolder(folderId: Long, packageName: String, position: Int = 0) {
-        folderDao.addAppToFolder(FolderApp(folderId = folderId, packageName = packageName, position = position))
-    }
-
-    suspend fun removeAppFromFolder(folderId: Long, packageName: String) {
-        folderDao.removeAppFromFolder(folderId, packageName)
-    }
-
-    suspend fun deleteFolder(folderId: Long) {
-        folderDao.clearFolder(folderId)
-        folderDao.deleteFolder(folderId)
-    }
-
-    suspend fun renameFolder(folderId: Long, name: String) {
-        folderDao.renameFolder(folderId, name)
-    }
-
-    suspend fun updateFolderPosition(folderId: Long, position: Int) {
-        folderDao.updateFolderPosition(folderId, position)
     }
 
     // Layout
@@ -161,5 +149,31 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun recordIntent(packageName: String, text: String) {
         intentDao.insert(AppIntent(packageName = packageName, intentText = text))
+    }
+
+    // Shelf (favorites shelf with numbered slots; >1 app in a slot = folder)
+    fun shelfApps(): Flow<List<ShelfItem>> = shelfDao.getAll()
+    fun appsInShelfSlot(slot: Int): Flow<List<ShelfItem>> = shelfDao.getAppsInSlot(slot)
+
+    /** Add app as a new slot at the end of the shelf. */
+    suspend fun addToShelf(packageName: String) {
+        val nextSlot = shelfDao.maxSlot() + 1
+        shelfDao.upsert(ShelfItem(packageName = packageName, slotPosition = nextSlot))
+    }
+
+    /** Add app into an existing slot (creates a folder if the slot already has apps). */
+    suspend fun addToShelfSlot(packageName: String, slot: Int) {
+        val orderInSlot = shelfDao.countInSlot(slot)
+        shelfDao.upsert(ShelfItem(packageName = packageName, slotPosition = slot, orderInSlot = orderInSlot))
+    }
+
+    /** Remove app from the shelf; if the slot becomes empty, compact remaining slots. */
+    suspend fun removeFromShelf(packageName: String) {
+        val item = shelfDao.getByPackageName(packageName) ?: return
+        shelfDao.remove(packageName)
+        val remainingInSlot = shelfDao.countInSlot(item.slotPosition)
+        if (remainingInSlot == 0) {
+            shelfDao.compactSlotsAfter(item.slotPosition)
+        }
     }
 }

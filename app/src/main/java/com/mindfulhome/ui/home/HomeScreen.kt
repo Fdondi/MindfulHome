@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -94,7 +95,8 @@ fun HomeScreen(
     karmaManager: KarmaManager,
     onRequestAi: (packageName: String) -> Unit,
     onOpenSettings: () -> Unit = {},
-    onOpenLogs: () -> Unit = {}
+    onOpenLogs: () -> Unit = {},
+    onOpenKarma: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -104,12 +106,9 @@ fun HomeScreen(
 
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var showSearch by remember { mutableStateOf(false) }
-    var openFolder by remember { mutableStateOf<HomeGridItem.FolderEntry?>(null) }
 
     // DB flows
     val hiddenApps by repository.hiddenApps().collectAsState(initial = emptyList())
-    val folders by repository.allFolders().collectAsState(initial = emptyList())
-    val allFolderApps by repository.allFolderApps().collectAsState(initial = emptyList())
     val layoutItems by repository.homeLayout().collectAsState(initial = emptyList())
     val dockedItems by repository.dockedApps().collectAsState(initial = emptyList())
     val allIntents by repository.allIntents().collectAsState(initial = emptyList())
@@ -119,8 +118,6 @@ fun HomeScreen(
     val visibleApps = remember(allApps, hiddenPackages) {
         allApps.filter { it.packageName !in hiddenPackages }
     }
-    val folderAppsMap = remember(allFolderApps) { allFolderApps.groupBy { it.folderId } }
-    val appsInFolders = remember(allFolderApps) { allFolderApps.map { it.packageName }.toSet() }
 
     // Suggested apps: rank by cosine similarity when an unlock reason is provided
     var suggestedApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
@@ -144,10 +141,8 @@ fun HomeScreen(
     }
 
     // Grid items: rebuild from DB data, but only when not dragging
-    val baseGridItems = remember(
-        visibleApps, folders, folderAppsMap, layoutItems, appsInFolders, allApps
-    ) {
-        buildGridItems(visibleApps, folders, folderAppsMap, layoutItems, appsInFolders, allApps)
+    val baseGridItems = remember(visibleApps, layoutItems) {
+        buildGridItems(visibleApps, layoutItems)
     }
 
     val gridItems = remember { mutableStateListOf<HomeGridItem>() }
@@ -165,15 +160,6 @@ fun HomeScreen(
     val dockApps = remember(dockedItems, allApps) {
         dockedItems.sortedBy { it.dockPosition }.mapNotNull { docked ->
             allApps.find { it.packageName == docked.packageName }
-        }
-    }
-
-    // Auto-delete empty folders
-    LaunchedEffect(folders, folderAppsMap) {
-        for (folder in folders) {
-            if (folderAppsMap[folder.id].isNullOrEmpty()) {
-                repository.deleteFolder(folder.id)
-            }
         }
     }
 
@@ -218,34 +204,7 @@ fun HomeScreen(
                     addToDock(draggedItem.appInfo.packageName)
                 }
 
-                result.target is DropTarget.OnItem && result.wasLongHover -> {
-                    val onItem = result.target as DropTarget.OnItem
-                    when {
-                        // App dropped on app → create folder
-                        draggedItem is HomeGridItem.AppEntry && onItem.key.startsWith("app:") -> {
-                            val targetPkg = onItem.key.removePrefix("app:")
-                            val targetItem = gridItems.find { it.key == onItem.key }
-                            val position = targetItem?.position
-                                ?: gridItems.indexOfFirst { it.key == onItem.key }
-                            val folderId = repository.createFolder("Folder", position)
-                            repository.addAppToFolder(
-                                folderId, draggedItem.appInfo.packageName, 0
-                            )
-                            repository.addAppToFolder(folderId, targetPkg, 1)
-                        }
-                        // App dropped on folder → add to folder
-                        draggedItem is HomeGridItem.AppEntry && onItem.key.startsWith("folder:") -> {
-                            val folderId = onItem.key.removePrefix("folder:").toLong()
-                            val count = folderAppsMap[folderId]?.size ?: 0
-                            repository.addAppToFolder(
-                                folderId, draggedItem.appInfo.packageName, count
-                            )
-                        }
-                    }
-                }
-
-                result.target is DropTarget.OnItem && !result.wasLongHover -> {
-                    // Short hover → swap positions (reorder)
+                result.target is DropTarget.OnItem -> {
                     val onItem = result.target as DropTarget.OnItem
                     val fromIdx = gridItems.indexOfFirst { it.key == draggedItem.key }
                     val toIdx = gridItems.indexOfFirst { it.key == onItem.key }
@@ -273,6 +232,7 @@ fun HomeScreen(
                 durationMinutes = durationMinutes,
                 onSearchClick = { showSearch = true },
                 onLogsClick = onOpenLogs,
+                onKarmaClick = onOpenKarma,
                 onSettingsClick = onOpenSettings
             )
 
@@ -329,10 +289,7 @@ fun HomeScreen(
                         isHoverTarget = isHoverTarget,
                         isLongHover = isHoverTarget && dragDropState.isLongHover,
                         onTap = {
-                            when (item) {
-                                is HomeGridItem.AppEntry -> launchApp(item.appInfo)
-                                is HomeGridItem.FolderEntry -> openFolder = item
-                            }
+                            if (item is HomeGridItem.AppEntry) launchApp(item.appInfo)
                         },
                         onDragStarted = { localOffset, itemTopLeft ->
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -398,23 +355,6 @@ fun HomeScreen(
             onAddToDock = { app -> addToDock(app.packageName) }
         )
 
-        // Folder dialog
-        openFolder?.let { folder ->
-            FolderDialog(
-                folder = folder,
-                onDismiss = { openFolder = null },
-                onAppClick = { app ->
-                    openFolder = null
-                    launchApp(app)
-                },
-                onRename = { name ->
-                    scope.launch { repository.renameFolder(folder.folderId, name) }
-                },
-                onRemoveApp = { pkg ->
-                    scope.launch { repository.removeAppFromFolder(folder.folderId, pkg) }
-                }
-            )
-        }
     }
 }
 
@@ -427,6 +367,7 @@ private fun TopBar(
     durationMinutes: Int,
     onSearchClick: () -> Unit,
     onLogsClick: () -> Unit,
+    onKarmaClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     Row(
@@ -455,6 +396,13 @@ private fun TopBar(
             Icon(
                 Icons.Default.Article,
                 contentDescription = "Session logs",
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        IconButton(onClick = onKarmaClick) {
+            Icon(
+                Icons.Default.Stars,
+                contentDescription = "Karma",
                 tint = MaterialTheme.colorScheme.onBackground
             )
         }
@@ -522,16 +470,8 @@ private fun DraggableGridCell(
             }
             .clickable { onTap() }
     ) {
-        when (item) {
-            is HomeGridItem.AppEntry -> AppItem(
-                appInfo = item.appInfo,
-                gesturesEnabled = false
-            )
-            is HomeGridItem.FolderEntry -> FolderItem(
-                name = item.name,
-                apps = item.apps,
-                gesturesEnabled = false
-            )
+        if (item is HomeGridItem.AppEntry) {
+            AppItem(appInfo = item.appInfo, gesturesEnabled = false)
         }
     }
 }
@@ -559,16 +499,8 @@ private fun DragItemOverlay(dragDropState: DragDropState) {
                 alpha = 0.9f
             }
     ) {
-        when (item) {
-            is HomeGridItem.AppEntry -> AppItem(
-                appInfo = item.appInfo,
-                gesturesEnabled = false
-            )
-            is HomeGridItem.FolderEntry -> FolderItem(
-                name = item.name,
-                apps = item.apps,
-                gesturesEnabled = false
-            )
+        if (item is HomeGridItem.AppEntry) {
+            AppItem(appInfo = item.appInfo, gesturesEnabled = false)
         }
     }
 }
@@ -666,142 +598,23 @@ private fun BottomDock(
 }
 
 // ---------------------------------------------------------------------------
-// Folder dialog
-// ---------------------------------------------------------------------------
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun FolderDialog(
-    folder: HomeGridItem.FolderEntry,
-    onDismiss: () -> Unit,
-    onAppClick: (AppInfo) -> Unit,
-    onRename: (String) -> Unit,
-    onRemoveApp: (String) -> Unit
-) {
-    var editing by remember { mutableStateOf(false) }
-    var nameText by remember { mutableStateOf(folder.name) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            if (editing) {
-                TextField(
-                    value = nameText,
-                    onValueChange = { nameText = it },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            } else {
-                Text(
-                    text = folder.name,
-                    modifier = Modifier.clickable { editing = true }
-                )
-            }
-        },
-        text = {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
-                modifier = Modifier.heightIn(max = 300.dp)
-            ) {
-                items(
-                    count = folder.apps.size,
-                    key = { folder.apps[it].packageName }
-                ) { index ->
-                    val app = folder.apps[index]
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .combinedClickable(
-                                onClick = { onAppClick(app) },
-                                onLongClick = { onRemoveApp(app.packageName) }
-                            )
-                            .padding(8.dp)
-                    ) {
-                        if (app.icon != null) {
-                            Image(
-                                painter = rememberDrawablePainter(drawable = app.icon),
-                                contentDescription = app.label,
-                                modifier = Modifier.size(48.dp)
-                            )
-                        }
-                        Text(
-                            text = app.label,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 4.dp)
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            if (editing) {
-                TextButton(onClick = {
-                    onRename(nameText)
-                    editing = false
-                }) { Text("Save") }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
-        }
-    )
-}
-
-// ---------------------------------------------------------------------------
 // Grid-building logic
 // ---------------------------------------------------------------------------
 
 private fun buildGridItems(
     visibleApps: List<AppInfo>,
-    folders: List<com.mindfulhome.data.AppFolder>,
-    folderAppsMap: Map<Long, List<com.mindfulhome.data.FolderApp>>,
-    layoutItems: List<HomeLayoutItem>,
-    appsInFolders: Set<String>,
-    allApps: List<AppInfo>
+    layoutItems: List<HomeLayoutItem>
 ): List<HomeGridItem> {
     val layoutMap = layoutItems.associateBy { it.packageName }
-    val items = mutableListOf<HomeGridItem>()
 
-    for (folder in folders) {
-        val folderAppInfos = folderAppsMap[folder.id]
-            ?.sortedBy { it.position }
-            ?.mapNotNull { fa -> allApps.find { it.packageName == fa.packageName } }
-            ?: emptyList()
-
-        if (folderAppInfos.isNotEmpty()) {
-            items.add(
-                HomeGridItem.FolderEntry(
-                    folderId = folder.id,
-                    name = folder.name,
-                    apps = folderAppInfos,
-                    position = folder.position
-                )
-            )
-        }
-    }
-
-    for (app in visibleApps) {
-        if (app.packageName in appsInFolders) continue
-        val layout = layoutMap[app.packageName]
-        items.add(
-            HomeGridItem.AppEntry(
-                appInfo = app,
-                position = layout?.position ?: Int.MAX_VALUE
-            )
+    return visibleApps.map { app ->
+        HomeGridItem.AppEntry(
+            appInfo = app,
+            position = layoutMap[app.packageName]?.position ?: Int.MAX_VALUE
         )
-    }
-
-    return items.sortedWith(
-        compareBy<HomeGridItem> { it.position }
-            .thenBy {
-                when (it) {
-                    is HomeGridItem.AppEntry -> it.appInfo.label.lowercase()
-                    is HomeGridItem.FolderEntry -> it.name.lowercase()
-                }
-            }
+    }.sortedWith(
+        compareBy<HomeGridItem.AppEntry> { it.position }
+            .thenBy { it.appInfo.label.lowercase() }
     )
 }
 
@@ -811,27 +624,17 @@ private suspend fun persistGridOrder(
     repository: AppRepository
 ) {
     val dockedMap = dockedItems.associateBy { it.packageName }
-    val layoutUpdates = mutableListOf<HomeLayoutItem>()
-
-    items.forEachIndexed { index, item ->
-        when (item) {
-            is HomeGridItem.AppEntry -> {
-                val pkg = item.appInfo.packageName
-                val docked = dockedMap[pkg]
-                layoutUpdates.add(
-                    HomeLayoutItem(
-                        packageName = pkg,
-                        position = index,
-                        isDocked = docked?.isDocked == true,
-                        dockPosition = docked?.dockPosition ?: 0
-                    )
-                )
-            }
-            is HomeGridItem.FolderEntry -> {
-                repository.updateFolderPosition(item.folderId, index)
-            }
-        }
+    val layoutUpdates = items.mapIndexedNotNull { index, item ->
+        if (item is HomeGridItem.AppEntry) {
+            val pkg = item.appInfo.packageName
+            val docked = dockedMap[pkg]
+            HomeLayoutItem(
+                packageName = pkg,
+                position = index,
+                isDocked = docked?.isDocked == true,
+                dockPosition = docked?.dockPosition ?: 0
+            )
+        } else null
     }
-
     repository.updateGridPositions(layoutUpdates)
 }
