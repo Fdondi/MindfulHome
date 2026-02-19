@@ -8,6 +8,7 @@ class AppRepository(private val database: AppDatabase) {
     private val sessionDao = database.usageSessionDao()
     private val folderDao = database.appFolderDao()
     private val layoutDao = database.homeLayoutDao()
+    private val intentDao = database.appIntentDao()
 
     // Karma
     fun allKarma(): Flow<List<AppKarma>> = karmaDao.getAllKarma()
@@ -153,5 +154,12 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun updateGridPositions(items: List<HomeLayoutItem>) {
         layoutDao.upsertAll(items)
+    }
+
+    // Intents (declared reasons for opening apps)
+    fun allIntents(): Flow<List<AppIntent>> = intentDao.getAllIntents()
+
+    suspend fun recordIntent(packageName: String, text: String) {
+        intentDao.insert(AppIntent(packageName = packageName, intentText = text))
     }
 }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -70,6 +71,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.toSize
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.HomeLayoutItem
 import com.mindfulhome.logging.SessionLogger
@@ -84,6 +86,7 @@ import kotlin.math.roundToInt
 @Composable
 fun HomeScreen(
     durationMinutes: Int,
+    unlockReason: String = "",
     repository: AppRepository,
     karmaManager: KarmaManager,
     onRequestAi: (packageName: String) -> Unit,
@@ -104,6 +107,7 @@ fun HomeScreen(
     val allFolderApps by repository.allFolderApps().collectAsState(initial = emptyList())
     val layoutItems by repository.homeLayout().collectAsState(initial = emptyList())
     val dockedItems by repository.dockedApps().collectAsState(initial = emptyList())
+    val allIntents by repository.allIntents().collectAsState(initial = emptyList())
 
     // Derived state
     val hiddenPackages = remember(hiddenApps) { hiddenApps.map { it.packageName }.toSet() }
@@ -112,6 +116,24 @@ fun HomeScreen(
     }
     val folderAppsMap = remember(allFolderApps) { allFolderApps.groupBy { it.folderId } }
     val appsInFolders = remember(allFolderApps) { allFolderApps.map { it.packageName }.toSet() }
+
+    // Suggested apps: rank by cosine similarity when an unlock reason is provided
+    val suggestedApps = remember(unlockReason, visibleApps, allIntents) {
+        if (unlockReason.isBlank() || visibleApps.isEmpty()) {
+            emptyList()
+        } else {
+            val intentsByPkg = allIntents.groupBy { it.packageName }
+            val appTexts = visibleApps.map { app ->
+                val pastIntents = intentsByPkg[app.packageName]
+                    ?.joinToString(" ") { it.intentText } ?: ""
+                app.packageName to "${app.label} $pastIntents".trim()
+            }
+            val ranked = EmbeddingManager.rankApps(unlockReason, appTexts)
+            ranked.take(5).mapNotNull { (pkg, _) ->
+                visibleApps.find { it.packageName == pkg }
+            }
+        }
+    }
 
     // Grid items: rebuild from DB data, but only when not dragging
     val baseGridItems = remember(
@@ -156,6 +178,10 @@ fun HomeScreen(
             SessionLogger.log("App opened: **${appInfo.label}** (`${appInfo.packageName}`)")
             karmaManager.onAppOpened(appInfo.packageName)
             TimerService.trackApp(context, appInfo.packageName)
+            if (unlockReason.isNotBlank()) {
+                repository.recordIntent(appInfo.packageName, unlockReason)
+                EmbeddingManager.invalidateCache()
+            }
             PackageManagerHelper.launchApp(context, appInfo.packageName)
         }
     }
@@ -237,6 +263,33 @@ fun HomeScreen(
                 onLogsClick = onOpenLogs,
                 onSettingsClick = onOpenSettings
             )
+
+            // Suggested apps based on unlock reason
+            if (suggestedApps.isNotEmpty()) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    Text(
+                        text = "Suggested",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        items(
+                            count = suggestedApps.size,
+                            key = { suggestedApps[it].packageName }
+                        ) { index ->
+                            AppItem(
+                                appInfo = suggestedApps[index],
+                                onClick = { launchApp(suggestedApps[index]) },
+                            )
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+            }
 
             LazyVerticalGrid(
                 state = gridState,

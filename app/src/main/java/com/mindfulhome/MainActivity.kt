@@ -156,6 +156,7 @@ class MainActivity : ComponentActivity() {
                     composable("home") {
                         HomeScreen(
                             durationMinutes = lastDurationMinutes,
+                            unlockReason = unlockReason,
                             repository = repository,
                             karmaManager = karmaManager,
                             onRequestAi = { packageName ->
@@ -174,12 +175,9 @@ class MainActivity : ComponentActivity() {
                         val packageName = backStackEntry.arguments
                             ?.getString("packageName") ?: ""
 
-                        // Consume the unlock reason so it only fires once
-                        val reason = remember {
-                            val r = unlockReason
-                            unlockReason = ""
-                            r
-                        }
+                        // Read (but don't clear) the unlock reason; it persists
+                        // for the whole session so HomeScreen can still use it.
+                        val reason = remember { unlockReason }
 
                         NegotiationScreen(
                             packageName = packageName,

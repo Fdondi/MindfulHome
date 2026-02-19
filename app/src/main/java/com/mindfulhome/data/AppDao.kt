@@ -92,6 +92,19 @@ interface AppFolderDao {
 }
 
 @Dao
+interface AppIntentDao {
+
+    @Insert
+    suspend fun insert(intent: AppIntent)
+
+    @Query("SELECT * FROM app_intent WHERE packageName = :packageName ORDER BY timestamp DESC")
+    suspend fun getIntentsForApp(packageName: String): List<AppIntent>
+
+    @Query("SELECT * FROM app_intent ORDER BY timestamp DESC")
+    fun getAllIntents(): Flow<List<AppIntent>>
+}
+
+@Dao
 interface HomeLayoutDao {
 
     @Query("SELECT * FROM home_layout ORDER BY position")
