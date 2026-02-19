@@ -80,7 +80,10 @@ import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.service.TimerService
 import com.mindfulhome.ui.search.SearchOverlay
 import com.mindfulhome.util.PackageManagerHelper
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 @Composable
@@ -96,6 +99,8 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
+
+    Log.d("HomeScreen", "HomeScreen composing: duration=$durationMinutes reason='$unlockReason'")
 
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var showSearch by remember { mutableStateOf(false) }
@@ -118,19 +123,22 @@ fun HomeScreen(
     val appsInFolders = remember(allFolderApps) { allFolderApps.map { it.packageName }.toSet() }
 
     // Suggested apps: rank by cosine similarity when an unlock reason is provided
-    val suggestedApps = remember(unlockReason, visibleApps, allIntents) {
-        if (unlockReason.isBlank() || visibleApps.isEmpty()) {
+    var suggestedApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    LaunchedEffect(unlockReason, visibleApps, allIntents) {
+        suggestedApps = if (unlockReason.isBlank() || visibleApps.isEmpty()) {
             emptyList()
         } else {
-            val intentsByPkg = allIntents.groupBy { it.packageName }
-            val appTexts = visibleApps.map { app ->
-                val pastIntents = intentsByPkg[app.packageName]
-                    ?.joinToString(" ") { it.intentText } ?: ""
-                app.packageName to "${app.label} $pastIntents".trim()
-            }
-            val ranked = EmbeddingManager.rankApps(unlockReason, appTexts)
-            ranked.take(5).mapNotNull { (pkg, _) ->
-                visibleApps.find { it.packageName == pkg }
+            withContext(Dispatchers.Default) {
+                val intentsByPkg = allIntents.groupBy { it.packageName }
+                val appTexts = visibleApps.map { app ->
+                    val pastIntents = intentsByPkg[app.packageName]
+                        ?.joinToString(" ") { it.intentText } ?: ""
+                    app.packageName to "${app.label} $pastIntents".trim()
+                }
+                val ranked = EmbeddingManager.rankApps(unlockReason, appTexts)
+                ranked.take(5).mapNotNull { (pkg, _) ->
+                    visibleApps.find { it.packageName == pkg }
+                }
             }
         }
     }
@@ -170,7 +178,11 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
-        allApps = PackageManagerHelper.getInstalledApps(context)
+        Log.d("HomeScreen", "Loading installed apps on IO thread...")
+        allApps = withContext(Dispatchers.IO) {
+            PackageManagerHelper.getInstalledApps(context)
+        }
+        Log.d("HomeScreen", "Loaded ${allApps.size} apps")
     }
 
     fun launchApp(appInfo: AppInfo) {

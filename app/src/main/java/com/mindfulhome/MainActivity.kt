@@ -2,6 +2,7 @@ package com.mindfulhome
 
 import android.Manifest
 import android.content.Context
+import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -118,15 +119,18 @@ class MainActivity : ComponentActivity() {
                         }
                         TimerScreen(
                             onTimerSet = { durationMinutes, reason ->
+                                Log.d("MainActivity", "onTimerSet: duration=$durationMinutes reason='$reason'")
                                 shouldShowTimer = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
                                 TimerService.start(
                                     this@MainActivity, durationMinutes, ""
                                 )
+                                Log.d("MainActivity", "TimerService.start called, navigating to home")
                                 navCtrl.navigate("home") {
                                     popUpTo("timer") { inclusive = true }
                                 }
+                                Log.d("MainActivity", "Navigation to home completed")
                             },
                             savedAppLabel = savedAppLabel,
                             savedMinutes = savedSession?.remainingMinutes ?: 0,

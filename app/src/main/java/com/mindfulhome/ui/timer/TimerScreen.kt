@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.util.Log
 import com.mindfulhome.logging.SessionLogger
 private const val MAX_MINUTES = 120
 private const val VISIBLE_ITEMS = 5
@@ -158,10 +159,13 @@ fun TimerScreen(
 
         Button(
             onClick = {
+                Log.d("TimerScreen", "Start clicked: selectedMinutes=$selectedMinutes reason='${reason.trim()}'")
                 val trimmedReason = reason.trim()
                 val logSuffix = if (trimmedReason.isNotEmpty()) " — $trimmedReason" else ""
                 SessionLogger.log("Timer set: **$selectedMinutes min**$logSuffix")
+                Log.d("TimerScreen", "Calling onTimerSet")
                 onTimerSet(selectedMinutes, trimmedReason)
+                Log.d("TimerScreen", "onTimerSet returned")
             },
             modifier = Modifier
                 .fillMaxWidth(0.6f)
