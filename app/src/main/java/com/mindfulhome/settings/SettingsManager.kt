@@ -22,6 +22,24 @@ object SettingsManager {
     // Backend model selection
     private const val BACKEND_MODEL_KEY = "backend_model"
 
+    // Quick return window (minutes)
+    private const val QUICK_RETURN_THRESHOLD_KEY = "quick_return_threshold_minutes"
+    const val DEFAULT_QUICK_RETURN_MINUTES = 3
+    const val MIN_QUICK_RETURN_MINUTES = 1
+    const val MAX_QUICK_RETURN_MINUTES = 10
+
+    // Escalation threshold (number of nudge cycles before forcing back to timer)
+    private const val ESCALATION_THRESHOLD_KEY = "escalation_nudge_threshold"
+    const val DEFAULT_ESCALATION_THRESHOLD = 5
+    const val MIN_ESCALATION_THRESHOLD = 2
+    const val MAX_ESCALATION_THRESHOLD = 15
+
+    // Screen-off timestamp (to compute how long the user was away)
+    private const val LAST_SCREEN_OFF_KEY = "last_screen_off_timestamp"
+
+    // Timer-running flag persisted for the BroadcastReceiver to read
+    private const val TIMER_RUNNING_KEY = "timer_running"
+
     // Last session (for resume)
     private const val LAST_SESSION_PACKAGE_KEY = "last_session_package"
     private const val LAST_SESSION_MINUTES_KEY = "last_session_minutes"
@@ -80,4 +98,44 @@ object SettingsManager {
             remove(LAST_SESSION_MINUTES_KEY)
         }
     }
+
+    // ── Quick return window ─────────────────────────────────────────
+
+    fun getQuickReturnMinutes(context: Context): Int =
+        prefs(context).getInt(QUICK_RETURN_THRESHOLD_KEY, DEFAULT_QUICK_RETURN_MINUTES)
+
+    fun setQuickReturnMinutes(context: Context, minutes: Int) {
+        prefs(context).edit {
+            putInt(QUICK_RETURN_THRESHOLD_KEY, minutes.coerceIn(MIN_QUICK_RETURN_MINUTES, MAX_QUICK_RETURN_MINUTES))
+        }
+    }
+
+    // ── Escalation threshold ────────────────────────────────────────
+
+    fun getEscalationThreshold(context: Context): Int =
+        prefs(context).getInt(ESCALATION_THRESHOLD_KEY, DEFAULT_ESCALATION_THRESHOLD)
+
+    fun setEscalationThreshold(context: Context, threshold: Int) {
+        prefs(context).edit {
+            putInt(ESCALATION_THRESHOLD_KEY, threshold.coerceIn(MIN_ESCALATION_THRESHOLD, MAX_ESCALATION_THRESHOLD))
+        }
+    }
+
+    // ── Screen-off timestamp ────────────────────────────────────────
+
+    fun saveScreenOffTimestamp(context: Context) {
+        prefs(context).edit { putLong(LAST_SCREEN_OFF_KEY, System.currentTimeMillis()) }
+    }
+
+    fun getScreenOffTimestamp(context: Context): Long =
+        prefs(context).getLong(LAST_SCREEN_OFF_KEY, 0L)
+
+    // ── Timer-running flag (for ScreenUnlockReceiver) ───────────────
+
+    fun setTimerRunning(context: Context, running: Boolean) {
+        prefs(context).edit { putBoolean(TIMER_RUNNING_KEY, running) }
+    }
+
+    fun isTimerRunning(context: Context): Boolean =
+        prefs(context).getBoolean(TIMER_RUNNING_KEY, false)
 }

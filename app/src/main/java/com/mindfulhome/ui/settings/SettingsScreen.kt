@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
@@ -27,12 +28,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -43,6 +46,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.credentials.exceptions.NoCredentialException
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.mindfulhome.ai.LiteRtLmManager
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
@@ -143,6 +148,134 @@ fun SettingsScreen(
                     )
                 }
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            var hasOverlayPermission by remember {
+                mutableStateOf(Settings.canDrawOverlays(context))
+            }
+            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+                hasOverlayPermission = Settings.canDrawOverlays(context)
+            }
+
+            SettingsCard(
+                title = "Overlay Permission",
+                description = if (hasOverlayPermission) {
+                    "Granted. Nudge reminders will appear over any app."
+                } else {
+                    "Not granted. Nudges will only appear as notifications, " +
+                        "which Android may silence over time. Tap to grant."
+                },
+                actionLabel = if (hasOverlayPermission) null else "Grant",
+                onAction = {
+                    val intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${context.packageName}")
+                    )
+                    context.startActivity(intent)
+                }
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Behavior section
+            SectionHeader("Behavior")
+
+            var quickReturnMinutes by remember {
+                mutableFloatStateOf(
+                    SettingsManager.getQuickReturnMinutes(context).toFloat()
+                )
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Quick Return Window",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "If you come back within this window and a timer is " +
+                            "still running, skip the timer screen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Slider(
+                            value = quickReturnMinutes,
+                            onValueChange = { quickReturnMinutes = it },
+                            onValueChangeFinished = {
+                                SettingsManager.setQuickReturnMinutes(
+                                    context, quickReturnMinutes.toInt()
+                                )
+                            },
+                            valueRange = SettingsManager.MIN_QUICK_RETURN_MINUTES.toFloat()..
+                                SettingsManager.MAX_QUICK_RETURN_MINUTES.toFloat(),
+                            steps = SettingsManager.MAX_QUICK_RETURN_MINUTES -
+                                SettingsManager.MIN_QUICK_RETURN_MINUTES - 1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${quickReturnMinutes.toInt()} min",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            var escalationThreshold by remember {
+                mutableFloatStateOf(
+                    SettingsManager.getEscalationThreshold(context).toFloat()
+                )
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Escalation Threshold",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "Number of nudge cycles before forcing you " +
+                            "back to the timer screen. Each cycle is ~2 min.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Slider(
+                            value = escalationThreshold,
+                            onValueChange = { escalationThreshold = it },
+                            onValueChangeFinished = {
+                                SettingsManager.setEscalationThreshold(
+                                    context, escalationThreshold.toInt()
+                                )
+                            },
+                            valueRange = SettingsManager.MIN_ESCALATION_THRESHOLD.toFloat()..
+                                SettingsManager.MAX_ESCALATION_THRESHOLD.toFloat(),
+                            steps = SettingsManager.MAX_ESCALATION_THRESHOLD -
+                                SettingsManager.MIN_ESCALATION_THRESHOLD - 1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${escalationThreshold.toInt()} (~${escalationThreshold.toInt() * 2} min)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(24.dp))
 

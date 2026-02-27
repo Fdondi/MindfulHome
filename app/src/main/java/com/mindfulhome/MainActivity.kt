@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
     private var unlockReason by mutableStateOf("")
 
     companion object {
-        private const val QUICK_RETURN_THRESHOLD_MS = 60_000L
+        const val EXTRA_FORCE_TIMER = "force_timer"
 
         var shouldShowTimer by mutableStateOf(true)
 
@@ -70,11 +70,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
+        Log.d("MainActivity", "onCreate: shouldShowTimer=$shouldShowTimer intent.extras=${intent?.extras}")
+
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(repository)
 
         requestNotificationPermissionIfNeeded()
+
+        // Handle intent on cold launch (onNewIntent is only called for warm launches)
+        handleIncomingIntent(intent)
 
         // Ensure a session log exists (covers cold launch without unlock receiver)
         if (shouldShowTimer) {
@@ -248,10 +253,37 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        handleIncomingIntent(intent)
+    }
+
+    private fun handleIncomingIntent(intent: Intent) {
+        val fromUnlock = intent.getBooleanExtra(
+            com.mindfulhome.receiver.ScreenUnlockReceiver.EXTRA_FROM_UNLOCK, false
+        )
+        val forceTimer = intent.getBooleanExtra(EXTRA_FORCE_TIMER, false)
+
+        Log.d("MainActivity", "handleIncomingIntent: fromUnlock=$fromUnlock forceTimer=$forceTimer navController=${navController != null}")
+
+        if (fromUnlock || forceTimer) {
+            if (forceTimer) {
+                TimerService.stop(this)
+            }
+            // Clear wentToBackground so onResume doesn't also navigate
+            wentToBackground = false
+            shouldShowTimer = true
+            SessionLogger.startSession()
+            lifecycleScope.launch {
+                Log.d("MainActivity", "Navigating to timer from handleIncomingIntent")
+                navController?.navigate("timer") {
+                    popUpTo("root") { inclusive = true }
+                }
+            }
+        }
     }
 
     override fun onStop() {
         super.onStop()
+        Log.d("MainActivity", "onStop: timerState=${TimerService.timerState.value}")
 
         // Save the running session before the activity may be destroyed
         val timerState = TimerService.timerState.value
@@ -270,15 +302,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        Log.d("MainActivity", "onResume: wentToBackground=$wentToBackground navController=${navController != null}")
+
         if (wentToBackground) {
             wentToBackground = false
 
             val awayMs = System.currentTimeMillis() - backgroundTimestampMs
             val timerWasRunning = TimerService.timerState.value !is TimerState.Idle
+            val quickReturnMs =
+                SettingsManager.getQuickReturnMinutes(this) * 60_000L
 
-            if (awayMs < QUICK_RETURN_THRESHOLD_MS && timerWasRunning) {
-                // Came back quickly — the app choice was probably a mistake.
-                // Keep the timer running and let the user pick another app.
+            Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
+
+            if (awayMs < quickReturnMs && timerWasRunning) {
                 shouldShowTimer = false
                 SessionLogger.log("Quick return (${awayMs / 1000}s) — back to app selection")
                 lifecycleScope.launch {
@@ -287,7 +323,8 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             } else {
-                TimerService.stop(this)
+                Log.d("MainActivity", "onResume: navigating to timer screen")
+                shouldShowTimer = true
                 SessionLogger.startSession()
                 lifecycleScope.launch {
                     navController?.navigate("timer") {

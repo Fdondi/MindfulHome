@@ -3,17 +3,32 @@ package com.mindfulhome
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.IntentFilter
+import android.util.Log
 import com.mindfulhome.data.AppDatabase
 import com.mindfulhome.logging.SessionLogger
+import com.mindfulhome.receiver.ScreenUnlockReceiver
 
 class MindfulHomeApp : Application() {
 
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
+    private var unlockReceiver: ScreenUnlockReceiver? = null
 
     override fun onCreate() {
         super.onCreate()
         SessionLogger.init(this)
         createNotificationChannels()
+        registerUnlockReceiver()
+    }
+
+    private fun registerUnlockReceiver() {
+        val receiver = ScreenUnlockReceiver()
+        val filter = IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_USER_PRESENT)
+        }
+        registerReceiver(receiver, filter)
+        unlockReceiver = receiver
+        Log.d("MindfulHomeApp", "Dynamically registered ScreenUnlockReceiver for USER_PRESENT")
     }
 
     private fun createNotificationChannels() {

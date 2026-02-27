@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
+import com.mindfulhome.MainActivity
 import com.mindfulhome.MindfulHomeApp
 import com.mindfulhome.R
 import com.mindfulhome.ai.LiteRtLmManager
@@ -40,6 +41,7 @@ class TimerService : Service() {
     private var nudgeJob: Job? = null
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
+    private lateinit var overlayManager: OverlayNudgeManager
 
     // Nudge conversation: AI interaction lives entirely in the notification
     private var negotiationManager: NegotiationManager? = null
@@ -58,6 +60,8 @@ class TimerService : Service() {
     private val screenOffReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                Log.d(TAG, "Screen off — stopping timer session")
+                SessionLogger.log("Screen turned off — ending/suspending session")
                 suspendForScreenOff()
             }
         }
@@ -70,6 +74,8 @@ class TimerService : Service() {
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(repository)
+        overlayManager = OverlayNudgeManager(this)
+        overlayManager.onDismissed = { onOverlayDismissed() }
 
         registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
     }
@@ -103,6 +109,7 @@ class TimerService : Service() {
 
     private fun startTimer(durationMinutes: Int, packageName: String) {
         SettingsManager.clearLastSession(this)
+        SettingsManager.setTimerRunning(this, true)
         val durationMs = durationMinutes * 60 * 1000L
         _currentPackage.value = packageName
         _timerState.value = TimerState.Counting(durationMs, durationMs)
@@ -131,6 +138,7 @@ class TimerService : Service() {
 
         nudgeJob?.cancel()
         _nudgeCount.value = 0
+        overlayManager.dismiss()
 
         val appLabel = getAppLabel(_currentPackage.value)
         SessionLogger.log("Timer extended: **+$extraMinutes min** for $appLabel")
@@ -154,6 +162,11 @@ class TimerService : Service() {
         val appLabel = getAppLabel(packageName)
         SessionLogger.log("**Time's up!** Session timer expired (was using $appLabel)")
 
+        val initialMessage = "Time's up! Ready to put down $appLabel?"
+        if (overlayManager.canDrawOverlay()) {
+            overlayManager.show(initialMessage)
+        }
+
         startNudgeConversation(packageName)
         _nudgeCount.value = 0
         startNudging(packageName)
@@ -164,6 +177,9 @@ class TimerService : Service() {
         nudgeJob = serviceScope.launch {
             var overrunMs = 0L
             var nudgeCount = 0
+            val escalationThreshold = SettingsManager.getEscalationThreshold(
+                this@TimerService
+            )
 
             while (true) {
                 delay(KarmaManager.NUDGE_INTERVAL_MS)
@@ -180,7 +196,6 @@ class TimerService : Service() {
                     "Nudge #$nudgeCount for $appLabel (overrun ${overrunMs / 60000} min)"
                 )
 
-                // Append an escalating AI-side message to the conversation thread
                 val message = when {
                     nudgeCount <= 1 -> "Your time is up. Ready to put down $appLabel?"
                     nudgeCount <= 3 ->
@@ -189,10 +204,50 @@ class TimerService : Service() {
                         "Still on $appLabel... this is starting to cost karma."
                     else -> "Karma is dropping fast. Maybe time for a break?"
                 }
+
+                if (nudgeCount >= escalationThreshold) {
+                    SessionLogger.log(
+                        "Escalation: forcing back to timer after $nudgeCount nudges"
+                    )
+                    overlayManager.dismiss()
+                    forceBackToTimer()
+                    return@launch
+                }
+
                 nudgeMessages.add(NudgeMessage(message, isFromUser = false))
-                showConversationNotification(packageName)
+
+                if (overlayManager.canDrawOverlay()) {
+                    overlayManager.update(message)
+                } else {
+                    showConversationNotification(packageName)
+                }
             }
         }
+    }
+
+    private fun onOverlayDismissed() {
+        val pkg = _currentPackage.value
+        if (pkg.isEmpty()) return
+        val appLabel = getAppLabel(pkg)
+
+        SessionLogger.log("User dismissed overlay for $appLabel — treating as positive signal")
+        nudgeJob?.cancel()
+        _nudgeCount.value = 0
+
+        serviceScope.launch {
+            karmaManager.onClosedInGraceWindow(pkg)
+        }
+        overlayManager.dismiss()
+        endNudgeConversation()
+    }
+
+    private fun forceBackToTimer() {
+        overlayManager.dismiss()
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(MainActivity.EXTRA_FORCE_TIMER, true)
+        }
+        startActivity(intent)
     }
 
     private fun stopTimer() {
@@ -237,6 +292,7 @@ class TimerService : Service() {
             _timerState.value = TimerState.Idle
             _currentPackage.value = ""
             _nudgeCount.value = 0
+            SettingsManager.setTimerRunning(this@TimerService, false)
 
             endNudgeConversation()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -248,37 +304,45 @@ class TimerService : Service() {
         timerJob?.cancel()
         nudgeJob?.cancel()
 
+        SettingsManager.saveScreenOffTimestamp(this)
+
         val pkg = _currentPackage.value
         val state = _timerState.value
         val appLabel = getAppLabel(pkg)
 
-        when (state) {
-            is TimerState.Counting -> {
-                val remainingMinutes = (state.remainingMs / 60_000).toInt()
-                if (remainingMinutes >= 1 && pkg.isNotEmpty()) {
-                    SettingsManager.saveLastSession(this, pkg, remainingMinutes)
+        serviceScope.launch {
+            when (state) {
+                is TimerState.Counting -> {
+                    val remainingMinutes = (state.remainingMs / 60_000).toInt()
+                    if (remainingMinutes >= 1 && pkg.isNotEmpty()) {
+                        SettingsManager.saveLastSession(
+                            this@TimerService, pkg, remainingMinutes
+                        )
+                    }
+                    SessionLogger.log(
+                        "Session suspended (screen off): $appLabel " +
+                            "($remainingMinutes min remaining)"
+                    )
                 }
-                SessionLogger.log(
-                    "Session suspended (screen off): $appLabel " +
-                        "($remainingMinutes min remaining)"
-                )
+                is TimerState.Expired -> {
+                    karmaManager.onClosedInGraceWindow(pkg)
+                    SessionLogger.log(
+                        "Screen off during overrun: $appLabel — positive signal " +
+                            "(overrun ${state.overrunMs / 1000}s)"
+                    )
+                }
+                is TimerState.Idle -> { }
             }
-            is TimerState.Expired -> {
-                SessionLogger.log(
-                    "Session suspended (screen off): $appLabel " +
-                        "(was expired, overrun ${state.overrunMs / 1000}s)"
-                )
-            }
-            is TimerState.Idle -> { }
+
+            _timerState.value = TimerState.Idle
+            _currentPackage.value = ""
+            _nudgeCount.value = 0
+            SettingsManager.setTimerRunning(this@TimerService, false)
+
+            endNudgeConversation()
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
-
-        _timerState.value = TimerState.Idle
-        _currentPackage.value = ""
-        _nudgeCount.value = 0
-
-        endNudgeConversation()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
     }
 
     // ── Nudge conversation (notification-only) ───────────────────────
@@ -396,6 +460,7 @@ class TimerService : Service() {
         lmManager?.shutdown()
         lmManager = null
         nudgeMessages.clear()
+        overlayManager.dismiss()
 
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.cancel(NUDGE_NOTIFICATION_ID)
@@ -489,6 +554,8 @@ class TimerService : Service() {
         nudgeJob?.cancel()
         negotiationManager?.endConversation()
         lmManager?.shutdown()
+        overlayManager.dismiss()
+        SettingsManager.setTimerRunning(this, false)
         super.onDestroy()
     }
 

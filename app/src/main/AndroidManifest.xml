@@ -16,6 +16,9 @@
     <!-- Detect screen unlock -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Draw overlay nudges on top of other apps -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:name=".MindfulHomeApp"
         android:allowBackup="true"
@@ -46,11 +49,13 @@
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
+        <!-- USER_PRESENT is registered dynamically in MindfulHomeApp.onCreate()
+             because Android 8+ doesn't deliver it to manifest receivers.
+             BOOT_COMPLETED is exempted and works from the manifest. -->
         <receiver
             android:name=".receiver.ScreenUnlockReceiver"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.USER_PRESENT" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>

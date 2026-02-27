@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -68,7 +69,8 @@ fun OnboardingScreen(
                 },
                 onNext = { step = 5 }
             )
-            5 -> ModelStep(onNext = { onComplete() })
+            5 -> OverlayPermissionStep(onNext = { step = 6 })
+            6 -> ModelStep(onNext = { onComplete() })
         }
     }
 }
@@ -335,6 +337,65 @@ private fun UsageAccessStep(
             modifier = Modifier.fillMaxWidth(0.6f)
         ) {
             Text("Grant Usage Access")
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+
+    OutlinedButton(
+        onClick = onNext,
+        modifier = Modifier.fillMaxWidth(0.6f)
+    ) {
+        Text(if (hasPermission) "Continue" else "Skip for now")
+    }
+}
+
+@Composable
+private fun OverlayPermissionStep(onNext: () -> Unit) {
+    val context = LocalContext.current
+    var hasPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        hasPermission = Settings.canDrawOverlays(context)
+    }
+
+    Text(
+        text = "Display over other apps",
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Text(
+        text = if (hasPermission) {
+            "Overlay permission granted. Nudge reminders will appear over any app."
+        } else {
+            "MindfulHome can show a gentle reminder overlay when your session " +
+                    "timer expires, even while you're inside another app. " +
+                    "Without this, reminders will only appear as notifications " +
+                    "(which Android may silence over time)."
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+
+    Spacer(modifier = Modifier.height(32.dp))
+
+    if (!hasPermission) {
+        Button(
+            onClick = {
+                val intent = Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}")
+                )
+                context.startActivity(intent)
+            },
+            modifier = Modifier.fillMaxWidth(0.6f)
+        ) {
+            Text("Grant overlay permission")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
