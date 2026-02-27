@@ -76,9 +76,7 @@ fun KarmaScreen(
     var filter by remember { mutableStateOf(KarmaFilter.ALL) }
 
     LaunchedEffect(Unit) {
-        val apps = withContext(Dispatchers.IO) {
-            PackageManagerHelper.getInstalledApps(context)
-        }
+        val apps = PackageManagerHelper.getInstalledApps(context)
         appLabels = apps.associate { it.packageName to it.label }
         appIcons = apps.associate { it.packageName to it.icon }
         appsLoaded = true

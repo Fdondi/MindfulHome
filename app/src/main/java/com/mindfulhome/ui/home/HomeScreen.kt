@@ -164,10 +164,8 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
-        Log.d("HomeScreen", "Loading installed apps on IO thread...")
-        allApps = withContext(Dispatchers.IO) {
-            PackageManagerHelper.getInstalledApps(context)
-        }
+        Log.d("HomeScreen", "Loading installed apps from shared cache...")
+        allApps = PackageManagerHelper.getInstalledApps(context)
         Log.d("HomeScreen", "Loaded ${allApps.size} apps")
     }
 

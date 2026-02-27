@@ -8,6 +8,7 @@ import android.util.Log
 import com.mindfulhome.data.AppDatabase
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.receiver.ScreenUnlockReceiver
+import com.mindfulhome.util.PackageManagerHelper
 
 class MindfulHomeApp : Application() {
 
@@ -19,6 +20,7 @@ class MindfulHomeApp : Application() {
         SessionLogger.init(this)
         createNotificationChannels()
         registerUnlockReceiver()
+        PackageManagerHelper.precomputeInstalledApps(this)
     }
 
     private fun registerUnlockReceiver() {

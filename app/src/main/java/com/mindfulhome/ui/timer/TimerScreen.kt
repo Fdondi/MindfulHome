@@ -70,10 +70,8 @@ import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.util.PackageManagerHelper
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private const val MAX_MINUTES = 120
 private const val VISIBLE_ITEMS = 5
@@ -143,9 +141,7 @@ fun TimerScreen(
     var showAddDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        allApps = withContext(Dispatchers.IO) {
-            PackageManagerHelper.getInstalledApps(context)
-        }
+        allApps = PackageManagerHelper.getInstalledApps(context)
     }
 
     val shelfApps = remember(shelfItems, allApps) {
