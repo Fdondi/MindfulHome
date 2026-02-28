@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -59,6 +60,8 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -69,6 +72,7 @@ import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
+import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.util.PackageManagerHelper
 import java.util.concurrent.TimeUnit
@@ -78,6 +82,9 @@ import kotlinx.coroutines.launch
 private const val MAX_MINUTES = 120
 private const val VISIBLE_ITEMS = 5
 private const val ITEM_HEIGHT_DP = 64
+private const val MOST_USED_VISIBLE_ITEMS = 3
+private const val MOST_USED_MAX_ITEMS = 15
+private const val MOST_USED_ROW_HEIGHT_DP = 44
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -147,9 +154,17 @@ fun TimerScreen(
         ?: remember { mutableStateOf(emptyList()) }
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var hasUsagePermission by remember { mutableStateOf(false) }
+    var mostUsedAppsToday by remember { mutableStateOf<List<UsageTracker.DailyAppUsage>>(emptyList()) }
 
     LaunchedEffect(Unit) {
         allApps = PackageManagerHelper.getInstalledApps(context)
+        hasUsagePermission = UsageTracker.hasUsageStatsPermission(context)
+        mostUsedAppsToday = if (hasUsagePermission) {
+            UsageTracker.getMostUsedAppsToday(context, MOST_USED_MAX_ITEMS)
+        } else {
+            emptyList()
+        }
     }
 
     val shelfApps = remember(shelfItems, allApps) {
@@ -349,6 +364,14 @@ fun TimerScreen(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            MostUsedAppsTodaySection(
+                usageItems = mostUsedAppsToday,
+                allApps = allApps,
+                hasUsagePermission = hasUsagePermission
+            )
         }
     }
 
@@ -574,6 +597,127 @@ private fun AppListRow(
     }
 }
 
+@Composable
+private fun MostUsedAppsTodaySection(
+    usageItems: List<UsageTracker.DailyAppUsage>,
+    allApps: List<AppInfo>,
+    hasUsagePermission: Boolean,
+) {
+    val appsByPackage = remember(allApps) { allApps.associateBy { it.packageName } }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                shape = MaterialTheme.shapes.medium
+            )
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = "Most used apps today",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+
+        when {
+            !hasUsagePermission -> {
+                Text(
+                    text = "Enable Usage Access to read Digital Wellbeing stats.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
+                )
+            }
+
+            usageItems.isEmpty() -> {
+                Text(
+                    text = "No app usage recorded yet today.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
+                )
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height((MOST_USED_VISIBLE_ITEMS * MOST_USED_ROW_HEIGHT_DP).dp)
+                ) {
+                    items(usageItems.size) { index ->
+                        val usage = usageItems[index]
+                        val appInfo = appsByPackage[usage.packageName]
+                        MostUsedAppRow(
+                            appLabel = appInfo?.label ?: usage.packageName,
+                            icon = appInfo?.icon,
+                            foregroundTimeMs = usage.foregroundTimeMs,
+                            timeChunksMsDesc = usage.timeChunksMsDesc,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MostUsedAppRow(
+    appLabel: String,
+    icon: android.graphics.drawable.Drawable?,
+    foregroundTimeMs: Long,
+    timeChunksMsDesc: List<Long>,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(MOST_USED_ROW_HEIGHT_DP.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        if (icon != null) {
+            Image(
+                painter = rememberDrawablePainter(drawable = icon),
+                contentDescription = appLabel,
+                modifier = Modifier.size(22.dp),
+                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0f) })
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .background(MaterialTheme.colorScheme.surface, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = appLabel.take(1).uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Text(
+            text = appLabel,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            modifier = Modifier.width(84.dp),
+        )
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        Text(
+            text = formatUsageBreakdown(foregroundTimeMs, timeChunksMsDesc),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
 private fun formatMinutes(minutes: Int): String {
     return when {
         minutes < 60 -> "$minutes min"
@@ -596,4 +740,31 @@ private fun formatTimeAgo(timestampMs: Long): String {
             if (days == 1L) "declared 1 day ago" else "declared $days days ago"
         }
     }
+}
+
+private fun formatUsageDuration(durationMs: Long): String {
+    val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(durationMs).coerceAtLeast(0L)
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours == 0L -> "${minutes}m"
+        minutes == 0L -> "${hours}h"
+        else -> "${hours}h ${minutes}m"
+    }
+}
+
+private fun formatUsageBreakdown(
+    totalDurationMs: Long,
+    timeChunksMsDesc: List<Long>,
+    maxShownChunks: Int = 3,
+): String {
+    val total = formatUsageDuration(totalDurationMs)
+    if (timeChunksMsDesc.size <= 1) return total
+    val shownChunks = timeChunksMsDesc.take(maxShownChunks).map(::formatUsageDuration)
+    val hasMore = timeChunksMsDesc.size > maxShownChunks
+    val joined = buildString {
+        append(shownChunks.joinToString(" + "))
+        if (hasMore) append(" + ...")
+    }
+    return "$total ($joined)"
 }

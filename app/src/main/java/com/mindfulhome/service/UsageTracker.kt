@@ -3,8 +3,15 @@ package com.mindfulhome.service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import java.util.Calendar
 
 object UsageTracker {
+
+    data class DailyAppUsage(
+        val packageName: String,
+        val foregroundTimeMs: Long,
+        val timeChunksMsDesc: List<Long>,
+    )
 
     fun getForegroundApp(context: Context): String? {
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
@@ -51,5 +58,43 @@ object UsageTracker {
             now
         )
         return stats != null && stats.isNotEmpty()
+    }
+
+    fun getMostUsedAppsToday(context: Context, maxItems: Int = 15): List<DailyAppUsage> {
+        if (maxItems <= 0) return emptyList()
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
+                as? UsageStatsManager ?: return emptyList()
+
+        val now = System.currentTimeMillis()
+        val startOfDay = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startOfDay,
+            now
+        ).orEmpty()
+
+        return stats
+            .asSequence()
+            .filter { it.packageName != context.packageName && it.totalTimeInForeground > 0L }
+            .groupBy { it.packageName }
+            .map { (packageName, entries) ->
+                val chunks = entries
+                    .map { it.totalTimeInForeground }
+                    .filter { it > 0L }
+                    .sortedDescending()
+                DailyAppUsage(
+                    packageName = packageName,
+                    foregroundTimeMs = chunks.sum(),
+                    timeChunksMsDesc = chunks,
+                )
+            }
+            .sortedByDescending { it.foregroundTimeMs }
+            .take(maxItems)
+            .toList()
     }
 }
