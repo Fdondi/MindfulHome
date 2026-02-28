@@ -40,6 +40,10 @@ object SettingsManager {
     // Timer-running flag persisted for the BroadcastReceiver to read
     private const val TIMER_RUNNING_KEY = "timer_running"
 
+    // Quick-launch bypass session (no countdown until user opens non-quick-launch app)
+    private const val QUICK_LAUNCH_SESSION_ACTIVE_KEY = "quick_launch_session_active"
+    private const val QUICK_LAUNCH_PACKAGES_KEY = "quick_launch_packages_csv"
+
     // Last session (for resume)
     private const val LAST_SESSION_PACKAGE_KEY = "last_session_package"
     private const val LAST_SESSION_MINUTES_KEY = "last_session_minutes"
@@ -138,4 +142,34 @@ object SettingsManager {
 
     fun isTimerRunning(context: Context): Boolean =
         prefs(context).getBoolean(TIMER_RUNNING_KEY, false)
+
+    // ── Quick-launch bypass session ─────────────────────────────────
+
+    fun startQuickLaunchSession(context: Context, allowedPackages: Set<String>) {
+        val serialized = allowedPackages
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .joinToString(",")
+        prefs(context).edit {
+            putBoolean(QUICK_LAUNCH_SESSION_ACTIVE_KEY, true)
+            putString(QUICK_LAUNCH_PACKAGES_KEY, serialized)
+        }
+    }
+
+    fun clearQuickLaunchSession(context: Context) {
+        prefs(context).edit {
+            putBoolean(QUICK_LAUNCH_SESSION_ACTIVE_KEY, false)
+            remove(QUICK_LAUNCH_PACKAGES_KEY)
+        }
+    }
+
+    fun isQuickLaunchSessionActive(context: Context): Boolean =
+        prefs(context).getBoolean(QUICK_LAUNCH_SESSION_ACTIVE_KEY, false)
+
+    fun getQuickLaunchPackages(context: Context): Set<String> {
+        val raw = prefs(context).getString(QUICK_LAUNCH_PACKAGES_KEY, "") ?: ""
+        if (raw.isBlank()) return emptySet()
+        return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    }
 }

@@ -85,7 +85,12 @@ fun TimerScreen(
     savedMinutes: Int = 0,
     onResumeSession: (() -> Unit)? = null,
     repository: AppRepository? = null,
-    onShelfAppLaunch: ((minutes: Int, reason: String, packageName: String) -> Unit)? = null,
+    onShelfAppLaunch: ((
+        minutes: Int,
+        reason: String,
+        packageName: String,
+        quickLaunchPackages: Set<String>,
+    ) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -172,7 +177,8 @@ fun TimerScreen(
                         onShelfAppLaunch?.invoke(
                             selectedMinutes,
                             reason.trim(),
-                            appInfo.packageName
+                            appInfo.packageName,
+                            shelfApps.map { it.packageName }.toSet(),
                         )
                     },
                     onRemoveApp = { packageName ->

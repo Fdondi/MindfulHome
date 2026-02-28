@@ -39,6 +39,7 @@ class TimerService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var timerJob: Job? = null
     private var nudgeJob: Job? = null
+    private var quickLaunchMonitorJob: Job? = null
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
     private lateinit var overlayManager: OverlayNudgeManager
@@ -71,6 +72,7 @@ class TimerService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.d(TAG, "onCreate")
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(repository)
@@ -81,15 +83,42 @@ class TimerService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
+        val action = intent?.action
+        Log.d(TAG, "onStartCommand action=$action startId=$startId flags=$flags")
+
+        if (action == null) {
+            // Service can be recreated with a null intent after process death.
+            // Restore quick-launch monitoring if it was active.
+            if (SettingsManager.isQuickLaunchSessionActive(this)) {
+                Log.w(TAG, "Null intent restart - restoring quick launch monitoring")
+                startForeground(
+                    QUICK_LAUNCH_NOTIFICATION_ID,
+                    buildQuickLaunchMonitoringNotification(),
+                )
+                overlayManager.showQuickLaunchFrame()
+                startQuickLaunchMonitoringLoop()
+            }
+            return START_STICKY
+        }
+
+        when (action) {
             ACTION_START -> {
                 val durationMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
                 startTimer(durationMinutes, packageName)
             }
+            ACTION_START_QUICK_LAUNCH_SESSION -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
+                val allowedPackages = intent.getStringArrayListExtra(EXTRA_ALLOWED_PACKAGES)
+                    ?.toSet()
+                    ?: emptySet()
+                startQuickLaunchSession(packageName, allowedPackages)
+            }
             ACTION_TRACK_APP -> {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
+                Log.d(TAG, "track app package=$packageName")
                 _currentPackage.value = packageName
+                maybeForceTimerForQuickLaunchSwitch(packageName)
             }
             ACTION_EXTEND -> {
                 val extraMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
@@ -108,6 +137,9 @@ class TimerService : Service() {
     // ── Timer lifecycle ──────────────────────────────────────────────
 
     private fun startTimer(durationMinutes: Int, packageName: String) {
+        SettingsManager.clearQuickLaunchSession(this)
+        quickLaunchMonitorJob?.cancel()
+        overlayManager.dismissQuickLaunchFrame()
         SettingsManager.clearLastSession(this)
         SettingsManager.setTimerRunning(this, true)
         val durationMs = durationMinutes * 60 * 1000L
@@ -129,6 +161,73 @@ class TimerService : Service() {
                 updateTimerNotification(remainingMs)
             }
             onTimerExpired(packageName)
+        }
+    }
+
+    private fun startQuickLaunchSession(
+        initialPackageName: String,
+        allowedPackages: Set<String>,
+    ) {
+        Log.d(
+            TAG,
+            "startQuickLaunchSession initial=$initialPackageName allowedCount=${allowedPackages.size}",
+        )
+        val normalizedAllowed = allowedPackages + initialPackageName
+        SettingsManager.startQuickLaunchSession(this, normalizedAllowed)
+        SettingsManager.setTimerRunning(this, false)
+        SettingsManager.clearLastSession(this)
+        _currentPackage.value = initialPackageName
+        _timerState.value = TimerState.Idle
+
+        val appLabel = getAppLabel(initialPackageName)
+        SessionLogger.log("Quick Launch started: **$appLabel** (no timer running)")
+
+        // Keep service alive while monitoring app switches outside launcher taps.
+        startForeground(
+            QUICK_LAUNCH_NOTIFICATION_ID,
+            buildQuickLaunchMonitoringNotification(),
+        )
+        overlayManager.showQuickLaunchFrame()
+        startQuickLaunchMonitoringLoop()
+    }
+
+    private fun maybeForceTimerForQuickLaunchSwitch(packageName: String) {
+        if (!SettingsManager.isQuickLaunchSessionActive(this)) return
+
+        val allowedPackages = SettingsManager.getQuickLaunchPackages(this) + this.packageName
+        if (packageName in allowedPackages) {
+            Log.v(TAG, "quick-launch app allowed: $packageName")
+            return
+        }
+        if (packageName.isBlank()) return
+
+        val appLabel = getAppLabel(packageName)
+        Log.d(TAG, "non-quick app detected: $packageName")
+        SessionLogger.log(
+            "Quick Launch exit detected: opened **$appLabel** — returning to timer"
+        )
+        SettingsManager.clearQuickLaunchSession(this)
+        quickLaunchMonitorJob?.cancel()
+        overlayManager.dismissQuickLaunchFrame()
+        forceBackToTimer()
+    }
+
+    private fun startQuickLaunchMonitoringLoop() {
+        quickLaunchMonitorJob?.cancel()
+        Log.d(TAG, "startQuickLaunchMonitoringLoop")
+        quickLaunchMonitorJob = serviceScope.launch {
+            var lastSeenPackage = _currentPackage.value
+            while (SettingsManager.isQuickLaunchSessionActive(this@TimerService)) {
+                val foregroundPackage = UsageTracker.getForegroundApp(this@TimerService)
+                if (!foregroundPackage.isNullOrBlank() && foregroundPackage != lastSeenPackage) {
+                    Log.d(TAG, "foreground changed: $lastSeenPackage -> $foregroundPackage")
+                    lastSeenPackage = foregroundPackage
+                    _currentPackage.value = foregroundPackage
+                    maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
+                }
+                delay(QUICK_LAUNCH_MONITOR_POLL_MS)
+            }
+            Log.d(TAG, "quick-launch monitoring loop ended")
         }
     }
 
@@ -253,6 +352,8 @@ class TimerService : Service() {
     private fun stopTimer() {
         timerJob?.cancel()
         nudgeJob?.cancel()
+        quickLaunchMonitorJob?.cancel()
+        overlayManager.dismissQuickLaunchFrame()
 
         serviceScope.launch {
             val pkg = _currentPackage.value
@@ -293,6 +394,7 @@ class TimerService : Service() {
             _currentPackage.value = ""
             _nudgeCount.value = 0
             SettingsManager.setTimerRunning(this@TimerService, false)
+            SettingsManager.clearQuickLaunchSession(this@TimerService)
 
             endNudgeConversation()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -303,6 +405,8 @@ class TimerService : Service() {
     private fun suspendForScreenOff() {
         timerJob?.cancel()
         nudgeJob?.cancel()
+        quickLaunchMonitorJob?.cancel()
+        overlayManager.dismissQuickLaunchFrame()
 
         SettingsManager.saveScreenOffTimestamp(this)
 
@@ -338,6 +442,7 @@ class TimerService : Service() {
             _currentPackage.value = ""
             _nudgeCount.value = 0
             SettingsManager.setTimerRunning(this@TimerService, false)
+            SettingsManager.clearQuickLaunchSession(this@TimerService)
 
             endNudgeConversation()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -534,6 +639,16 @@ class TimerService : Service() {
         notificationManager.notify(TIMER_NOTIFICATION_ID, notification)
     }
 
+    private fun buildQuickLaunchMonitoringNotification(): Notification {
+        return NotificationCompat.Builder(this, MindfulHomeApp.TIMER_CHANNEL_ID)
+            .setContentTitle("MindfulHome")
+            .setContentText("Quick Launch active - monitoring app switches")
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────
 
     private fun getAppLabel(packageName: String): String {
@@ -552,10 +667,13 @@ class TimerService : Service() {
         } catch (_: IllegalArgumentException) { }
         timerJob?.cancel()
         nudgeJob?.cancel()
+        quickLaunchMonitorJob?.cancel()
         negotiationManager?.endConversation()
         lmManager?.shutdown()
         overlayManager.dismiss()
+        overlayManager.dismissQuickLaunchFrame()
         SettingsManager.setTimerRunning(this, false)
+        SettingsManager.clearQuickLaunchSession(this)
         super.onDestroy()
     }
 
@@ -563,14 +681,18 @@ class TimerService : Service() {
         private const val TAG = "TimerService"
         private const val TIMER_NOTIFICATION_ID = 1001
         private const val NUDGE_NOTIFICATION_ID = 1002
+        private const val QUICK_LAUNCH_NOTIFICATION_ID = 1003
+        private const val QUICK_LAUNCH_MONITOR_POLL_MS = 1500L
 
         const val ACTION_START = "com.mindfulhome.ACTION_START_TIMER"
+        const val ACTION_START_QUICK_LAUNCH_SESSION = "com.mindfulhome.ACTION_START_QUICK_LAUNCH_SESSION"
         const val ACTION_TRACK_APP = "com.mindfulhome.ACTION_TRACK_APP"
         const val ACTION_EXTEND = "com.mindfulhome.ACTION_EXTEND_TIMER"
         const val ACTION_STOP = "com.mindfulhome.ACTION_STOP_TIMER"
         const val ACTION_HANDLE_REPLY = "com.mindfulhome.ACTION_HANDLE_REPLY"
         const val EXTRA_DURATION_MINUTES = "duration_minutes"
         const val EXTRA_PACKAGE_NAME = "package_name"
+        const val EXTRA_ALLOWED_PACKAGES = "allowed_packages"
 
         private const val KEY_TEXT_REPLY = "key_text_reply"
 
@@ -606,6 +728,22 @@ class TimerService : Service() {
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
             }
             context.startService(intent)
+        }
+
+        fun startQuickLaunchSession(
+            context: Context,
+            initialPackageName: String,
+            allowedQuickLaunchPackages: List<String>,
+        ) {
+            val intent = Intent(context, TimerService::class.java).apply {
+                action = ACTION_START_QUICK_LAUNCH_SESSION
+                putExtra(EXTRA_PACKAGE_NAME, initialPackageName)
+                putStringArrayListExtra(
+                    EXTRA_ALLOWED_PACKAGES,
+                    ArrayList(allowedQuickLaunchPackages),
+                )
+            }
+            context.startForegroundService(intent)
         }
 
         fun stop(context: Context) {

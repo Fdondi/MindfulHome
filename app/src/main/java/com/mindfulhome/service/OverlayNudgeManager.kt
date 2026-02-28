@@ -14,6 +14,7 @@ import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -31,6 +32,7 @@ class OverlayNudgeManager(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var overlayView: View? = null
     private var messageView: TextView? = null
+    private var quickLaunchFrameView: View? = null
 
     var onDismissed: (() -> Unit)? = null
 
@@ -54,6 +56,14 @@ class OverlayNudgeManager(private val context: Context) {
 
     fun dismiss() {
         handler.post { dismissInternal() }
+    }
+
+    fun showQuickLaunchFrame() {
+        handler.post { showQuickLaunchFrameInternal() }
+    }
+
+    fun dismissQuickLaunchFrame() {
+        handler.post { dismissQuickLaunchFrameInternal() }
     }
 
     private fun showInternal(message: String) {
@@ -161,6 +171,65 @@ class OverlayNudgeManager(private val context: Context) {
         }
         overlayView = null
         messageView = null
+    }
+
+    private fun showQuickLaunchFrameInternal() {
+        if (quickLaunchFrameView != null) return
+        if (!canDrawOverlay()) return
+
+        val dp = { value: Int ->
+            TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, value.toFloat(),
+                context.resources.displayMetrics
+            ).toInt()
+        }
+
+        val frame = FrameLayout(context).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(2), Color.parseColor("#40FFFFFF"))
+                cornerRadius = dp(18).toFloat()
+            }
+        }
+
+        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        else
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
+        }
+
+        try {
+            windowManager.addView(frame, params)
+            quickLaunchFrameView = frame
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add quick-launch frame overlay", e)
+        }
+    }
+
+    private fun dismissQuickLaunchFrameInternal() {
+        quickLaunchFrameView?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove quick-launch frame overlay", e)
+            }
+        }
+        quickLaunchFrameView = null
     }
 
     companion object {

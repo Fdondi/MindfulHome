@@ -164,13 +164,20 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             repository = repository,
-                            onShelfAppLaunch = { durationMinutes, reason, packageName ->
+                            onShelfAppLaunch = {
+                                durationMinutes,
+                                reason,
+                                packageName,
+                                quickLaunchPackages,
+                            ->
                                 Log.d("MainActivity", "Shelf launch: pkg=$packageName duration=$durationMinutes")
                                 shouldShowTimer = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
-                                TimerService.start(
-                                    this@MainActivity, durationMinutes, packageName
+                                TimerService.startQuickLaunchSession(
+                                    this@MainActivity,
+                                    initialPackageName = packageName,
+                                    allowedQuickLaunchPackages = quickLaunchPackages.toList(),
                                 )
                                 navCtrl.navigate("home") {
                                     popUpTo("timer") { inclusive = true }
