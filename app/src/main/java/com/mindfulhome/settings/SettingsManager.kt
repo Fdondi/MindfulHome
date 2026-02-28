@@ -48,6 +48,11 @@ object SettingsManager {
     private const val LAST_SESSION_PACKAGE_KEY = "last_session_package"
     private const val LAST_SESSION_MINUTES_KEY = "last_session_minutes"
 
+    // Last declared timer intent (used when forcing user back to timer)
+    private const val LAST_DECLARED_MINUTES_KEY = "last_declared_minutes"
+    private const val LAST_DECLARED_INTENT_KEY = "last_declared_intent"
+    private const val LAST_DECLARED_AT_MS_KEY = "last_declared_at_ms"
+
     /** Available Vertex AI models the user can pick from. */
     data class ModelOption(val id: String, val label: String, val description: String)
 
@@ -80,6 +85,11 @@ object SettingsManager {
     // ── Last session (resume) ────────────────────────────────────────
 
     data class SavedSession(val packageName: String, val remainingMinutes: Int)
+    data class LastDeclaredIntent(
+        val minutes: Int,
+        val intent: String,
+        val declaredAtMs: Long,
+    )
 
     fun saveLastSession(context: Context, packageName: String, remainingMinutes: Int) {
         prefs(context).edit {
@@ -101,6 +111,34 @@ object SettingsManager {
             remove(LAST_SESSION_PACKAGE_KEY)
             remove(LAST_SESSION_MINUTES_KEY)
         }
+    }
+
+    // ── Last declared timer intent ──────────────────────────────────
+
+    fun saveLastDeclaredIntent(
+        context: Context,
+        minutes: Int,
+        intent: String,
+        declaredAtMs: Long = System.currentTimeMillis(),
+    ) {
+        prefs(context).edit {
+            putInt(LAST_DECLARED_MINUTES_KEY, minutes.coerceAtLeast(1))
+            putString(LAST_DECLARED_INTENT_KEY, intent.trim())
+            putLong(LAST_DECLARED_AT_MS_KEY, declaredAtMs)
+        }
+    }
+
+    fun getLastDeclaredIntent(context: Context): LastDeclaredIntent? {
+        val p = prefs(context)
+        val minutes = p.getInt(LAST_DECLARED_MINUTES_KEY, 0)
+        val intent = p.getString(LAST_DECLARED_INTENT_KEY, "") ?: ""
+        val declaredAtMs = p.getLong(LAST_DECLARED_AT_MS_KEY, 0L)
+        if (minutes <= 0 || declaredAtMs <= 0L) return null
+        return LastDeclaredIntent(
+            minutes = minutes,
+            intent = intent,
+            declaredAtMs = declaredAtMs,
+        )
     }
 
     // ── Quick return window ─────────────────────────────────────────

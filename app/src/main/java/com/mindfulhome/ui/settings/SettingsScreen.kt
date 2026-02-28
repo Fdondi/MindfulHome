@@ -238,13 +238,13 @@ fun SettingsScreen(
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Escalation Threshold",
+                        text = "Ignored Warnings Before Reset",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Medium
                     )
                     Text(
-                        text = "Number of nudge cycles before forcing you " +
-                            "back to the timer screen. Each cycle is ~2 min.",
+                        text = "How many warnings can be ignored before forcing " +
+                            "you back to the timer screen.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp)
@@ -269,7 +269,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "${escalationThreshold.toInt()} (~${escalationThreshold.toInt() * 2} min)",
+                            text = "${escalationThreshold.toInt()} warnings",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )

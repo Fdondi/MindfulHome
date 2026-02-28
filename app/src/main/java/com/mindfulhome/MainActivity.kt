@@ -48,6 +48,7 @@ class MainActivity : ComponentActivity() {
 
     // Optional reason provided when starting the timer; consumed by the chat screen
     private var unlockReason by mutableStateOf("")
+    private var showForcedTimerContext by mutableStateOf(false)
 
     companion object {
         const val EXTRA_FORCE_TIMER = "force_timer"
@@ -116,6 +117,7 @@ class MainActivity : ComponentActivity() {
 
                     composable("timer") {
                         val savedSession = SettingsManager.getLastSession(this@MainActivity)
+                        val lastDeclaredIntent = SettingsManager.getLastDeclaredIntent(this@MainActivity)
                         val savedAppLabel = savedSession?.let { session ->
                             try {
                                 val appInfo = packageManager.getApplicationInfo(
@@ -130,8 +132,14 @@ class MainActivity : ComponentActivity() {
                             onTimerSet = { durationMinutes, reason ->
                                 Log.d("MainActivity", "onTimerSet: duration=$durationMinutes reason='$reason'")
                                 shouldShowTimer = false
+                                showForcedTimerContext = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
+                                SettingsManager.saveLastDeclaredIntent(
+                                    this@MainActivity,
+                                    durationMinutes,
+                                    reason,
+                                )
                                 TimerService.start(
                                     this@MainActivity, durationMinutes, ""
                                 )
@@ -146,7 +154,13 @@ class MainActivity : ComponentActivity() {
                             onResumeSession = savedSession?.let { session ->
                                 {
                                     shouldShowTimer = false
+                                    showForcedTimerContext = false
                                     lastDurationMinutes = session.remainingMinutes
+                                    SettingsManager.saveLastDeclaredIntent(
+                                        this@MainActivity,
+                                        session.remainingMinutes,
+                                        "",
+                                    )
                                     SettingsManager.clearLastSession(this@MainActivity)
                                     TimerService.start(
                                         this@MainActivity,
@@ -172,8 +186,14 @@ class MainActivity : ComponentActivity() {
                             ->
                                 Log.d("MainActivity", "Shelf launch: pkg=$packageName duration=$durationMinutes")
                                 shouldShowTimer = false
+                                showForcedTimerContext = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
+                                SettingsManager.saveLastDeclaredIntent(
+                                    this@MainActivity,
+                                    durationMinutes,
+                                    reason,
+                                )
                                 TimerService.startQuickLaunchSession(
                                     this@MainActivity,
                                     initialPackageName = packageName,
@@ -188,6 +208,7 @@ class MainActivity : ComponentActivity() {
                                     startActivity(launchIntent)
                                 }
                             },
+                            forcedReturnIntent = if (showForcedTimerContext) lastDeclaredIntent else null,
                         )
                     }
 
@@ -278,6 +299,7 @@ class MainActivity : ComponentActivity() {
             // Clear wentToBackground so onResume doesn't also navigate
             wentToBackground = false
             shouldShowTimer = true
+            showForcedTimerContext = forceTimer
             SessionLogger.startSession()
             lifecycleScope.launch {
                 Log.d("MainActivity", "Navigating to timer from handleIncomingIntent")
