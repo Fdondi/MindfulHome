@@ -103,9 +103,15 @@ class TimerService : Service() {
 
         when (action) {
             ACTION_START -> {
+                val explicitDurationMs = intent.getLongExtra(EXTRA_DURATION_MS, -1L)
                 val durationMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
-                startTimer(durationMinutes, packageName)
+                val durationMs = if (explicitDurationMs > 0L) {
+                    explicitDurationMs
+                } else {
+                    durationMinutes * 60 * 1000L
+                }
+                startTimer(durationMs, packageName)
             }
             ACTION_START_QUICK_LAUNCH_SESSION -> {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
@@ -136,18 +142,19 @@ class TimerService : Service() {
 
     // ── Timer lifecycle ──────────────────────────────────────────────
 
-    private fun startTimer(durationMinutes: Int, packageName: String) {
+    private fun startTimer(durationMs: Long, packageName: String) {
         SettingsManager.clearQuickLaunchSession(this)
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissQuickLaunchFrame()
         SettingsManager.clearLastSession(this)
         SettingsManager.setTimerRunning(this, true)
-        val durationMs = durationMinutes * 60 * 1000L
+        _sessionStartedAtMs.value = System.currentTimeMillis()
         _currentPackage.value = packageName
         _timerState.value = TimerState.Counting(durationMs, durationMs)
 
+        val durationMinutesDisplay = ((durationMs + 59_999L) / 60_000L).toInt()
         val appLabel = getAppLabel(packageName)
-        SessionLogger.log("Session timer started: **$durationMinutes min** ($appLabel)")
+        SessionLogger.log("Session timer started: **$durationMinutesDisplay min** ($appLabel)")
 
         startForeground(TIMER_NOTIFICATION_ID, buildTimerNotification(durationMs))
 
@@ -176,6 +183,7 @@ class TimerService : Service() {
         SettingsManager.startQuickLaunchSession(this, normalizedAllowed)
         SettingsManager.setTimerRunning(this, false)
         SettingsManager.clearLastSession(this)
+        _sessionStartedAtMs.value = 0L
         _currentPackage.value = initialPackageName
         _timerState.value = TimerState.Idle
 
@@ -245,7 +253,7 @@ class TimerService : Service() {
         when (state) {
             is TimerState.Expired -> {
                 val pkg = _currentPackage.value
-                startTimer(extraMinutes, pkg)
+                startTimer(extraMinutes * 60 * 1000L, pkg)
             }
             is TimerState.Counting -> {
                 val newRemaining = state.remainingMs + extraMs
@@ -365,9 +373,17 @@ class TimerService : Service() {
                     karmaManager.onClosedOnTime(pkg)
                     SessionLogger.log("App closed on time: $appLabel (karma +1)")
 
-                    val remainingMinutes = (state.remainingMs / 60_000).toInt()
-                    if (remainingMinutes >= 1 && pkg.isNotEmpty()) {
-                        SettingsManager.saveLastSession(this@TimerService, pkg, remainingMinutes)
+                    val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
+                        ?: (System.currentTimeMillis() - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
+                    if (pkg.isNotEmpty()) {
+                        SettingsManager.saveLastSession(
+                            context = this@TimerService,
+                            packageName = pkg,
+                            totalDurationMs = state.totalMs,
+                            startedAtMs = startedAtMs,
+                            suspendedAtMs = null,
+                        )
+                        val remainingMinutes = ((state.remainingMs + 59_999L) / 60_000L).toInt()
                         SessionLogger.log(
                             "Saved resumable session: $appLabel ($remainingMinutes min left)"
                         )
@@ -391,6 +407,7 @@ class TimerService : Service() {
             }
 
             _timerState.value = TimerState.Idle
+            _sessionStartedAtMs.value = 0L
             _currentPackage.value = ""
             _nudgeCount.value = 0
             SettingsManager.setTimerRunning(this@TimerService, false)
@@ -413,16 +430,25 @@ class TimerService : Service() {
         val pkg = _currentPackage.value
         val state = _timerState.value
         val appLabel = getAppLabel(pkg)
+        val suspendedAtMs = System.currentTimeMillis()
 
         serviceScope.launch {
             when (state) {
                 is TimerState.Counting -> {
-                    val remainingMinutes = (state.remainingMs / 60_000).toInt()
-                    if (remainingMinutes >= 1 && pkg.isNotEmpty()) {
+                    val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
+                        ?: (suspendedAtMs - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
+                    if (pkg.isNotEmpty()) {
                         SettingsManager.saveLastSession(
-                            this@TimerService, pkg, remainingMinutes
+                            context = this@TimerService,
+                            packageName = pkg,
+                            totalDurationMs = state.totalMs,
+                            startedAtMs = startedAtMs,
+                            suspendedAtMs = suspendedAtMs,
                         )
                     }
+                    val elapsedMs = (suspendedAtMs - startedAtMs).coerceAtLeast(0L)
+                    val remainingMs = (state.totalMs - elapsedMs).coerceAtLeast(0L)
+                    val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
                     SessionLogger.log(
                         "Session suspended (screen off): $appLabel " +
                             "($remainingMinutes min remaining)"
@@ -439,6 +465,7 @@ class TimerService : Service() {
             }
 
             _timerState.value = TimerState.Idle
+            _sessionStartedAtMs.value = 0L
             _currentPackage.value = ""
             _nudgeCount.value = 0
             SettingsManager.setTimerRunning(this@TimerService, false)
@@ -674,6 +701,7 @@ class TimerService : Service() {
         overlayManager.dismissQuickLaunchFrame()
         SettingsManager.setTimerRunning(this, false)
         SettingsManager.clearQuickLaunchSession(this)
+        _sessionStartedAtMs.value = 0L
         super.onDestroy()
     }
 
@@ -691,6 +719,7 @@ class TimerService : Service() {
         const val ACTION_STOP = "com.mindfulhome.ACTION_STOP_TIMER"
         const val ACTION_HANDLE_REPLY = "com.mindfulhome.ACTION_HANDLE_REPLY"
         const val EXTRA_DURATION_MINUTES = "duration_minutes"
+        const val EXTRA_DURATION_MS = "duration_ms"
         const val EXTRA_PACKAGE_NAME = "package_name"
         const val EXTRA_ALLOWED_PACKAGES = "allowed_packages"
 
@@ -702,6 +731,9 @@ class TimerService : Service() {
         private val _currentPackage = MutableStateFlow("")
         val currentPackage: StateFlow<String> = _currentPackage
 
+        private val _sessionStartedAtMs = MutableStateFlow(0L)
+        val sessionStartedAtMs: StateFlow<Long> = _sessionStartedAtMs
+
         private val _nudgeCount = MutableStateFlow(0)
         val nudgeCount: StateFlow<Int> = _nudgeCount
 
@@ -709,6 +741,15 @@ class TimerService : Service() {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_DURATION_MINUTES, durationMinutes)
+                putExtra(EXTRA_PACKAGE_NAME, packageName)
+            }
+            context.startForegroundService(intent)
+        }
+
+        fun startWithDurationMs(context: Context, durationMs: Long, packageName: String) {
+            val intent = Intent(context, TimerService::class.java).apply {
+                action = ACTION_START
+                putExtra(EXTRA_DURATION_MS, durationMs.coerceAtLeast(1_000L))
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
             }
             context.startForegroundService(intent)

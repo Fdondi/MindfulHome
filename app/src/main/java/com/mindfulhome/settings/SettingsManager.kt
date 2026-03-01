@@ -46,7 +46,9 @@ object SettingsManager {
 
     // Last session (for resume)
     private const val LAST_SESSION_PACKAGE_KEY = "last_session_package"
-    private const val LAST_SESSION_MINUTES_KEY = "last_session_minutes"
+    private const val LAST_SESSION_TOTAL_DURATION_MS_KEY = "last_session_total_duration_ms"
+    private const val LAST_SESSION_STARTED_AT_MS_KEY = "last_session_started_at_ms"
+    private const val LAST_SESSION_SUSPENDED_AT_MS_KEY = "last_session_suspended_at_ms"
 
     // Last declared timer intent (used when forcing user back to timer)
     private const val LAST_DECLARED_MINUTES_KEY = "last_declared_minutes"
@@ -84,32 +86,82 @@ object SettingsManager {
 
     // ── Last session (resume) ────────────────────────────────────────
 
-    data class SavedSession(val packageName: String, val remainingMinutes: Int)
+    data class SavedSession(
+        val packageName: String,
+        val remainingMs: Long,
+        val remainingMinutes: Int,
+        val totalDurationMs: Long,
+        val startedAtMs: Long,
+        val suspendedAtMs: Long?,
+    )
     data class LastDeclaredIntent(
         val minutes: Int,
         val intent: String,
         val declaredAtMs: Long,
     )
 
-    fun saveLastSession(context: Context, packageName: String, remainingMinutes: Int) {
-        prefs(context).edit {
+    fun saveLastSession(
+        context: Context,
+        packageName: String,
+        totalDurationMs: Long,
+        startedAtMs: Long,
+        suspendedAtMs: Long? = null,
+    ) {
+        val p = prefs(context)
+        val existingPackage = p.getString(LAST_SESSION_PACKAGE_KEY, null)
+        val existingTotalMs = p.getLong(LAST_SESSION_TOTAL_DURATION_MS_KEY, 0L)
+        val existingStartedAtMs = p.getLong(LAST_SESSION_STARTED_AT_MS_KEY, 0L)
+        val existingSuspendedAtMs = p.getLong(LAST_SESSION_SUSPENDED_AT_MS_KEY, 0L)
+        val isSameSession = existingPackage == packageName &&
+            existingTotalMs == totalDurationMs &&
+            existingStartedAtMs == startedAtMs
+        val persistedSuspendedAtMs = when {
+            suspendedAtMs != null -> suspendedAtMs
+            isSameSession && existingSuspendedAtMs > 0L -> existingSuspendedAtMs
+            else -> 0L
+        }
+        p.edit {
             putString(LAST_SESSION_PACKAGE_KEY, packageName)
-            putInt(LAST_SESSION_MINUTES_KEY, remainingMinutes)
+            putLong(LAST_SESSION_TOTAL_DURATION_MS_KEY, totalDurationMs)
+            putLong(LAST_SESSION_STARTED_AT_MS_KEY, startedAtMs)
+            putLong(LAST_SESSION_SUSPENDED_AT_MS_KEY, persistedSuspendedAtMs)
         }
     }
 
     fun getLastSession(context: Context): SavedSession? {
         val p = prefs(context)
         val pkg = p.getString(LAST_SESSION_PACKAGE_KEY, null) ?: return null
-        val minutes = p.getInt(LAST_SESSION_MINUTES_KEY, 0)
-        if (pkg.isEmpty() || minutes <= 0) return null
-        return SavedSession(pkg, minutes)
+        val totalDurationMs = p.getLong(LAST_SESSION_TOTAL_DURATION_MS_KEY, 0L)
+        val startedAtMs = p.getLong(LAST_SESSION_STARTED_AT_MS_KEY, 0L)
+        val suspendedAtMsRaw = p.getLong(LAST_SESSION_SUSPENDED_AT_MS_KEY, 0L)
+        if (pkg.isEmpty() || totalDurationMs <= 0L || startedAtMs <= 0L) return null
+
+        val referenceNowMs = if (suspendedAtMsRaw > 0L) {
+            suspendedAtMsRaw
+        } else {
+            System.currentTimeMillis()
+        }
+        val elapsedMs = (referenceNowMs - startedAtMs).coerceAtLeast(0L)
+        val remainingMs = (totalDurationMs - elapsedMs).coerceAtLeast(0L)
+        if (remainingMs <= 0L) return null
+        val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
+
+        return SavedSession(
+            packageName = pkg,
+            remainingMs = remainingMs,
+            remainingMinutes = remainingMinutes,
+            totalDurationMs = totalDurationMs,
+            startedAtMs = startedAtMs,
+            suspendedAtMs = suspendedAtMsRaw.takeIf { it > 0L },
+        )
     }
 
     fun clearLastSession(context: Context) {
         prefs(context).edit {
             remove(LAST_SESSION_PACKAGE_KEY)
-            remove(LAST_SESSION_MINUTES_KEY)
+            remove(LAST_SESSION_TOTAL_DURATION_MS_KEY)
+            remove(LAST_SESSION_STARTED_AT_MS_KEY)
+            remove(LAST_SESSION_SUSPENDED_AT_MS_KEY)
         }
     }
 

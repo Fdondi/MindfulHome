@@ -162,9 +162,9 @@ class MainActivity : ComponentActivity() {
                                         "",
                                     )
                                     SettingsManager.clearLastSession(this@MainActivity)
-                                    TimerService.start(
+                                    TimerService.startWithDurationMs(
                                         this@MainActivity,
-                                        session.remainingMinutes,
+                                        session.remainingMs,
                                         session.packageName,
                                     )
                                     navCtrl.navigate("home") {
@@ -318,9 +318,17 @@ class MainActivity : ComponentActivity() {
         val timerState = TimerService.timerState.value
         val currentPkg = TimerService.currentPackage.value
         if (timerState is TimerState.Counting && currentPkg.isNotEmpty()) {
-            val remainingMinutes = (timerState.remainingMs / 60_000).toInt()
-            if (remainingMinutes >= 1) {
-                SettingsManager.saveLastSession(this, currentPkg, remainingMinutes)
+            val startedAtMs = TimerService.sessionStartedAtMs.value.takeIf { it > 0L }
+                ?: (System.currentTimeMillis() - (timerState.totalMs - timerState.remainingMs).coerceAtLeast(0L))
+            val totalDurationMs = timerState.totalMs.coerceAtLeast(1_000L)
+            if (totalDurationMs >= 1_000L) {
+                SettingsManager.saveLastSession(
+                    context = this,
+                    packageName = currentPkg,
+                    totalDurationMs = totalDurationMs,
+                    startedAtMs = startedAtMs,
+                    suspendedAtMs = null,
+                )
             }
         }
 
