@@ -75,7 +75,7 @@ class TimerService : Service() {
         Log.d(TAG, "onCreate")
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
-        karmaManager = KarmaManager(repository)
+        karmaManager = KarmaManager(this, repository)
         overlayManager = OverlayNudgeManager(this)
         overlayManager.onDismissed = { onOverlayDismissed() }
         overlayManager.onBubbleTapped = { onBubbleTapped() }
@@ -271,9 +271,15 @@ class TimerService : Service() {
         val appLabel = getAppLabel(packageName)
         SessionLogger.log("**Time's up!** Session timer expired (was using $appLabel)")
 
+        val canOverlay = overlayManager.canDrawOverlay()
+        Log.d(TAG, "onTimerExpired: canDrawOverlay=$canOverlay")
+
         val initialMessage = "Time's up! Ready to put down $appLabel?"
-        if (overlayManager.canDrawOverlay()) {
+        if (canOverlay) {
             overlayManager.show(initialMessage)
+        } else {
+            Log.w(TAG, "Overlay permission not granted — nudges will appear as notifications only")
+            SessionLogger.log("(Overlay permission not granted — nudges will appear as notifications only)")
         }
 
         startNudgeConversation(packageName)
@@ -644,6 +650,16 @@ class TimerService : Service() {
     private fun showConversationNotification(packageName: String) {
         if (nudgeMessages.isEmpty()) return
 
+        // Tapping the notification brings the user directly to the timer screen.
+        val tapIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            putExtra(MainActivity.EXTRA_FORCE_TIMER, true)
+        }
+        val tapPendingIntent = PendingIntent.getActivity(
+            this, NUDGE_NOTIFICATION_ID, tapIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
         // RemoteInput for inline reply
         val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY)
             .setLabel("Reply...")
@@ -676,6 +692,7 @@ class TimerService : Service() {
 
         val notification = NotificationCompat.Builder(this, MindfulHomeApp.NUDGE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentIntent(tapPendingIntent)
             .setStyle(messagingStyle)
             .addAction(replyAction)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -685,6 +702,9 @@ class TimerService : Service() {
             .build()
 
         val notificationManager = getSystemService(NotificationManager::class.java)
+        // Cancel before reposting so subsequent nudges re-trigger the heads-up banner.
+        // Without this, updating the same notification ID is silent on most OEMs.
+        notificationManager.cancel(NUDGE_NOTIFICATION_ID)
         notificationManager.notify(NUDGE_NOTIFICATION_ID, notification)
     }
 

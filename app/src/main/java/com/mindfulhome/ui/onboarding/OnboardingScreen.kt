@@ -42,6 +42,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.mindfulhome.service.UsageTracker
+import com.mindfulhome.settings.SettingsManager
 
 @Composable
 fun OnboardingScreen(
@@ -288,7 +289,14 @@ private fun NotificationPermissionStep(onNext: () -> Unit) {
     }
 
     OutlinedButton(
-        onClick = onNext,
+        onClick = {
+            SettingsManager.setPermissionPromptSuppressed(
+                context,
+                SettingsManager.PermissionPrompt.NOTIFICATIONS,
+                !hasPermission,
+            )
+            onNext()
+        },
         modifier = Modifier.fillMaxWidth(0.6f)
     ) {
         Text(if (hasPermission) "Continue" else "Skip for now")
@@ -343,7 +351,14 @@ private fun UsageAccessStep(
     }
 
     OutlinedButton(
-        onClick = onNext,
+        onClick = {
+            SettingsManager.setPermissionPromptSuppressed(
+                context,
+                SettingsManager.PermissionPrompt.USAGE_ACCESS,
+                !hasPermission,
+            )
+            onNext()
+        },
         modifier = Modifier.fillMaxWidth(0.6f)
     ) {
         Text(if (hasPermission) "Continue" else "Skip for now")
@@ -402,7 +417,14 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
     }
 
     OutlinedButton(
-        onClick = onNext,
+        onClick = {
+            SettingsManager.setPermissionPromptSuppressed(
+                context,
+                SettingsManager.PermissionPrompt.OVERLAY,
+                !hasPermission,
+            )
+            onNext()
+        },
         modifier = Modifier.fillMaxWidth(0.6f)
     ) {
         Text(if (hasPermission) "Continue" else "Skip for now")

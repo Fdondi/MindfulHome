@@ -1,12 +1,14 @@
 package com.mindfulhome
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.Context
 import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -26,6 +28,7 @@ import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
+import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.ui.home.HomeScreen
 import com.mindfulhome.ui.logs.LogsScreen
@@ -49,6 +52,7 @@ class MainActivity : ComponentActivity() {
     // Optional reason provided when starting the timer; consumed by the chat screen
     private var unlockReason by mutableStateOf("")
     private var showForcedTimerContext by mutableStateOf(false)
+    private var permissionDialogShowing = false
 
     companion object {
         const val EXTRA_FORCE_TIMER = "force_timer"
@@ -63,8 +67,14 @@ class MainActivity : ComponentActivity() {
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { _ ->
-        // Nothing to do -- we just needed the system dialog to show
+    ) { granted ->
+        if (granted) {
+            SettingsManager.setPermissionPromptSuppressed(
+                this,
+                SettingsManager.PermissionPrompt.NOTIFICATIONS,
+                false,
+            )
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,9 +85,7 @@ class MainActivity : ComponentActivity() {
 
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
-        karmaManager = KarmaManager(repository)
-
-        requestNotificationPermissionIfNeeded()
+        karmaManager = KarmaManager(this, repository)
 
         // Handle intent on cold launch (onNewIntent is only called for warm launches)
         handleIncomingIntent(intent)
@@ -370,16 +378,127 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        maybePromptForMissingPermission()
     }
 
-    private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            val granted = ContextCompat.checkSelfPermission(
-                this, Manifest.permission.POST_NOTIFICATIONS
-            ) == PackageManager.PERMISSION_GRANTED
-            if (!granted) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
+    private enum class MissingPermission {
+        Notifications,
+        UsageAccess,
+        Overlay,
+    }
+
+    private fun maybePromptForMissingPermission() {
+        if (permissionDialogShowing || isFinishing || isDestroyed) return
+
+        val onboardingDone = getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+            .getBoolean("onboarding_done", false)
+        if (!onboardingDone) return
+
+        val hasNotifications = hasNotificationPermission()
+        val hasUsageAccess = UsageTracker.hasUsageStatsPermission(this)
+        val hasOverlay = Settings.canDrawOverlays(this)
+
+        if (hasNotifications) {
+            SettingsManager.setPermissionPromptSuppressed(
+                this,
+                SettingsManager.PermissionPrompt.NOTIFICATIONS,
+                false,
+            )
         }
+        if (hasUsageAccess) {
+            SettingsManager.setPermissionPromptSuppressed(
+                this,
+                SettingsManager.PermissionPrompt.USAGE_ACCESS,
+                false,
+            )
+        }
+        if (hasOverlay) {
+            SettingsManager.setPermissionPromptSuppressed(
+                this,
+                SettingsManager.PermissionPrompt.OVERLAY,
+                false,
+            )
+        }
+
+        val missingPermission = when {
+            !hasNotifications && !SettingsManager.isPermissionPromptSuppressed(
+                this, SettingsManager.PermissionPrompt.NOTIFICATIONS
+            ) -> MissingPermission.Notifications
+            !hasUsageAccess && !SettingsManager.isPermissionPromptSuppressed(
+                this, SettingsManager.PermissionPrompt.USAGE_ACCESS
+            ) -> MissingPermission.UsageAccess
+            !hasOverlay && !SettingsManager.isPermissionPromptSuppressed(
+                this, SettingsManager.PermissionPrompt.OVERLAY
+            ) -> MissingPermission.Overlay
+            else -> null
+        } ?: return
+
+        showMissingPermissionDialog(missingPermission)
+    }
+
+    private fun showMissingPermissionDialog(missingPermission: MissingPermission) {
+        permissionDialogShowing = true
+
+        val (title, message, promptKey) = when (missingPermission) {
+            MissingPermission.Notifications -> Triple(
+                "Allow notifications",
+                "MindfulHome needs notification permission to show timer and nudge alerts.",
+                SettingsManager.PermissionPrompt.NOTIFICATIONS,
+            )
+            MissingPermission.UsageAccess -> Triple(
+                "Grant Usage Access",
+                "MindfulHome needs Usage Access to detect your foreground app for timer and karma tracking.",
+                SettingsManager.PermissionPrompt.USAGE_ACCESS,
+            )
+            MissingPermission.Overlay -> Triple(
+                "Allow overlay permission",
+                "MindfulHome can show nudge overlays and chat heads over apps. Without it, only notifications are used.",
+                SettingsManager.PermissionPrompt.OVERLAY,
+            )
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setCancelable(true)
+            .setPositiveButton("Grant") { dialog, _ ->
+                permissionDialogShowing = false
+                dialog.dismiss()
+                when (missingPermission) {
+                    MissingPermission.Notifications -> {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                    MissingPermission.UsageAccess -> {
+                        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                    }
+                    MissingPermission.Overlay -> {
+                        startActivity(
+                            Intent(
+                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                android.net.Uri.parse("package:$packageName"),
+                            )
+                        )
+                    }
+                }
+            }
+            .setNegativeButton("Skip for now") { dialog, _ ->
+                SettingsManager.setPermissionPromptSuppressed(this, promptKey, true)
+                permissionDialogShowing = false
+                dialog.dismiss()
+            }
+            .setOnCancelListener {
+                permissionDialogShowing = false
+            }
+            .show()
+    }
+
+    private fun hasNotificationPermission(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
     }
 }

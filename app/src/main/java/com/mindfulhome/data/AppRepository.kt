@@ -3,6 +3,9 @@ package com.mindfulhome.data
 import kotlinx.coroutines.flow.Flow
 
 class AppRepository(private val database: AppDatabase) {
+    private companion object {
+        const val DEFAULT_HIDE_THRESHOLD = -2
+    }
 
     private val karmaDao = database.appKarmaDao()
     private val sessionDao = database.usageSessionDao()
@@ -21,17 +24,14 @@ class AppRepository(private val database: AppDatabase) {
         }
     }
 
-    suspend fun adjustKarma(packageName: String, delta: Int, hideThreshold: Int = -10) {
-        val current = getKarma(packageName)
-        if (current.isOptedOut) return
-        val newScore = current.karmaScore + delta
-        val shouldHide = newScore <= hideThreshold
-        karmaDao.upsert(
-            current.copy(
-                karmaScore = newScore,
-                isHidden = shouldHide
-            )
-        )
+    suspend fun adjustKarma(
+        packageName: String,
+        delta: Int,
+        hideThreshold: Int = DEFAULT_HIDE_THRESHOLD
+    ) {
+        mutateKarma(packageName, hideThreshold) { current ->
+            current.copy(karmaScore = current.karmaScore + delta)
+        }
     }
 
     suspend fun recordAppOpened(packageName: String) {
@@ -44,20 +44,18 @@ class AppRepository(private val database: AppDatabase) {
         )
     }
 
-    suspend fun recordClosedOnTime(packageName: String) {
-        val current = getKarma(packageName)
-        if (current.isOptedOut) {
-            karmaDao.upsert(current.copy(closedOnTimeCount = current.closedOnTimeCount + 1))
-            return
-        }
-        val recovered = (current.karmaScore + 1).coerceAtMost(0)
-        karmaDao.upsert(
+    suspend fun recordClosedOnTime(packageName: String, hideThreshold: Int) {
+        mutateKarma(packageName, hideThreshold, allowWhenOptedOut = true) { current ->
+            val recovered = if (current.isOptedOut) {
+                current.karmaScore
+            } else {
+                (current.karmaScore + 1).coerceAtMost(0)
+            }
             current.copy(
                 karmaScore = recovered,
-                closedOnTimeCount = current.closedOnTimeCount + 1,
-                isHidden = recovered <= -10
+                closedOnTimeCount = current.closedOnTimeCount + 1
             )
-        )
+        }
     }
 
     suspend fun recordOverrun(packageName: String) {
@@ -70,19 +68,47 @@ class AppRepository(private val database: AppDatabase) {
     }
 
     suspend fun forgiveApp(packageName: String) {
-        karmaDao.resetKarma(packageName)
-    }
-
-    suspend fun setOptedOut(packageName: String, optedOut: Boolean) {
-        getKarma(packageName) // ensure the row exists before updating
-        karmaDao.setOptedOut(packageName, optedOut)
-        if (optedOut) {
-            karmaDao.resetKarma(packageName)
+        mutateKarma(packageName, allowWhenOptedOut = true) { current ->
+            current.copy(karmaScore = 0)
         }
     }
 
-    suspend fun dailyKarmaRecovery() {
-        karmaDao.dailyKarmaRecovery()
+    suspend fun setOptedOut(packageName: String, optedOut: Boolean) {
+        val current = getKarma(packageName) // ensure the row exists before updating
+        val updated = if (optedOut) {
+            current.copy(isOptedOut = true, karmaScore = 0)
+        } else {
+            current.copy(isOptedOut = false)
+        }
+        upsertWithDerivedHidden(updated)
+    }
+
+    suspend fun dailyKarmaRecovery(hideThreshold: Int) {
+        val hiddenApps = karmaDao.getHiddenAppsForRecovery()
+        hiddenApps.forEach { appKarma ->
+            val recovered = (appKarma.karmaScore + 1).coerceAtMost(0)
+            upsertWithDerivedHidden(appKarma.copy(karmaScore = recovered), hideThreshold)
+        }
+    }
+
+    private suspend fun mutateKarma(
+        packageName: String,
+        hideThreshold: Int = DEFAULT_HIDE_THRESHOLD,
+        allowWhenOptedOut: Boolean = false,
+        update: (AppKarma) -> AppKarma
+    ) {
+        val current = getKarma(packageName)
+        if (current.isOptedOut && !allowWhenOptedOut) return
+        val updated = update(current)
+        upsertWithDerivedHidden(updated, hideThreshold)
+    }
+
+    private suspend fun upsertWithDerivedHidden(
+        karma: AppKarma,
+        hideThreshold: Int = DEFAULT_HIDE_THRESHOLD
+    ) {
+        val shouldHide = !karma.isOptedOut && karma.karmaScore <= hideThreshold
+        karmaDao.upsert(karma.copy(isHidden = shouldHide))
     }
 
     // Sessions

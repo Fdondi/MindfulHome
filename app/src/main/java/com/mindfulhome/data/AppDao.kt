@@ -19,6 +19,9 @@ interface AppKarmaDao {
     @Query("SELECT * FROM app_karma WHERE isHidden = 1")
     fun getHiddenApps(): Flow<List<AppKarma>>
 
+    @Query("SELECT * FROM app_karma WHERE isHidden = 1 AND karmaScore < 0 AND isOptedOut = 0")
+    suspend fun getHiddenAppsForRecovery(): List<AppKarma>
+
     @Query("SELECT * FROM app_karma WHERE isHidden = 0")
     fun getVisibleApps(): Flow<List<AppKarma>>
 
@@ -27,21 +30,6 @@ interface AppKarmaDao {
 
     @Update
     suspend fun update(karma: AppKarma)
-
-    @Query("UPDATE app_karma SET karmaScore = karmaScore + :delta WHERE packageName = :packageName")
-    suspend fun adjustKarma(packageName: String, delta: Int)
-
-    @Query("UPDATE app_karma SET isHidden = :hidden WHERE packageName = :packageName")
-    suspend fun setHidden(packageName: String, hidden: Boolean)
-
-    @Query("UPDATE app_karma SET karmaScore = 0, isHidden = 0 WHERE packageName = :packageName")
-    suspend fun resetKarma(packageName: String)
-
-    @Query("UPDATE app_karma SET isOptedOut = :optedOut, isHidden = 0 WHERE packageName = :packageName")
-    suspend fun setOptedOut(packageName: String, optedOut: Boolean)
-
-    @Query("UPDATE app_karma SET karmaScore = MIN(karmaScore + 1, 0) WHERE isHidden = 1 AND karmaScore < 0")
-    suspend fun dailyKarmaRecovery()
 }
 
 @Dao

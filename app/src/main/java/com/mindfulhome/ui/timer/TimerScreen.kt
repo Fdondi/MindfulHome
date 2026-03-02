@@ -63,12 +63,14 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.mindfulhome.BuildConfig
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
@@ -103,13 +105,13 @@ fun TimerScreen(
     ) -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val density = LocalDensity.current
     val scope = rememberCoroutineScope()
+    val appVersion = BuildConfig.VERSION_NAME
 
     val items = (1..MAX_MINUTES).toList()
     val listState = rememberLazyListState()
     var reason by remember { mutableStateOf("") }
-
-    var selectedMinutes by remember { mutableStateOf(1) }
 
     val centerIndex by remember {
         derivedStateOf {
@@ -123,16 +125,9 @@ fun TimerScreen(
         }
     }
 
-    // Only commit selection when the user finishes an active scroll gesture
-    LaunchedEffect(Unit) {
-        var wasScrolling = false
-        snapshotFlow { listState.isScrollInProgress to centerIndex }
-            .collect { (scrolling, index) ->
-                if (wasScrolling && !scrolling) {
-                    selectedMinutes = items.getOrElse(index) { 1 }
-                }
-                wasScrolling = scrolling
-            }
+    // Keep all actions relative to the same highlighted center row.
+    val selectedMinutes by remember {
+        derivedStateOf { items.getOrElse(centerIndex) { 1 } }
     }
 
     // Restore scroll position when viewport resizes (keyboard open/close)
@@ -143,7 +138,13 @@ fun TimerScreen(
             if (!listState.isScrollInProgress) {
                 val targetIndex = selectedMinutes - 1
                 if (targetIndex >= 0) {
-                    listState.scrollToItem(targetIndex)
+                    val viewportHeightPx =
+                        listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
+                    val itemHeightPx = with(density) {
+                        ITEM_HEIGHT_DP.dp.roundToPx()
+                    }
+                    val centerOffset = -((viewportHeightPx - itemHeightPx) / 2)
+                    listState.scrollToItem(targetIndex, centerOffset)
                 }
             }
         }
@@ -217,6 +218,16 @@ fun TimerScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
+                text = "v$appVersion",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Start,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
                 text = "How long do you want\nto use your phone?",
                 style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center,
@@ -227,8 +238,8 @@ fun TimerScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 val intentText = forcedReturnIntent.intent.ifBlank { "(no intent declared)" }
                 Text(
-                    text = "Previous plan: ${formatMinutes(forcedReturnIntent.minutes)} · " +
-                        "$intentText · ${formatTimeAgo(forcedReturnIntent.declaredAtMs)}",
+                    text = "Previous plan: ${formatMinutes(forcedReturnIntent.minutes)} \u00b7 " +
+                        "$intentText \u00b7 ${formatTimeAgo(forcedReturnIntent.declaredAtMs)}",
                     style = MaterialTheme.typography.bodyMedium,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -320,7 +331,7 @@ fun TimerScreen(
                 onClick = {
                     Log.d("TimerScreen", "Start clicked: selectedMinutes=$selectedMinutes reason='${reason.trim()}'")
                     val trimmedReason = reason.trim()
-                    val logSuffix = if (trimmedReason.isNotEmpty()) " — $trimmedReason" else ""
+                    val logSuffix = if (trimmedReason.isNotEmpty()) " \u2014 $trimmedReason" else ""
                     SessionLogger.log("Timer set: **$selectedMinutes min**$logSuffix")
                     Log.d("TimerScreen", "Calling onTimerSet")
                     onTimerSet(selectedMinutes, trimmedReason)
@@ -527,7 +538,7 @@ private fun AddToShelfDialog(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search apps…") },
+                    placeholder = { Text("Search apps\u2026") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                     trailingIcon = {

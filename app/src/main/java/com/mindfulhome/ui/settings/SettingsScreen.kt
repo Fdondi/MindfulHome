@@ -1,10 +1,13 @@
 package com.mindfulhome.ui.settings
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.foundation.layout.Column
@@ -45,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.credentials.exceptions.NoCredentialException
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -65,7 +69,61 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val hasUsageStats = remember { UsageTracker.hasUsageStatsPermission(context) }
+    var hasUsageStats by remember { mutableStateOf(UsageTracker.hasUsageStatsPermission(context)) }
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+    var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+
+    var skippedUsagePrompt by remember {
+        mutableStateOf(
+            SettingsManager.isPermissionPromptSuppressed(
+                context, SettingsManager.PermissionPrompt.USAGE_ACCESS
+            )
+        )
+    }
+    var skippedNotificationPrompt by remember {
+        mutableStateOf(
+            SettingsManager.isPermissionPromptSuppressed(
+                context, SettingsManager.PermissionPrompt.NOTIFICATIONS
+            )
+        )
+    }
+    var skippedOverlayPrompt by remember {
+        mutableStateOf(
+            SettingsManager.isPermissionPromptSuppressed(
+                context, SettingsManager.PermissionPrompt.OVERLAY
+            )
+        )
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        hasUsageStats = UsageTracker.hasUsageStatsPermission(context)
+        hasNotificationPermission =
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.POST_NOTIFICATIONS,
+                ) == PackageManager.PERMISSION_GRANTED
+        hasOverlayPermission = Settings.canDrawOverlays(context)
+
+        skippedUsagePrompt = SettingsManager.isPermissionPromptSuppressed(
+            context, SettingsManager.PermissionPrompt.USAGE_ACCESS
+        )
+        skippedNotificationPrompt = SettingsManager.isPermissionPromptSuppressed(
+            context, SettingsManager.PermissionPrompt.NOTIFICATIONS
+        )
+        skippedOverlayPrompt = SettingsManager.isPermissionPromptSuppressed(
+            context, SettingsManager.PermissionPrompt.OVERLAY
+        )
+    }
+
     val hasModel = remember { LiteRtLmManager.hasModel(context) }
 
     var aiMode by remember { mutableStateOf(SettingsManager.getAIMode(context)) }
@@ -123,11 +181,17 @@ fun SettingsScreen(
                 title = "Usage Access",
                 description = if (hasUsageStats) {
                     "Granted. MindfulHome can track which app is in the foreground."
+                } else if (skippedUsagePrompt) {
+                    "Missing. You chose to skip permission reminders. Grant anytime from here."
                 } else {
                     "Required for karma tracking. Tap to grant."
                 },
                 actionLabel = if (hasUsageStats) null else "Grant",
                 onAction = {
+                    SettingsManager.setPermissionPromptSuppressed(
+                        context, SettingsManager.PermissionPrompt.USAGE_ACCESS, false
+                    )
+                    skippedUsagePrompt = false
                     context.startActivity(
                         Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
                     )
@@ -138,9 +202,20 @@ fun SettingsScreen(
 
             SettingsCard(
                 title = "Notification Permission",
-                description = "Required for timer countdown and nudge notifications.",
-                actionLabel = "Check",
+                description = when {
+                    hasNotificationPermission ->
+                        "Granted. MindfulHome can show timer and nudge notifications."
+                    skippedNotificationPrompt ->
+                        "Missing. You chose to skip permission reminders. Grant anytime from here."
+                    else ->
+                        "Required for timer countdown and nudge notifications."
+                },
+                actionLabel = if (hasNotificationPermission) "Open Settings" else "Grant",
                 onAction = {
+                    SettingsManager.setPermissionPromptSuppressed(
+                        context, SettingsManager.PermissionPrompt.NOTIFICATIONS, false
+                    )
+                    skippedNotificationPrompt = false
                     context.startActivity(
                         Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
                             putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
@@ -151,23 +226,22 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            var hasOverlayPermission by remember {
-                mutableStateOf(Settings.canDrawOverlays(context))
-            }
-            LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-                hasOverlayPermission = Settings.canDrawOverlays(context)
-            }
-
             SettingsCard(
                 title = "Overlay Permission",
                 description = if (hasOverlayPermission) {
                     "Granted. Nudge reminders will appear over any app."
+                } else if (skippedOverlayPrompt) {
+                    "Missing. You chose to skip permission reminders. Grant anytime from here."
                 } else {
                     "Not granted. Nudges will only appear as notifications, " +
                         "which Android may silence over time. Tap to grant."
                 },
                 actionLabel = if (hasOverlayPermission) null else "Grant",
                 onAction = {
+                    SettingsManager.setPermissionPromptSuppressed(
+                        context, SettingsManager.PermissionPrompt.OVERLAY, false
+                    )
+                    skippedOverlayPrompt = false
                     val intent = Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                         Uri.parse("package:${context.packageName}")
@@ -270,6 +344,55 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "${escalationThreshold.toInt()} warnings",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            var hideThreshold by remember {
+                mutableFloatStateOf(
+                    SettingsManager.getHideThreshold(context).toFloat()
+                )
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Strikes Before Hiding",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "How many bad-karma points an app accumulates before " +
+                            "it is hidden from the home screen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Slider(
+                            value = hideThreshold,
+                            onValueChange = { hideThreshold = it },
+                            onValueChangeFinished = {
+                                SettingsManager.setHideThreshold(
+                                    context, hideThreshold.toInt()
+                                )
+                            },
+                            valueRange = SettingsManager.MIN_HIDE_THRESHOLD.toFloat()..
+                                SettingsManager.MAX_HIDE_THRESHOLD.toFloat(),
+                            steps = SettingsManager.MAX_HIDE_THRESHOLD -
+                                SettingsManager.MIN_HIDE_THRESHOLD - 1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${hideThreshold.toInt()} strikes",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )

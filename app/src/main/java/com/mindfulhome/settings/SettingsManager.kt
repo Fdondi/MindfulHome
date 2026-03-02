@@ -34,6 +34,12 @@ object SettingsManager {
     const val MIN_ESCALATION_THRESHOLD = 2
     const val MAX_ESCALATION_THRESHOLD = 15
 
+    // Karma hide threshold (number of bad-karma points before the app is hidden)
+    private const val HIDE_THRESHOLD_KEY = "karma_hide_threshold"
+    const val DEFAULT_HIDE_THRESHOLD = 2
+    const val MIN_HIDE_THRESHOLD = 0
+    const val MAX_HIDE_THRESHOLD = 10
+
     // Screen-off timestamp (to compute how long the user was away)
     private const val LAST_SCREEN_OFF_KEY = "last_screen_off_timestamp"
 
@@ -54,6 +60,11 @@ object SettingsManager {
     private const val LAST_DECLARED_MINUTES_KEY = "last_declared_minutes"
     private const val LAST_DECLARED_INTENT_KEY = "last_declared_intent"
     private const val LAST_DECLARED_AT_MS_KEY = "last_declared_at_ms"
+
+    // Permission prompt suppression (user explicitly skipped prompts)
+    private const val SUPPRESS_NOTIFICATIONS_PROMPT_KEY = "suppress_notifications_prompt"
+    private const val SUPPRESS_USAGE_ACCESS_PROMPT_KEY = "suppress_usage_access_prompt"
+    private const val SUPPRESS_OVERLAY_PROMPT_KEY = "suppress_overlay_prompt"
 
     /** Available Vertex AI models the user can pick from. */
     data class ModelOption(val id: String, val label: String, val description: String)
@@ -84,6 +95,27 @@ object SettingsManager {
         prefs(context).edit { putString(BACKEND_MODEL_KEY, model) }
     }
 
+    // ── Permission prompt suppression ────────────────────────────────
+
+    private fun permissionPromptKey(permissionPrompt: PermissionPrompt): String = when (permissionPrompt) {
+        PermissionPrompt.NOTIFICATIONS -> SUPPRESS_NOTIFICATIONS_PROMPT_KEY
+        PermissionPrompt.USAGE_ACCESS -> SUPPRESS_USAGE_ACCESS_PROMPT_KEY
+        PermissionPrompt.OVERLAY -> SUPPRESS_OVERLAY_PROMPT_KEY
+    }
+
+    fun isPermissionPromptSuppressed(context: Context, permissionPrompt: PermissionPrompt): Boolean =
+        prefs(context).getBoolean(permissionPromptKey(permissionPrompt), false)
+
+    fun setPermissionPromptSuppressed(
+        context: Context,
+        permissionPrompt: PermissionPrompt,
+        suppressed: Boolean,
+    ) {
+        prefs(context).edit {
+            putBoolean(permissionPromptKey(permissionPrompt), suppressed)
+        }
+    }
+
     // ── Last session (resume) ────────────────────────────────────────
 
     data class SavedSession(
@@ -99,6 +131,12 @@ object SettingsManager {
         val intent: String,
         val declaredAtMs: Long,
     )
+
+    enum class PermissionPrompt {
+        NOTIFICATIONS,
+        USAGE_ACCESS,
+        OVERLAY,
+    }
 
     fun saveLastSession(
         context: Context,
@@ -212,6 +250,17 @@ object SettingsManager {
     fun setEscalationThreshold(context: Context, threshold: Int) {
         prefs(context).edit {
             putInt(ESCALATION_THRESHOLD_KEY, threshold.coerceIn(MIN_ESCALATION_THRESHOLD, MAX_ESCALATION_THRESHOLD))
+        }
+    }
+
+    // ── Karma hide threshold ────────────────────────────────────────
+
+    fun getHideThreshold(context: Context): Int =
+        prefs(context).getInt(HIDE_THRESHOLD_KEY, DEFAULT_HIDE_THRESHOLD)
+
+    fun setHideThreshold(context: Context, threshold: Int) {
+        prefs(context).edit {
+            putInt(HIDE_THRESHOLD_KEY, threshold.coerceIn(MIN_HIDE_THRESHOLD, MAX_HIDE_THRESHOLD))
         }
     }
 
