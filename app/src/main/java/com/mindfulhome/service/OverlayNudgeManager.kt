@@ -16,8 +16,10 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
-import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.TextView
+import com.mindfulhome.R
+import kotlin.random.Random
 
 /**
  * Manages a floating overlay that appears on top of other apps when the
@@ -31,36 +33,14 @@ class OverlayNudgeManager(private val context: Context) {
 
     private val handler = Handler(Looper.getMainLooper())
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    private var overlayView: View? = null
-    private var messageView: TextView? = null
     private var quickLaunchFrameView: View? = null
-    private var bubbleView: View? = null
-    private var bubbleBadgeView: TextView? = null
+    private val bubbleEntries = mutableListOf<BubbleEntry>()
+    private var nextBubbleId = 1
 
     var onDismissed: (() -> Unit)? = null
-    var onBubbleTapped: (() -> Unit)? = null
+    var onNotificationRequested: (() -> Unit)? = null
 
     fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
-
-    fun isShowing(): Boolean = overlayView != null
-
-    fun show(message: String) {
-        handler.post { showInternal(message) }
-    }
-
-    fun update(message: String) {
-        handler.post {
-            if (overlayView != null) {
-                messageView?.text = message
-            } else {
-                showInternal(message)
-            }
-        }
-    }
-
-    fun dismiss() {
-        handler.post { dismissInternal() }
-    }
 
     fun showQuickLaunchFrame() {
         handler.post { showQuickLaunchFrameInternal() }
@@ -70,125 +50,18 @@ class OverlayNudgeManager(private val context: Context) {
         handler.post { dismissQuickLaunchFrameInternal() }
     }
 
-    fun isBubbleShowing(): Boolean = bubbleView != null
-
     fun showBubble(nudgeCount: Int) {
         handler.post { showBubbleInternal(nudgeCount) }
     }
 
-    fun updateBubbleCount(nudgeCount: Int) {
-        handler.post { updateBubbleCountInternal(nudgeCount) }
-    }
-
-    fun dismissBubble() {
-        handler.post { dismissBubbleInternal() }
-    }
-
-    private fun showInternal(message: String) {
-        if (overlayView != null) {
-            messageView?.text = message
-            return
-        }
-        if (!canDrawOverlay()) {
-            Log.w(TAG, "Cannot draw overlay — permission not granted")
-            return
-        }
-
-        val dp = { value: Int ->
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, value.toFloat(),
-                context.resources.displayMetrics
-            ).toInt()
-        }
-
-        val card = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(16))
-            val bg = GradientDrawable().apply {
-                setColor(Color.parseColor("#E6212121"))
-                cornerRadius = dp(16).toFloat()
-            }
-            background = bg
-            elevation = dp(8).toFloat()
-        }
-
-        val title = TextView(context).apply {
-            text = "MindfulHome"
-            setTextColor(Color.parseColor("#FFFFAB40"))
-            textSize = 13f
-            typeface = Typeface.DEFAULT_BOLD
-        }
-        card.addView(title)
-
-        val msg = TextView(context).apply {
-            text = message
-            setTextColor(Color.WHITE)
-            textSize = 15f
-            setPadding(0, dp(6), 0, dp(8))
-        }
-        messageView = msg
-        card.addView(msg)
-
-        val btn = TextView(context).apply {
-            text = "I'm done"
-            setTextColor(Color.parseColor("#FF81C784"))
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(16), dp(8), dp(16), dp(8))
-            val btnBg = GradientDrawable().apply {
-                setColor(Color.parseColor("#33FFFFFF"))
-                cornerRadius = dp(8).toFloat()
-            }
-            background = btnBg
-            gravity = Gravity.CENTER
-            setOnClickListener {
-                dismissInternal()
-                onDismissed?.invoke()
-            }
-        }
-        val btnParams = LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply { gravity = Gravity.END }
-        card.addView(btn, btnParams)
-
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-            x = 0
-            y = dp(48)
-        }
-
-        try {
-            windowManager.addView(card, params)
-            overlayView = card
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to add overlay view", e)
+    fun updateConversationMessage(@Suppress("UNUSED_PARAMETER") message: String, nudgeCount: Int) {
+        handler.post {
+            bubbleEntries.forEach { it.badge.text = badgeText(nudgeCount) }
         }
     }
 
-    private fun dismissInternal() {
-        overlayView?.let {
-            try {
-                windowManager.removeView(it)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to remove overlay view", e)
-            }
-        }
-        overlayView = null
-        messageView = null
+    fun dismissAllNudges() {
+        handler.post { dismissAllNudgesInternal() }
     }
 
     private fun showQuickLaunchFrameInternal() {
@@ -254,10 +127,10 @@ class OverlayNudgeManager(private val context: Context) {
 
     @Suppress("ClickableViewAccessibility")
     private fun showBubbleInternal(nudgeCount: Int) {
-        if (bubbleView != null) {
-            updateBubbleCountInternal(nudgeCount)
-            return
-        }
+        Log.d(
+            TAG,
+            "showBubbleInternal requested nudgeCount=$nudgeCount existing=${bubbleEntries.size}"
+        )
         if (!canDrawOverlay()) {
             Log.w(TAG, "Cannot draw bubble — overlay permission not granted")
             return
@@ -270,7 +143,9 @@ class OverlayNudgeManager(private val context: Context) {
             ).toInt()
         }
 
-        val bubbleSize = dp(56)
+        // Grow bubble radius by 5% at every nudge.
+        val growthFactor = 1f + ((nudgeCount - 1).coerceAtLeast(0) * 0.05f)
+        val bubbleSize = (dp(56) * growthFactor).toInt().coerceAtLeast(dp(56))
         val badgeSize = dp(22)
         val containerSize = bubbleSize + badgeSize / 2
 
@@ -285,14 +160,12 @@ class OverlayNudgeManager(private val context: Context) {
             elevation = dp(6).toFloat()
         }
 
-        val label = TextView(context).apply {
-            text = "M"
-            setTextColor(Color.parseColor("#FFFFAB40"))
-            textSize = 24f
-            typeface = Typeface.DEFAULT_BOLD
-            gravity = Gravity.CENTER
+        val logo = ImageView(context).apply {
+            setImageResource(R.drawable.ic_launcher_foreground)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            setPadding(dp(10), dp(10), dp(10), dp(10))
         }
-        circle.addView(label, FrameLayout.LayoutParams(bubbleSize, bubbleSize))
+        circle.addView(logo, FrameLayout.LayoutParams(bubbleSize, bubbleSize))
 
         val circleParams = FrameLayout.LayoutParams(bubbleSize, bubbleSize).apply {
             gravity = Gravity.BOTTOM or Gravity.START
@@ -311,20 +184,13 @@ class OverlayNudgeManager(private val context: Context) {
             }
             elevation = dp(8).toFloat()
         }
-        bubbleBadgeView = badge
-
         val badgeParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
             gravity = Gravity.TOP or Gravity.END
         }
         container.addView(badge, badgeParams)
 
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-
         val metrics = context.resources.displayMetrics
+        val layoutType = overlayLayoutType()
         val params = WindowManager.LayoutParams(
             containerSize,
             containerSize,
@@ -334,8 +200,15 @@ class OverlayNudgeManager(private val context: Context) {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = metrics.widthPixels - containerSize - dp(8)
-            y = metrics.heightPixels / 3
+            val xRangeMin = dp(8)
+            val xRangeMax = (metrics.widthPixels - containerSize - dp(8)).coerceAtLeast(xRangeMin)
+            val yRangeMin = dp(60)
+            val yRangeMax = (metrics.heightPixels - containerSize - dp(120)).coerceAtLeast(yRangeMin)
+            x = if (xRangeMax > xRangeMin) Random.nextInt(xRangeMin, xRangeMax + 1) else xRangeMin
+            y = if (yRangeMax > yRangeMin) Random.nextInt(yRangeMin, yRangeMax + 1) else yRangeMin
+            val attemptOffset = bubbleEntries.size * dp(14)
+            x = (x + attemptOffset).coerceAtMost(xRangeMax)
+            y = (y + attemptOffset).coerceAtMost(yRangeMax)
         }
 
         var initialX = 0
@@ -365,12 +238,14 @@ class OverlayNudgeManager(private val context: Context) {
                     params.y = initialY + dy.toInt()
                     try {
                         windowManager.updateViewLayout(container, params)
-                    } catch (_: Exception) {}
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to update bubble position while dragging", e)
+                    }
                     true
                 }
                 MotionEvent.ACTION_UP -> {
                     if (!isDragging) {
-                        onBubbleTapped?.invoke()
+                        onNotificationRequested?.invoke()
                     }
                     true
                 }
@@ -380,27 +255,60 @@ class OverlayNudgeManager(private val context: Context) {
 
         try {
             windowManager.addView(container, params)
-            bubbleView = container
+            val id = nextBubbleId++
+            bubbleEntries.add(
+                BubbleEntry(
+                    id = id,
+                    container = container,
+                    badge = badge,
+                )
+            )
+            Log.d(
+                TAG,
+                "Bubble added id=$id count=${bubbleEntries.size} size=$bubbleSize x=${params.x} y=${params.y}"
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add bubble overlay", e)
         }
     }
 
-    private fun updateBubbleCountInternal(nudgeCount: Int) {
-        bubbleBadgeView?.text = if (nudgeCount > 9) "9+" else nudgeCount.toString()
-    }
-
-    private fun dismissBubbleInternal() {
-        bubbleView?.let {
+    private fun dismissAllNudgesInternal() {
+        bubbleEntries.forEach { entry ->
             try {
-                windowManager.removeView(it)
+                windowManager.removeView(entry.container)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to remove bubble overlay", e)
             }
         }
-        bubbleView = null
-        bubbleBadgeView = null
+        bubbleEntries.clear()
     }
+
+    private fun dp(value: Int): Int {
+        return TypedValue.applyDimension(
+            TypedValue.COMPLEX_UNIT_DIP,
+            value.toFloat(),
+            context.resources.displayMetrics,
+        ).toInt()
+    }
+
+    private fun overlayLayoutType(): Int {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+    }
+
+    private fun badgeText(nudgeCount: Int): String {
+        return if (nudgeCount > 9) "9+" else nudgeCount.toString()
+    }
+
+    private data class BubbleEntry(
+        val id: Int,
+        val container: View,
+        val badge: TextView,
+    )
 
     companion object {
         private const val TAG = "OverlayNudgeManager"

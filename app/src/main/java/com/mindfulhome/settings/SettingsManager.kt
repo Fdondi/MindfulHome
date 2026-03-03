@@ -34,6 +34,33 @@ object SettingsManager {
     const val MIN_ESCALATION_THRESHOLD = 2
     const val MAX_ESCALATION_THRESHOLD = 15
 
+    // Nudge stage timing and escalation
+    private const val NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES_KEY = "nudge_initial_notification_delay_minutes"
+    private const val NUDGE_BUBBLE_INTERVAL_SECONDS_KEY = "nudge_bubble_interval_seconds"
+    private const val NUDGE_BUBBLES_BEFORE_BANNER_KEY = "nudge_bubbles_before_banner"
+    private const val NUDGE_BANNER_INTERVAL_MINUTES_KEY = "nudge_banner_interval_minutes"
+    private const val NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_KEY = "nudge_typing_idle_timeout_minutes"
+
+    const val DEFAULT_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES = 1
+    const val MIN_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES = 0
+    const val MAX_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES = 5
+
+    const val DEFAULT_NUDGE_BUBBLE_INTERVAL_SECONDS = 20
+    const val MIN_NUDGE_BUBBLE_INTERVAL_SECONDS = 5
+    const val MAX_NUDGE_BUBBLE_INTERVAL_SECONDS = 60
+
+    const val DEFAULT_NUDGE_BUBBLES_BEFORE_BANNER = 10
+    const val MIN_NUDGE_BUBBLES_BEFORE_BANNER = 1
+    const val MAX_NUDGE_BUBBLES_BEFORE_BANNER = 30
+
+    const val DEFAULT_NUDGE_BANNER_INTERVAL_MINUTES = 1
+    const val MIN_NUDGE_BANNER_INTERVAL_MINUTES = 1
+    const val MAX_NUDGE_BANNER_INTERVAL_MINUTES = 10
+
+    const val DEFAULT_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 1
+    const val MIN_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 1
+    const val MAX_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 10
+
     // Karma hide threshold (number of bad-karma points before the app is hidden)
     private const val HIDE_THRESHOLD_KEY = "karma_hide_threshold"
     const val DEFAULT_HIDE_THRESHOLD = 2
@@ -250,6 +277,98 @@ object SettingsManager {
     fun setEscalationThreshold(context: Context, threshold: Int) {
         prefs(context).edit {
             putInt(ESCALATION_THRESHOLD_KEY, threshold.coerceIn(MIN_ESCALATION_THRESHOLD, MAX_ESCALATION_THRESHOLD))
+        }
+    }
+
+    // ── Nudge stage timing and escalation ───────────────────────────
+
+    fun getNudgeInitialNotificationDelayMinutes(context: Context): Int =
+        prefs(context).getInt(
+            NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES_KEY,
+            DEFAULT_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES,
+        )
+
+    fun setNudgeInitialNotificationDelayMinutes(context: Context, value: Int) {
+        prefs(context).edit {
+            putInt(
+                NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES_KEY,
+                value.coerceIn(
+                    MIN_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES,
+                    MAX_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES,
+                ),
+            )
+        }
+    }
+
+    fun getNudgeBubbleIntervalSeconds(context: Context): Int =
+        prefs(context).getInt(
+            NUDGE_BUBBLE_INTERVAL_SECONDS_KEY,
+            DEFAULT_NUDGE_BUBBLE_INTERVAL_SECONDS,
+        )
+
+    fun setNudgeBubbleIntervalSeconds(context: Context, value: Int) {
+        prefs(context).edit {
+            putInt(
+                NUDGE_BUBBLE_INTERVAL_SECONDS_KEY,
+                value.coerceIn(
+                    MIN_NUDGE_BUBBLE_INTERVAL_SECONDS,
+                    MAX_NUDGE_BUBBLE_INTERVAL_SECONDS,
+                ),
+            )
+        }
+    }
+
+    fun getNudgeBubblesBeforeBanner(context: Context): Int =
+        prefs(context).getInt(
+            NUDGE_BUBBLES_BEFORE_BANNER_KEY,
+            DEFAULT_NUDGE_BUBBLES_BEFORE_BANNER,
+        )
+
+    fun setNudgeBubblesBeforeBanner(context: Context, value: Int) {
+        prefs(context).edit {
+            putInt(
+                NUDGE_BUBBLES_BEFORE_BANNER_KEY,
+                value.coerceIn(
+                    MIN_NUDGE_BUBBLES_BEFORE_BANNER,
+                    MAX_NUDGE_BUBBLES_BEFORE_BANNER,
+                ),
+            )
+        }
+    }
+
+    fun getNudgeBannerIntervalMinutes(context: Context): Int =
+        prefs(context).getInt(
+            NUDGE_BANNER_INTERVAL_MINUTES_KEY,
+            DEFAULT_NUDGE_BANNER_INTERVAL_MINUTES,
+        )
+
+    fun setNudgeBannerIntervalMinutes(context: Context, value: Int) {
+        prefs(context).edit {
+            putInt(
+                NUDGE_BANNER_INTERVAL_MINUTES_KEY,
+                value.coerceIn(
+                    MIN_NUDGE_BANNER_INTERVAL_MINUTES,
+                    MAX_NUDGE_BANNER_INTERVAL_MINUTES,
+                ),
+            )
+        }
+    }
+
+    fun getNudgeTypingIdleTimeoutMinutes(context: Context): Int =
+        prefs(context).getInt(
+            NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_KEY,
+            DEFAULT_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
+        )
+
+    fun setNudgeTypingIdleTimeoutMinutes(context: Context, value: Int) {
+        prefs(context).edit {
+            putInt(
+                NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_KEY,
+                value.coerceIn(
+                    MIN_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
+                    MAX_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
+                ),
+            )
         }
     }
 

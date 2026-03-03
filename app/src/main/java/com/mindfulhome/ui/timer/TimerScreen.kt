@@ -75,7 +75,6 @@ import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.service.UsageTracker
-import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.util.PackageManagerHelper
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -96,7 +95,6 @@ fun TimerScreen(
     savedMinutes: Int = 0,
     onResumeSession: (() -> Unit)? = null,
     repository: AppRepository? = null,
-    forcedReturnIntent: SettingsManager.LastDeclaredIntent? = null,
     onShelfAppLaunch: ((
         minutes: Int,
         reason: String,
@@ -233,19 +231,6 @@ fun TimerScreen(
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onBackground
             )
-
-            if (forcedReturnIntent != null) {
-                Spacer(modifier = Modifier.height(16.dp))
-                val intentText = forcedReturnIntent.intent.ifBlank { "(no intent declared)" }
-                Text(
-                    text = "Previous plan: ${formatMinutes(forcedReturnIntent.minutes)} \u00b7 " +
-                        "$intentText \u00b7 ${formatTimeAgo(forcedReturnIntent.declaredAtMs)}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(0.9f),
-                )
-            }
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -734,22 +719,6 @@ private fun formatMinutes(minutes: Int): String {
         minutes < 60 -> "$minutes min"
         minutes % 60 == 0 -> "${minutes / 60} hr"
         else -> "${minutes / 60} hr ${minutes % 60} min"
-    }
-}
-
-private fun formatTimeAgo(timestampMs: Long): String {
-    val elapsedMs = (System.currentTimeMillis() - timestampMs).coerceAtLeast(0L)
-    val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(elapsedMs)
-    return when {
-        totalMinutes < 1 -> "declared just now"
-        totalMinutes == 1L -> "declared 1 min ago"
-        totalMinutes < 60 -> "declared $totalMinutes min ago"
-        totalMinutes == 60L -> "declared 1 hr ago"
-        totalMinutes < 24 * 60 -> "declared ${totalMinutes / 60} hr ago"
-        else -> {
-            val days = totalMinutes / (24 * 60)
-            if (days == 1L) "declared 1 day ago" else "declared $days days ago"
-        }
     }
 }
 

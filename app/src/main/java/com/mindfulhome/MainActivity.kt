@@ -51,11 +51,13 @@ class MainActivity : ComponentActivity() {
 
     // Optional reason provided when starting the timer; consumed by the chat screen
     private var unlockReason by mutableStateOf("")
-    private var showForcedTimerContext by mutableStateOf(false)
     private var permissionDialogShowing = false
 
     companion object {
         const val EXTRA_FORCE_TIMER = "force_timer"
+        const val EXTRA_FORCE_TIMER_REASON = "force_timer_reason"
+        const val FORCE_TIMER_REASON_EXPIRED = "expired_timer"
+        const val FORCE_TIMER_REASON_QUICK_LAUNCH = "quick_launch_exit"
 
         var shouldShowTimer by mutableStateOf(true)
 
@@ -125,7 +127,6 @@ class MainActivity : ComponentActivity() {
 
                     composable("timer") {
                         val savedSession = SettingsManager.getLastSession(this@MainActivity)
-                        val lastDeclaredIntent = SettingsManager.getLastDeclaredIntent(this@MainActivity)
                         val savedAppLabel = savedSession?.let { session ->
                             try {
                                 val appInfo = packageManager.getApplicationInfo(
@@ -140,7 +141,6 @@ class MainActivity : ComponentActivity() {
                             onTimerSet = { durationMinutes, reason ->
                                 Log.d("MainActivity", "onTimerSet: duration=$durationMinutes reason='$reason'")
                                 shouldShowTimer = false
-                                showForcedTimerContext = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
                                 SettingsManager.saveLastDeclaredIntent(
@@ -162,7 +162,6 @@ class MainActivity : ComponentActivity() {
                             onResumeSession = savedSession?.let { session ->
                                 {
                                     shouldShowTimer = false
-                                    showForcedTimerContext = false
                                     lastDurationMinutes = session.remainingMinutes
                                     SettingsManager.saveLastDeclaredIntent(
                                         this@MainActivity,
@@ -194,7 +193,6 @@ class MainActivity : ComponentActivity() {
                             ->
                                 Log.d("MainActivity", "Shelf launch: pkg=$packageName duration=$durationMinutes")
                                 shouldShowTimer = false
-                                showForcedTimerContext = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
                                 SettingsManager.saveLastDeclaredIntent(
@@ -216,7 +214,6 @@ class MainActivity : ComponentActivity() {
                                     startActivity(launchIntent)
                                 }
                             },
-                            forcedReturnIntent = if (showForcedTimerContext) lastDeclaredIntent else null,
                         )
                     }
 
@@ -297,8 +294,24 @@ class MainActivity : ComponentActivity() {
             com.mindfulhome.receiver.ScreenUnlockReceiver.EXTRA_FROM_UNLOCK, false
         )
         val forceTimer = intent.getBooleanExtra(EXTRA_FORCE_TIMER, false)
+        val forceTimerReason = intent.getStringExtra(EXTRA_FORCE_TIMER_REASON)
 
-        Log.d("MainActivity", "handleIncomingIntent: fromUnlock=$fromUnlock forceTimer=$forceTimer navController=${navController != null}")
+        Log.d(
+            "MainActivity",
+            "handleIncomingIntent: fromUnlock=$fromUnlock forceTimer=$forceTimer " +
+                "reason=$forceTimerReason navController=${navController != null}",
+        )
+
+        if (forceTimer && forceTimerReason == FORCE_TIMER_REASON_EXPIRED) {
+            val timerState = TimerService.timerState.value
+            if (timerState !is TimerState.Expired) {
+                Log.w(
+                    "MainActivity",
+                    "Ignoring expired-timer open request because timer is not expired (state=$timerState)",
+                )
+                return
+            }
+        }
 
         if (fromUnlock || forceTimer) {
             if (forceTimer) {
@@ -307,7 +320,6 @@ class MainActivity : ComponentActivity() {
             // Clear wentToBackground so onResume doesn't also navigate
             wentToBackground = false
             shouldShowTimer = true
-            showForcedTimerContext = forceTimer
             SessionLogger.startSession()
             lifecycleScope.launch {
                 Log.d("MainActivity", "Navigating to timer from handleIncomingIntent")
