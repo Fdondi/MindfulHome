@@ -72,7 +72,6 @@ import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.AppVersion
 import com.mindfulhome.data.AppRepository
-import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.util.PackageManagerHelper
@@ -315,11 +314,8 @@ fun TimerScreen(
             Button(
                 onClick = {
                     Log.d("TimerScreen", "Start clicked: selectedMinutes=$selectedMinutes reason='${reason.trim()}'")
-                    val trimmedReason = reason.trim()
-                    val logSuffix = if (trimmedReason.isNotEmpty()) " \u2014 $trimmedReason" else ""
-                    SessionLogger.log("Timer set: **$selectedMinutes min**$logSuffix")
                     Log.d("TimerScreen", "Calling onTimerSet")
-                    onTimerSet(selectedMinutes, trimmedReason)
+                    onTimerSet(selectedMinutes, reason.trim())
                     Log.d("TimerScreen", "onTimerSet returned")
                 },
                 modifier = Modifier
@@ -342,9 +338,6 @@ fun TimerScreen(
 
                 OutlinedButton(
                     onClick = {
-                        SessionLogger.log(
-                            "Resumed previous session: **$savedAppLabel** ($savedMinutes min)"
-                        )
                         onResumeSession()
                     },
                     modifier = Modifier

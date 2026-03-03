@@ -548,6 +548,56 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            var interactionWatchTimeoutMinutes by remember {
+                mutableFloatStateOf(
+                    SettingsManager.getNudgeInteractionWatchTimeoutMinutes(context).toFloat()
+                )
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Notification Interaction Watch",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "After tapping a bubble, wait this long for user interaction " +
+                            "before arming banner fallback.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Slider(
+                            value = interactionWatchTimeoutMinutes,
+                            onValueChange = { interactionWatchTimeoutMinutes = it },
+                            onValueChangeFinished = {
+                                SettingsManager.setNudgeInteractionWatchTimeoutMinutes(
+                                    context, interactionWatchTimeoutMinutes.toInt()
+                                )
+                            },
+                            valueRange =
+                                SettingsManager.MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES.toFloat()..
+                                    SettingsManager.MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES.toFloat(),
+                            steps = SettingsManager.MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES -
+                                SettingsManager.MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES - 1,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "${interactionWatchTimeoutMinutes.toInt()} min",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             var hideThreshold by remember {
                 mutableFloatStateOf(
                     SettingsManager.getHideThreshold(context).toFloat()

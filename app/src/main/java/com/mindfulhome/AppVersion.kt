@@ -1,5 +1,5 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.7.3"
+    const val versionName = "0.9.0"
 }

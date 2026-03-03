@@ -15,8 +15,11 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import com.mindfulhome.R
 import kotlin.random.Random
@@ -34,11 +37,14 @@ class OverlayNudgeManager(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var quickLaunchFrameView: View? = null
+    private var conversationBannerView: View? = null
+    private var conversationBannerBodyView: TextView? = null
     private val bubbleEntries = mutableListOf<BubbleEntry>()
     private var nextBubbleId = 1
 
     var onDismissed: (() -> Unit)? = null
     var onNotificationRequested: (() -> Unit)? = null
+    var onBannerReplySubmitted: ((String) -> Unit)? = null
 
     fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
 
@@ -62,6 +68,10 @@ class OverlayNudgeManager(private val context: Context) {
 
     fun dismissAllNudges() {
         handler.post { dismissAllNudgesInternal() }
+    }
+
+    fun showConversationBanner(previewLines: List<String>) {
+        handler.post { showConversationBannerInternal(previewLines) }
     }
 
     /**
@@ -134,6 +144,175 @@ class OverlayNudgeManager(private val context: Context) {
             }
         }
         quickLaunchFrameView = null
+    }
+
+    private fun showConversationBannerInternal(previewLines: List<String>) {
+        if (!canDrawOverlay()) return
+
+        val content = (previewLines.takeLast(3).ifEmpty {
+            listOf("MindfulHome has a new message.")
+        }).joinToString("\n")
+        val existingBanner = conversationBannerView
+        if (existingBanner != null) {
+            conversationBannerBodyView?.text = content
+            return
+        }
+
+        val container = FrameLayout(context).apply {
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+        }
+
+        val card = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(Color.parseColor("#EE1D1F24"))
+                setStroke(dp(1), Color.parseColor("#55FFFFFF"))
+            }
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            isClickable = true
+            isFocusable = false
+            setOnClickListener {
+                onNotificationRequested?.invoke()
+            }
+        }
+
+        val title = TextView(context).apply {
+            text = "MindfulHome conversation"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        val body = TextView(context).apply {
+            text = content
+            setTextColor(Color.parseColor("#FFF3F4F6"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            maxLines = 4
+        }
+        conversationBannerBodyView = body
+        val footer = TextView(context).apply {
+            text = "Use Send to reply, or tap title for notification"
+            setTextColor(Color.parseColor("#FFFFCC80"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
+        }
+        val replyInput = EditText(context).apply {
+            hint = "Reply to MindfulHome..."
+            setHintTextColor(Color.parseColor("#99FFFFFF"))
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#402B2D34"))
+                setStroke(dp(1), Color.parseColor("#44FFFFFF"))
+            }
+            setPadding(dp(10), dp(8), dp(10), dp(8))
+            maxLines = 3
+            imeOptions = EditorInfo.IME_ACTION_SEND
+            setOnEditorActionListener { _, actionId, _ ->
+                if (actionId == EditorInfo.IME_ACTION_SEND) {
+                    val payload = text?.toString()?.trim().orEmpty()
+                    if (payload.isNotBlank()) {
+                        onBannerReplySubmitted?.invoke(payload)
+                        setText("")
+                    }
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+        val sendButton = TextView(context).apply {
+            text = "Send"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.parseColor("#FF5C6BC0"))
+            }
+            setPadding(dp(14), dp(8), dp(14), dp(8))
+            isClickable = true
+            setOnClickListener {
+                val payload = replyInput.text?.toString()?.trim().orEmpty()
+                if (payload.isBlank()) return@setOnClickListener
+                onBannerReplySubmitted?.invoke(payload)
+                replyInput.setText("")
+            }
+        }
+        val composerRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            val gap = dp(8)
+            setPadding(0, gap, 0, 0)
+            addView(
+                replyInput,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f),
+            )
+            addView(
+                sendButton,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                ),
+            )
+        }
+
+        card.addView(
+            title,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        card.addView(
+            body,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        card.addView(
+            footer,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+        card.addView(
+            composerRow,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        container.addView(
+            card,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            ),
+        )
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayLayoutType(),
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = dp(12)
+        }
+
+        try {
+            windowManager.addView(container, params)
+            conversationBannerView = container
+            Log.d(TAG, "Conversation banner shown")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add conversation banner overlay", e)
+        }
     }
 
     // ── Chat head bubble ────────────────────────────────────────────
@@ -294,6 +473,7 @@ class OverlayNudgeManager(private val context: Context) {
             }
         }
         bubbleEntries.clear()
+        dismissConversationBannerInternal()
     }
 
     private fun dismissAllNudgesInternalIfPresent(): Boolean {
@@ -321,6 +501,18 @@ class OverlayNudgeManager(private val context: Context) {
 
     private fun badgeText(nudgeCount: Int): String {
         return if (nudgeCount > 9) "9+" else nudgeCount.toString()
+    }
+
+    private fun dismissConversationBannerInternal() {
+        conversationBannerView?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove conversation banner overlay", e)
+            }
+        }
+        conversationBannerView = null
+        conversationBannerBodyView = null
     }
 
     private data class BubbleEntry(

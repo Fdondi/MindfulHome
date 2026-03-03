@@ -41,11 +41,15 @@ class TimerService : Service() {
     private var timerJob: Job? = null
     private var nudgeJob: Job? = null
     private var quickLaunchMonitorJob: Job? = null
+    private var notificationInteractionTimeoutJob: Job? = null
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
     private lateinit var overlayManager: OverlayNudgeManager
     private var nudgePauseUntilMs: Long = 0L
     private var nudgeResetRequested: Boolean = false
+    private var awaitingNotificationInteraction: Boolean = false
+    private var preferBannerFallbackForOverlayTap: Boolean = false
+    private var logSessionHandle: SessionLogger.SessionHandle? = null
 
     // Nudge conversation: notification is the single chat surface.
     private var negotiationManager: NegotiationManager? = null
@@ -70,7 +74,7 @@ class TimerService : Service() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF) {
                 Log.d(TAG, "Screen off — stopping timer session")
-                SessionLogger.log("Screen turned off — ending/suspending session")
+                logWithSession("Screen turned off — ending/suspending session")
                 suspendForScreenOff()
             }
         }
@@ -88,12 +92,16 @@ class TimerService : Service() {
         overlayManager = OverlayNudgeManager(this)
         overlayManager.onDismissed = { onOverlayDismissed() }
         overlayManager.onNotificationRequested = { onOverlayNotificationRequested() }
+        overlayManager.onBannerReplySubmitted = { onBannerReplySubmitted(it) }
+        preferBannerFallbackForOverlayTap = SettingsManager.isNudgeBannerFallbackArmed(this)
+        logSessionHandle = SessionLogger.getActiveSessionHandle()
 
         registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
+        updateLogSessionHandleFromIntent(intent)
         Log.d(TAG, "onStartCommand action=$action startId=$startId flags=$flags")
         logSessionEvent("Service command received: ${action ?: "null"}")
 
@@ -143,7 +151,7 @@ class TimerService : Service() {
                 Log.d(TAG, "track app package=$packageName")
                 if (packageName.isNotBlank() && packageName != _currentPackage.value) {
                     val appLabel = getAppLabel(packageName)
-                    SessionLogger.log("Foreground app detected: **$appLabel** (`$packageName`)")
+                    logWithSession("Foreground app detected: **$appLabel** (`$packageName`)")
                 }
                 _currentPackage.value = packageName
                 maybeForceTimerForQuickLaunchSwitch(packageName)
@@ -190,7 +198,7 @@ class TimerService : Service() {
 
         val durationMinutesDisplay = ((durationMs + 59_999L) / 60_000L).toInt()
         val appLabel = getAppLabel(packageName)
-        SessionLogger.log("Session timer started: **$durationMinutesDisplay min** ($appLabel)")
+        logWithSession("Session timer started: **$durationMinutesDisplay min** ($appLabel)")
 
         startForeground(TIMER_NOTIFICATION_ID, buildTimerNotification(durationMs))
 
@@ -210,6 +218,12 @@ class TimerService : Service() {
     private fun resetNudgesForNewTimer() {
         logSessionEvent("Resetting nudge state for new timer/session")
         nudgeJob?.cancel()
+        clearNotificationInteractionWatch(
+            reason = "nudge reset for new timer",
+            markSuccess = false,
+        )
+        preferBannerFallbackForOverlayTap = false
+        SettingsManager.setNudgeBannerFallbackArmed(this, false)
         overlayManager.dismissAllNudges()
         nudgePauseUntilMs = 0L
         nudgeResetRequested = false
@@ -238,7 +252,7 @@ class TimerService : Service() {
         _timerState.value = TimerState.Idle
 
         val appLabel = getAppLabel(initialPackageName)
-        SessionLogger.log("Quick Launch started: **$appLabel** (no timer running)")
+        logWithSession("Quick Launch started: **$appLabel** (no timer running)")
 
         // Keep service alive while monitoring app switches outside launcher taps.
         startForeground(
@@ -261,7 +275,7 @@ class TimerService : Service() {
 
         val appLabel = getAppLabel(packageName)
         Log.d(TAG, "non-quick app detected: $packageName")
-        SessionLogger.log(
+        logWithSession(
             "Quick Launch exit detected: opened **$appLabel** — returning to timer"
         )
         SettingsManager.clearQuickLaunchSession(this)
@@ -300,7 +314,7 @@ class TimerService : Service() {
         overlayManager.dismissAllNudges()
 
         val appLabel = getAppLabel(_currentPackage.value)
-        SessionLogger.log("Timer extended: **+$extraMinutes min** for $appLabel")
+        logWithSession("Timer extended: **+$extraMinutes min** for $appLabel")
 
         when (state) {
             is TimerState.Expired -> {
@@ -320,7 +334,7 @@ class TimerService : Service() {
         _timerState.value = TimerState.Expired(0)
         logSessionEvent("Timer state -> Expired (package=${packageName.ifBlank { "<none>" }})")
         val appLabel = getAppLabel(packageName)
-        SessionLogger.log("**Time's up!** Session timer expired (was using $appLabel)")
+        logWithSession("**Time's up!** Session timer expired (was using $appLabel)")
 
         val canOverlay = overlayManager.canDrawOverlay()
         Log.d(TAG, "onTimerExpired: canDrawOverlay=$canOverlay")
@@ -328,7 +342,7 @@ class TimerService : Service() {
         val initialMessage = "Time's up! Ready to put down $appLabel?"
         if (!canOverlay) {
             Log.w(TAG, "Overlay permission not granted — nudges will appear as notifications only")
-            SessionLogger.log("(Overlay permission not granted — nudges will appear as notifications only)")
+            logWithSession("(Overlay permission not granted — nudges will appear as notifications only)")
         }
 
         startNudgeConversation(packageName)
@@ -350,7 +364,7 @@ class TimerService : Service() {
                 .getNudgeBubbleIntervalSeconds(this@TimerService)
                 .coerceAtLeast(1) * 1_000L
             val appLabel = getAppLabel(packageName)
-            SessionLogger.log(
+            logWithSession(
                 "Nudge schedule: notify now, wait ${initialDelayMs / 60000}m, " +
                     "bubble every ${bubbleIntervalMs / 1000}s (no banner escalation)"
             )
@@ -424,7 +438,7 @@ class TimerService : Service() {
                                 showConversationNotification(forceHeadsUp = false)
                             }
 
-                            SessionLogger.log(
+                            logWithSession(
                                 "Bubble nudge #$bubbleCount shown for $appLabel " +
                                     "(overrun ${overrunMs / 1000}s)"
                             )
@@ -439,9 +453,10 @@ class TimerService : Service() {
         val pkg = _currentPackage.value
         if (pkg.isEmpty()) return
         val appLabel = getAppLabel(pkg)
+        markNotificationInteractionObserved("overlay dismissed")
 
         logSessionEvent("Overlay dismissed by user (package=$pkg)")
-        SessionLogger.log("User dismissed overlay for $appLabel — treating as positive signal")
+        logWithSession("User dismissed overlay for $appLabel — treating as positive signal")
         nudgeJob?.cancel()
         _nudgeCount.value = 0
 
@@ -454,12 +469,37 @@ class TimerService : Service() {
 
     private fun onOverlayNotificationRequested() {
         logSessionEvent("Overlay tapped to open notification conversation")
-        SessionLogger.log("Overlay requested notification conversation")
+        logWithSession("Overlay requested notification conversation")
         overlayManager.dismissAllNudges()
         nudgePauseUntilMs = System.currentTimeMillis() + (
             SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
             )
-        showConversationNotification(forceHeadsUp = true)
+        if (preferBannerFallbackForOverlayTap) {
+            showConversationNotification(forceHeadsUp = false)
+            overlayManager.showConversationBanner(buildBannerPreviewLines())
+            logWithSession("Banner fallback shown after prior notification-open failure")
+            logSessionEvent("Overlay tap used banner fallback")
+        } else {
+            showConversationNotification(forceHeadsUp = true)
+            logSessionEvent("Overlay tap requested heads-up notification")
+        }
+        armNotificationInteractionWatch("overlay tap")
+    }
+
+    private fun onBannerReplySubmitted(replyText: String) {
+        val payload = replyText.trim()
+        if (payload.isBlank()) return
+        markNotificationInteractionObserved("banner reply")
+        logSessionEvent("User replied from banner (chars=${payload.length})")
+        nudgeResetRequested = true
+        nudgePauseUntilMs = System.currentTimeMillis() + (
+            SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
+            )
+        nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
+        overlayManager.showConversationBanner(buildBannerPreviewLines())
+        showConversationNotification(forceHeadsUp = false)
+        logWithSession("You (banner): $payload")
+        handleNudgeReplyText(payload)
     }
 
     private fun forceBackToTimer(reason: String) {
@@ -474,6 +514,7 @@ class TimerService : Service() {
     }
 
     private fun stopTimer() {
+        markNotificationInteractionObserved("timer stop")
         logSessionEvent("Stopping timer service workflow")
         timerJob?.cancel()
         nudgeJob?.cancel()
@@ -489,7 +530,7 @@ class TimerService : Service() {
             when (state) {
                 is TimerState.Counting -> {
                     karmaManager.onClosedOnTime(pkg)
-                    SessionLogger.log("App closed on time: $appLabel (karma +1)")
+                    logWithSession("App closed on time: $appLabel (karma +1)")
 
                     val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
                         ?: (System.currentTimeMillis() - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
@@ -502,7 +543,7 @@ class TimerService : Service() {
                             suspendedAtMs = null,
                         )
                         val remainingMinutes = ((state.remainingMs + 59_999L) / 60_000L).toInt()
-                        SessionLogger.log(
+                        logWithSession(
                             "Saved resumable session: $appLabel ($remainingMinutes min left)"
                         )
                     }
@@ -510,12 +551,12 @@ class TimerService : Service() {
                 is TimerState.Expired -> {
                     if (state.overrunMs <= KarmaManager.GRACE_WINDOW_MS) {
                         karmaManager.onClosedInGraceWindow(pkg)
-                        SessionLogger.log(
+                        logWithSession(
                             "App closed in grace window: $appLabel " +
                                 "(overrun ${state.overrunMs / 1000}s)"
                         )
                     } else {
-                        SessionLogger.log(
+                        logWithSession(
                             "App closed after overrun: $appLabel " +
                                 "(overrun ${state.overrunMs / 60000} min)"
                         )
@@ -571,14 +612,14 @@ class TimerService : Service() {
                     val elapsedMs = (suspendedAtMs - startedAtMs).coerceAtLeast(0L)
                     val remainingMs = (state.totalMs - elapsedMs).coerceAtLeast(0L)
                     val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
-                    SessionLogger.log(
+                    logWithSession(
                         "Session suspended (screen off): $appLabel " +
                             "($remainingMinutes min remaining)"
                     )
                 }
                 is TimerState.Expired -> {
                     karmaManager.onClosedInGraceWindow(pkg)
-                    SessionLogger.log(
+                    logWithSession(
                         "Screen off during overrun: $appLabel — positive signal " +
                             "(overrun ${state.overrunMs / 1000}s)"
                     )
@@ -666,6 +707,7 @@ class TimerService : Service() {
         if (replyText.isNullOrBlank()) return
         val payload = replyText.trim()
         if (payload.isBlank()) return
+        markNotificationInteractionObserved("inline reply")
         logSessionEvent("User replied to nudge (chars=${payload.length})")
         overlayManager.dismissAllNudges()
         nudgeResetRequested = true
@@ -674,7 +716,7 @@ class TimerService : Service() {
             )
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
         showConversationNotification(forceHeadsUp = false)
-        SessionLogger.log("You: $payload")
+        logWithSession("You: $payload")
         handleNudgeReplyText(payload)
     }
 
@@ -700,7 +742,8 @@ class TimerService : Service() {
                 nudgeMessages.add(NudgeMessage(result.responseText, isFromUser = false))
                 showConversationNotification(forceHeadsUp = false)
                 overlayManager.updateConversationMessage(result.responseText, _nudgeCount.value)
-                SessionLogger.log("MindfulHome: ${result.responseText}")
+                overlayManager.showConversationBanner(buildBannerPreviewLines())
+                logWithSession("MindfulHome: ${result.responseText}")
                 logSessionEvent("AI reply processed")
                 nudgeResetRequested = true
                 nudgePauseUntilMs = System.currentTimeMillis() + (
@@ -718,6 +761,7 @@ class TimerService : Service() {
                 nudgeMessages.add(NudgeMessage(fallback, isFromUser = false))
                 showConversationNotification(forceHeadsUp = false)
                 overlayManager.updateConversationMessage(fallback, _nudgeCount.value)
+                overlayManager.showConversationBanner(buildBannerPreviewLines())
                 nudgeResetRequested = true
                 nudgePauseUntilMs = System.currentTimeMillis() + (
                     SettingsManager.getNudgeInitialNotificationDelayMinutes(this@TimerService)
@@ -729,7 +773,7 @@ class TimerService : Service() {
 
     private fun handleExtension(minutes: Int) {
         logSessionEvent("Applying AI extension: +$minutes min")
-        SessionLogger.log("AI granted extension: **$minutes min**")
+        logWithSession("AI granted extension: **$minutes min**")
         endNudgeConversation()
         extendTimer(minutes)
     }
@@ -815,6 +859,70 @@ class TimerService : Service() {
         notificationManager.notify(NUDGE_NOTIFICATION_ID, notification)
     }
 
+    private fun armNotificationInteractionWatch(source: String) {
+        notificationInteractionTimeoutJob?.cancel()
+        awaitingNotificationInteraction = true
+        val timeoutMs = SettingsManager
+            .getNudgeInteractionWatchTimeoutMinutes(this)
+            .coerceIn(
+                SettingsManager.MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
+                SettingsManager.MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
+            ) * 60_000L
+        logSessionEvent(
+            "Armed notification interaction watch (source=$source, timeoutMs=$timeoutMs)"
+        )
+        notificationInteractionTimeoutJob = serviceScope.launch {
+            delay(timeoutMs)
+            if (!awaitingNotificationInteraction) return@launch
+            awaitingNotificationInteraction = false
+            preferBannerFallbackForOverlayTap = true
+            SettingsManager.setNudgeBannerFallbackArmed(this@TimerService, true)
+            overlayManager.showConversationBanner(buildBannerPreviewLines())
+            logWithSession(
+                "No interaction detected after bubble tap; banner fallback shown"
+            )
+            logSessionEvent("Notification interaction watch timed out; banner fallback shown")
+        }
+    }
+
+    private fun markNotificationInteractionObserved(reason: String) {
+        if (!awaitingNotificationInteraction) return
+        clearNotificationInteractionWatch(reason = reason, markSuccess = true)
+    }
+
+    private fun clearNotificationInteractionWatch(reason: String, markSuccess: Boolean) {
+        notificationInteractionTimeoutJob?.cancel()
+        notificationInteractionTimeoutJob = null
+        if (awaitingNotificationInteraction) {
+            logSessionEvent(
+                "Cleared notification interaction watch (reason=$reason, success=$markSuccess)"
+            )
+        }
+        awaitingNotificationInteraction = false
+        if (markSuccess) {
+            preferBannerFallbackForOverlayTap = false
+            SettingsManager.setNudgeBannerFallbackArmed(this, false)
+        }
+    }
+
+    private fun buildBannerPreviewLines(): List<String> {
+        if (nudgeMessages.isEmpty()) return listOf("MindfulHome has a new message.")
+        return nudgeMessages.takeLast(3).map { message ->
+            val sender = if (message.isFromUser) "You" else "MindfulHome"
+            "$sender: ${message.text}"
+        }
+    }
+
+    private fun logWithSession(entry: String) {
+        SessionLogger.log(logSessionHandle, entry)
+    }
+
+    private fun updateLogSessionHandleFromIntent(intent: Intent?) {
+        val token = intent?.getLongExtra(EXTRA_SESSION_TOKEN, 0L) ?: 0L
+        if (token <= 0L) return
+        logSessionHandle = SessionLogger.handleFromToken(token)
+    }
+
     private fun buildTimerNotification(remainingMs: Long): Notification {
         val minutes = (remainingMs / 60000).toInt()
         val seconds = ((remainingMs % 60000) / 1000).toInt()
@@ -864,6 +972,7 @@ class TimerService : Service() {
         timerJob?.cancel()
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
+        clearNotificationInteractionWatch(reason = "service destroy", markSuccess = false)
         negotiationManager?.endConversation()
         lmManager?.shutdown()
         overlayManager.dismissAllNudges()
@@ -905,6 +1014,7 @@ class TimerService : Service() {
         const val EXTRA_DURATION_MS = "duration_ms"
         const val EXTRA_PACKAGE_NAME = "package_name"
         const val EXTRA_ALLOWED_PACKAGES = "allowed_packages"
+        const val EXTRA_SESSION_TOKEN = "session_token"
 
         private const val KEY_TEXT_REPLY = "key_text_reply"
 
@@ -920,20 +1030,32 @@ class TimerService : Service() {
         private val _nudgeCount = MutableStateFlow(0)
         val nudgeCount: StateFlow<Int> = _nudgeCount
 
-        fun start(context: Context, durationMinutes: Int, packageName: String) {
+        fun start(
+            context: Context,
+            durationMinutes: Int,
+            packageName: String,
+            sessionHandle: SessionLogger.SessionHandle? = null,
+        ) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_DURATION_MINUTES, durationMinutes)
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
+                attachSession(sessionHandle)
             }
             context.startForegroundService(intent)
         }
 
-        fun startWithDurationMs(context: Context, durationMs: Long, packageName: String) {
+        fun startWithDurationMs(
+            context: Context,
+            durationMs: Long,
+            packageName: String,
+            sessionHandle: SessionLogger.SessionHandle? = null,
+        ) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_DURATION_MS, durationMs.coerceAtLeast(1_000L))
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
+                attachSession(sessionHandle)
             }
             context.startForegroundService(intent)
         }
@@ -946,10 +1068,15 @@ class TimerService : Service() {
             context.startForegroundService(intent)
         }
 
-        fun trackApp(context: Context, packageName: String) {
+        fun trackApp(
+            context: Context,
+            packageName: String,
+            sessionHandle: SessionLogger.SessionHandle? = null,
+        ) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_TRACK_APP
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
+                attachSession(sessionHandle)
             }
             context.startService(intent)
         }
@@ -958,6 +1085,7 @@ class TimerService : Service() {
             context: Context,
             initialPackageName: String,
             allowedQuickLaunchPackages: List<String>,
+            sessionHandle: SessionLogger.SessionHandle? = null,
         ) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_START_QUICK_LAUNCH_SESSION
@@ -966,6 +1094,7 @@ class TimerService : Service() {
                     EXTRA_ALLOWED_PACKAGES,
                     ArrayList(allowedQuickLaunchPackages),
                 )
+                attachSession(sessionHandle)
             }
             context.startForegroundService(intent)
         }
@@ -977,11 +1106,20 @@ class TimerService : Service() {
             context.startService(intent)
         }
 
-        fun clearVisibleNudges(context: Context) {
+        fun clearVisibleNudges(
+            context: Context,
+            sessionHandle: SessionLogger.SessionHandle? = null,
+        ) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_CLEAR_VISIBLE_NUDGES
+                attachSession(sessionHandle)
             }
             context.startService(intent)
+        }
+
+        private fun Intent.attachSession(sessionHandle: SessionLogger.SessionHandle?) {
+            val token = sessionHandle?.token ?: return
+            putExtra(EXTRA_SESSION_TOKEN, token)
         }
     }
 }

@@ -40,6 +40,7 @@ object SettingsManager {
     private const val NUDGE_BUBBLES_BEFORE_BANNER_KEY = "nudge_bubbles_before_banner"
     private const val NUDGE_BANNER_INTERVAL_MINUTES_KEY = "nudge_banner_interval_minutes"
     private const val NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_KEY = "nudge_typing_idle_timeout_minutes"
+    private const val NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_KEY = "nudge_interaction_watch_timeout_minutes"
 
     const val DEFAULT_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES = 1
     const val MIN_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES = 0
@@ -60,6 +61,10 @@ object SettingsManager {
     const val DEFAULT_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 1
     const val MIN_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 1
     const val MAX_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 10
+
+    const val DEFAULT_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES = 1
+    const val MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES = 1
+    const val MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES = 10
 
     // Karma hide threshold (number of bad-karma points before the app is hidden)
     private const val HIDE_THRESHOLD_KEY = "karma_hide_threshold"
@@ -92,6 +97,7 @@ object SettingsManager {
     private const val SUPPRESS_NOTIFICATIONS_PROMPT_KEY = "suppress_notifications_prompt"
     private const val SUPPRESS_USAGE_ACCESS_PROMPT_KEY = "suppress_usage_access_prompt"
     private const val SUPPRESS_OVERLAY_PROMPT_KEY = "suppress_overlay_prompt"
+    private const val NUDGE_BANNER_FALLBACK_ARMED_KEY = "nudge_banner_fallback_armed"
 
     /** Available Vertex AI models the user can pick from. */
     data class ModelOption(val id: String, val label: String, val description: String)
@@ -140,6 +146,15 @@ object SettingsManager {
     ) {
         prefs(context).edit {
             putBoolean(permissionPromptKey(permissionPrompt), suppressed)
+        }
+    }
+
+    fun isNudgeBannerFallbackArmed(context: Context): Boolean =
+        prefs(context).getBoolean(NUDGE_BANNER_FALLBACK_ARMED_KEY, false)
+
+    fun setNudgeBannerFallbackArmed(context: Context, armed: Boolean) {
+        prefs(context).edit {
+            putBoolean(NUDGE_BANNER_FALLBACK_ARMED_KEY, armed)
         }
     }
 
@@ -367,6 +382,24 @@ object SettingsManager {
                 value.coerceIn(
                     MIN_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
                     MAX_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
+                ),
+            )
+        }
+    }
+
+    fun getNudgeInteractionWatchTimeoutMinutes(context: Context): Int =
+        prefs(context).getInt(
+            NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_KEY,
+            DEFAULT_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
+        )
+
+    fun setNudgeInteractionWatchTimeoutMinutes(context: Context, value: Int) {
+        prefs(context).edit {
+            putInt(
+                NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_KEY,
+                value.coerceIn(
+                    MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
+                    MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
                 ),
             )
         }

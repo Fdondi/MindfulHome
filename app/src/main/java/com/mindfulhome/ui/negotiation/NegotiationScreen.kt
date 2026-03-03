@@ -75,6 +75,7 @@ data class ChatMessage(
 fun NegotiationScreen(
     packageName: String,
     unlockReason: String = "",
+    sessionHandle: SessionLogger.SessionHandle?,
     repository: AppRepository,
     karmaManager: KarmaManager,
     onAppGranted: () -> Unit,
@@ -127,7 +128,7 @@ fun NegotiationScreen(
     fun addMessage(text: String, isFromUser: Boolean) {
         messages.add(ChatMessage(text, isFromUser = isFromUser))
         val prefix = if (isFromUser) "User" else "AI"
-        SessionLogger.log("$prefix: ${text.take(120)}")
+        SessionLogger.log(sessionHandle, "$prefix: ${text.take(120)}")
     }
 
     // Initialize AI and start conversation
@@ -183,7 +184,7 @@ fun NegotiationScreen(
 
             if (packageName.isNotEmpty()) {
                 // Gatekeeper flow
-                SessionLogger.log("AI negotiation started for **$appLabel** via $modelLabel")
+                SessionLogger.log(sessionHandle, "AI negotiation started for **$appLabel** via $modelLabel")
                 isWaitingForAi = true
                 val result = negotiationManager.startGatekeeperNegotiation(packageName, appLabel)
                 addMessage(result.responseText, isFromUser = false)
@@ -193,7 +194,7 @@ fun NegotiationScreen(
                 }
             } else {
                 // General chat
-                SessionLogger.log("AI assistant opened via $modelLabel")
+                SessionLogger.log(sessionHandle, "AI assistant opened via $modelLabel")
                 if (unlockReason.isNotEmpty()) {
                     // Reason provided at timer screen — skip the generic greeting
                     // and feed it as the first user message so the AI responds directly
@@ -207,7 +208,7 @@ fun NegotiationScreen(
                         val label = PackageManagerHelper.getAppLabel(
                             context, result.launchedPackage
                         )
-                        SessionLogger.log("Launched **$label**")
+                        SessionLogger.log(sessionHandle, "Launched **$label**")
                         launchTarget = result.launchedPackage
                     }
                 } else {
@@ -342,14 +343,14 @@ fun NegotiationScreen(
                                 isWaitingForAi = false
 
                                 if (result.accessGranted) {
-                                    SessionLogger.log("Access granted to **$appLabel**")
+                                    SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
                                     accessGranted = true
                                 }
                                 if (result.launchedPackage.isNotEmpty()) {
                                     val label = PackageManagerHelper.getAppLabel(
                                         context, result.launchedPackage
                                     )
-                                    SessionLogger.log("Launched **$label**")
+                                    SessionLogger.log(sessionHandle, "Launched **$label**")
                                     launchTarget = result.launchedPackage
                                 }
                             }

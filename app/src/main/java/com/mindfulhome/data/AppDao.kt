@@ -182,6 +182,19 @@ interface SessionLogDao {
     )
     suspend fun getSessionsWithCounts(): List<SessionLogWithCount>
 
+    @Query(
+        """
+        SELECT s.id, s.startedAtMs, s.title, COUNT(e.id) as eventCount
+        FROM session_logs s
+        LEFT JOIN session_log_events e ON e.sessionId = s.id
+        GROUP BY s.id
+        HAVING COUNT(e.id) > 0
+        ORDER BY s.startedAtMs DESC
+        LIMIT 1
+        """
+    )
+    suspend fun getLatestSessionWithCount(): SessionLogWithCount?
+
     @Query("SELECT * FROM session_log_events WHERE sessionId = :sessionId ORDER BY timestampMs ASC, id ASC")
     suspend fun getEventsForSession(sessionId: Long): List<SessionLogEvent>
 }

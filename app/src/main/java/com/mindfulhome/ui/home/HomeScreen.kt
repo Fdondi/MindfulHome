@@ -92,6 +92,7 @@ import kotlin.math.roundToInt
 fun HomeScreen(
     durationMinutes: Int,
     unlockReason: String = "",
+    sessionHandle: SessionLogger.SessionHandle?,
     repository: AppRepository,
     karmaManager: KarmaManager,
     onRequestAi: (packageName: String) -> Unit,
@@ -166,7 +167,7 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         if (TimerService.timerState.value !is TimerState.Idle) {
-            TimerService.clearVisibleNudges(context)
+            TimerService.clearVisibleNudges(context, sessionHandle)
         }
         Log.d("HomeScreen", "Loading installed apps from shared cache...")
         allApps = PackageManagerHelper.getInstalledApps(context)
@@ -175,9 +176,9 @@ fun HomeScreen(
 
     fun launchApp(appInfo: AppInfo) {
         scope.launch {
-            SessionLogger.log("App opened: **${appInfo.label}** (`${appInfo.packageName}`)")
+            SessionLogger.log(sessionHandle, "App opened: **${appInfo.label}** (`${appInfo.packageName}`)")
             karmaManager.onAppOpened(appInfo.packageName)
-            TimerService.trackApp(context, appInfo.packageName)
+            TimerService.trackApp(context, appInfo.packageName, sessionHandle)
             if (unlockReason.isNotBlank()) {
                 repository.recordIntent(appInfo.packageName, unlockReason)
                 EmbeddingManager.invalidateCache()

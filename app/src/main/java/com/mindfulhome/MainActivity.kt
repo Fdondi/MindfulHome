@@ -52,6 +52,7 @@ class MainActivity : ComponentActivity() {
     // Optional reason provided when starting the timer; consumed by the chat screen
     private var unlockReason by mutableStateOf("")
     private var permissionDialogShowing = false
+    private var sessionHandle: SessionLogger.SessionHandle? = null
 
     companion object {
         const val EXTRA_FORCE_TIMER = "force_timer"
@@ -138,13 +139,20 @@ class MainActivity : ComponentActivity() {
                                 shouldShowTimer = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
+                                val handle = ensureSessionHandle()
                                 SettingsManager.saveLastDeclaredIntent(
                                     this@MainActivity,
                                     durationMinutes,
                                     reason,
                                 )
+                                SessionLogger.log(handle, "Timer set: **$durationMinutes min**")
+                                if (reason.isNotBlank()) {
+                                    SessionLogger.log(handle, "Intention: $reason")
+                                } else {
+                                    SessionLogger.log(handle, "Intention: _(not provided)_")
+                                }
                                 TimerService.start(
-                                    this@MainActivity, durationMinutes, ""
+                                    this@MainActivity, durationMinutes, "", handle
                                 )
                                 Log.d("MainActivity", "TimerService.start called, navigating to home")
                                 navCtrl.navigate("home") {
@@ -158,16 +166,22 @@ class MainActivity : ComponentActivity() {
                                 {
                                     shouldShowTimer = false
                                     lastDurationMinutes = session.remainingMinutes
+                                    val handle = ensureSessionHandle()
                                     SettingsManager.saveLastDeclaredIntent(
                                         this@MainActivity,
                                         session.remainingMinutes,
                                         "",
                                     )
                                     SettingsManager.clearLastSession(this@MainActivity)
+                                    SessionLogger.log(
+                                        handle,
+                                        "Resumed previous session: **${session.remainingMinutes} min**"
+                                    )
                                     TimerService.startWithDurationMs(
                                         this@MainActivity,
                                         session.remainingMs,
                                         session.packageName,
+                                        handle,
                                     )
                                     navCtrl.navigate("home") {
                                         popUpTo("timer") { inclusive = true }
@@ -190,15 +204,23 @@ class MainActivity : ComponentActivity() {
                                 shouldShowTimer = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
+                                val handle = ensureSessionHandle()
                                 SettingsManager.saveLastDeclaredIntent(
                                     this@MainActivity,
                                     durationMinutes,
                                     reason,
                                 )
+                                SessionLogger.log(handle, "Quick Launch timer: **$durationMinutes min**")
+                                if (reason.isNotBlank()) {
+                                    SessionLogger.log(handle, "Quick Launch intention: $reason")
+                                } else {
+                                    SessionLogger.log(handle, "Quick Launch intention: _(not provided)_")
+                                }
                                 TimerService.startQuickLaunchSession(
                                     this@MainActivity,
                                     initialPackageName = packageName,
                                     allowedQuickLaunchPackages = quickLaunchPackages.toList(),
+                                    sessionHandle = handle,
                                 )
                                 navCtrl.navigate("home") {
                                     popUpTo("timer") { inclusive = true }
@@ -216,6 +238,7 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             durationMinutes = lastDurationMinutes,
                             unlockReason = unlockReason,
+                            sessionHandle = sessionHandle,
                             repository = repository,
                             karmaManager = karmaManager,
                             onRequestAi = { packageName ->
@@ -244,6 +267,7 @@ class MainActivity : ComponentActivity() {
                         NegotiationScreen(
                             packageName = packageName,
                             unlockReason = reason,
+                            sessionHandle = sessionHandle,
                             repository = repository,
                             karmaManager = karmaManager,
                             onAppGranted = {
@@ -316,9 +340,9 @@ class MainActivity : ComponentActivity() {
             wentToBackground = false
             shouldShowTimer = true
             if (fromUnlock) {
-                SessionLogger.startSession("Phone unlocked")
+                sessionHandle = SessionLogger.startSession("Phone unlocked")
             } else if (forceTimer) {
-                SessionLogger.startSession("Session resumed from timer alert")
+                sessionHandle = SessionLogger.startSession("Session resumed from timer alert")
             }
             lifecycleScope.launch {
                 Log.d("MainActivity", "Navigating to timer from handleIncomingIntent")
@@ -372,7 +396,10 @@ class MainActivity : ComponentActivity() {
 
             if (awayMs < quickReturnMs && timerWasRunning) {
                 shouldShowTimer = false
-                SessionLogger.log("Quick return (${awayMs / 1000}s) — back to app selection")
+                SessionLogger.log(
+                    ensureSessionHandle(),
+                    "Quick return (${awayMs / 1000}s) — back to app selection"
+                )
                 lifecycleScope.launch {
                     navController?.navigate("home") {
                         popUpTo("root") { inclusive = true }
@@ -510,5 +537,16 @@ class MainActivity : ComponentActivity() {
             this,
             Manifest.permission.POST_NOTIFICATIONS,
         ) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun ensureSessionHandle(): SessionLogger.SessionHandle {
+        val existing = sessionHandle ?: SessionLogger.getActiveSessionHandle()
+        if (existing != null) {
+            sessionHandle = existing
+            return existing
+        }
+        val created = SessionLogger.startSession("Session resumed")
+        sessionHandle = created
+        return created
     }
 }
