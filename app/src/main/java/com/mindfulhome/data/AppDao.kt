@@ -153,3 +153,35 @@ interface ShelfDao {
     @Query("UPDATE shelf_items SET slotPosition = slotPosition - 1 WHERE slotPosition > :removedSlot")
     suspend fun compactSlotsAfter(removedSlot: Int)
 }
+
+data class SessionLogWithCount(
+    val id: Long,
+    val startedAtMs: Long,
+    val title: String,
+    val eventCount: Int,
+)
+
+@Dao
+interface SessionLogDao {
+
+    @Insert
+    suspend fun insertSession(session: SessionLog): Long
+
+    @Insert
+    suspend fun insertEvent(event: SessionLogEvent): Long
+
+    @Query(
+        """
+        SELECT s.id, s.startedAtMs, s.title, COUNT(e.id) as eventCount
+        FROM session_logs s
+        LEFT JOIN session_log_events e ON e.sessionId = s.id
+        GROUP BY s.id
+        HAVING COUNT(e.id) > 0
+        ORDER BY s.startedAtMs DESC
+        """
+    )
+    suspend fun getSessionsWithCounts(): List<SessionLogWithCount>
+
+    @Query("SELECT * FROM session_log_events WHERE sessionId = :sessionId ORDER BY timestampMs ASC, id ASC")
+    suspend fun getEventsForSession(sessionId: Long): List<SessionLogEvent>
+}

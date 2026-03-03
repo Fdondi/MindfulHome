@@ -64,6 +64,19 @@ class OverlayNudgeManager(private val context: Context) {
         handler.post { dismissAllNudgesInternal() }
     }
 
+    /**
+     * Clears currently visible nudges synchronously when already on main thread.
+     * Returns true only when at least one bubble was actually removed.
+     */
+    fun dismissAllNudgesIfPresent(): Boolean {
+        return if (Looper.myLooper() == Looper.getMainLooper()) {
+            dismissAllNudgesInternalIfPresent()
+        } else {
+            handler.post { dismissAllNudgesInternal() }
+            false
+        }
+    }
+
     private fun showQuickLaunchFrameInternal() {
         if (quickLaunchFrameView != null) return
         if (!canDrawOverlay()) return
@@ -281,6 +294,12 @@ class OverlayNudgeManager(private val context: Context) {
             }
         }
         bubbleEntries.clear()
+    }
+
+    private fun dismissAllNudgesInternalIfPresent(): Boolean {
+        if (bubbleEntries.isEmpty()) return false
+        dismissAllNudgesInternal()
+        return true
     }
 
     private fun dp(value: Int): Int {

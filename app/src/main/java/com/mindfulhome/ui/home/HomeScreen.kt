@@ -166,10 +166,7 @@ fun HomeScreen(
 
     LaunchedEffect(Unit) {
         if (TimerService.timerState.value !is TimerState.Idle) {
-            SessionLogger.log("[HomeScreen] Entered home with active timer — clearing visible nudge bubbles")
             TimerService.clearVisibleNudges(context)
-        } else {
-            SessionLogger.log("[HomeScreen] Entered home without active timer")
         }
         Log.d("HomeScreen", "Loading installed apps from shared cache...")
         allApps = PackageManagerHelper.getInstalledApps(context)

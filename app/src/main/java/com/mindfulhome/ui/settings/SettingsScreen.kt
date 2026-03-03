@@ -52,7 +52,7 @@ import androidx.core.content.ContextCompat
 import androidx.credentials.exceptions.NoCredentialException
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import com.mindfulhome.BuildConfig
+import com.mindfulhome.AppVersion
 import com.mindfulhome.ai.LiteRtLmManager
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
@@ -70,7 +70,7 @@ fun SettingsScreen(
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
-    val appVersion = BuildConfig.VERSION_NAME
+    val appVersion = AppVersion.versionName
     var hasUsageStats by remember { mutableStateOf(UsageTracker.hasUsageStatsPermission(context)) }
     var hasNotificationPermission by remember {
         mutableStateOf(

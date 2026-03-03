@@ -92,11 +92,6 @@ class MainActivity : ComponentActivity() {
         // Handle intent on cold launch (onNewIntent is only called for warm launches)
         handleIncomingIntent(intent)
 
-        // Ensure a session log exists (covers cold launch without unlock receiver)
-        if (shouldShowTimer) {
-            SessionLogger.startSession()
-        }
-
         val prefs = getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
         val onboardingDone = prefs.getBoolean("onboarding_done", false)
 
@@ -320,7 +315,11 @@ class MainActivity : ComponentActivity() {
             // Clear wentToBackground so onResume doesn't also navigate
             wentToBackground = false
             shouldShowTimer = true
-            SessionLogger.startSession()
+            if (fromUnlock) {
+                SessionLogger.startSession("Phone unlocked")
+            } else if (forceTimer) {
+                SessionLogger.startSession("Session resumed from timer alert")
+            }
             lifecycleScope.launch {
                 Log.d("MainActivity", "Navigating to timer from handleIncomingIntent")
                 navController?.navigate("timer") {
@@ -382,7 +381,6 @@ class MainActivity : ComponentActivity() {
             } else {
                 Log.d("MainActivity", "onResume: navigating to timer screen")
                 shouldShowTimer = true
-                SessionLogger.startSession()
                 lifecycleScope.launch {
                     navController?.navigate("timer") {
                         popUpTo("root") { inclusive = true }

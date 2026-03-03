@@ -70,7 +70,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
-import com.mindfulhome.BuildConfig
+import com.mindfulhome.AppVersion
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
@@ -105,7 +105,7 @@ fun TimerScreen(
     val context = LocalContext.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    val appVersion = BuildConfig.VERSION_NAME
+    val appVersion = AppVersion.versionName
 
     val items = (1..MAX_MINUTES).toList()
     val listState = rememberLazyListState()

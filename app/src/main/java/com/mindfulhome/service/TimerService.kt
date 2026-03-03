@@ -141,7 +141,10 @@ class TimerService : Service() {
             ACTION_TRACK_APP -> {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
                 Log.d(TAG, "track app package=$packageName")
-                logSessionEvent("ACTION_TRACK_APP: package=${packageName.ifBlank { "<none>" }}")
+                if (packageName.isNotBlank() && packageName != _currentPackage.value) {
+                    val appLabel = getAppLabel(packageName)
+                    SessionLogger.log("Foreground app detected: **$appLabel** (`$packageName`)")
+                }
                 _currentPackage.value = packageName
                 maybeForceTimerForQuickLaunchSwitch(packageName)
             }
@@ -155,8 +158,12 @@ class TimerService : Service() {
                 stopTimer()
             }
             ACTION_CLEAR_VISIBLE_NUDGES -> {
-                logSessionEvent("ACTION_CLEAR_VISIBLE_NUDGES requested")
-                overlayManager.dismissAllNudges()
+                val cleared = overlayManager.dismissAllNudgesIfPresent()
+                if (cleared) {
+                    Log.d(TAG, "ACTION_CLEAR_VISIBLE_NUDGES: removed visible nudges")
+                } else {
+                    Log.d(TAG, "ACTION_CLEAR_VISIBLE_NUDGES: no-op (nothing visible)")
+                }
             }
             ACTION_HANDLE_REPLY -> {
                 handleNudgeReply(intent)
@@ -394,9 +401,6 @@ class TimerService : Service() {
                                     "stageElapsedMs=$stageElapsedMs intervalMs=$bubbleIntervalMs " +
                                     "pkg=$packageName"
                             )
-                            SessionLogger.log(
-                                "Bubble timer triggered (#$nextBubbleIndex) for $appLabel"
-                            )
                             stageElapsedMs = max(0L, stageElapsedMs - bubbleIntervalMs)
                             bubbleCount++
                             _nudgeCount.value = bubbleCount
@@ -421,7 +425,7 @@ class TimerService : Service() {
                             }
 
                             SessionLogger.log(
-                                "Bubble nudge #$bubbleCount for $appLabel " +
+                                "Bubble nudge #$bubbleCount shown for $appLabel " +
                                     "(overrun ${overrunMs / 1000}s)"
                             )
                         }
@@ -670,7 +674,7 @@ class TimerService : Service() {
             )
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
         showConversationNotification(forceHeadsUp = false)
-        SessionLogger.log("User replied to nudge: ${payload.take(120)}")
+        SessionLogger.log("You: $payload")
         handleNudgeReplyText(payload)
     }
 
@@ -696,7 +700,7 @@ class TimerService : Service() {
                 nudgeMessages.add(NudgeMessage(result.responseText, isFromUser = false))
                 showConversationNotification(forceHeadsUp = false)
                 overlayManager.updateConversationMessage(result.responseText, _nudgeCount.value)
-                SessionLogger.log("AI responded: ${result.responseText.take(120)}")
+                SessionLogger.log("MindfulHome: ${result.responseText}")
                 logSessionEvent("AI reply processed")
                 nudgeResetRequested = true
                 nudgePauseUntilMs = System.currentTimeMillis() + (
@@ -872,7 +876,7 @@ class TimerService : Service() {
 
     private fun logSessionEvent(event: String) {
         val snapshot = "state=${timerStateName(_timerState.value)} pkg=${_currentPackage.value.ifBlank { "<none>" }} nudgeCount=${_nudgeCount.value}"
-        SessionLogger.log("[TimerService] $event | $snapshot")
+        Log.d(TAG, "$event | $snapshot")
     }
 
     private fun timerStateName(state: TimerState): String {

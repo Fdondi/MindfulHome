@@ -15,9 +15,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         FolderApp::class,
         HomeLayoutItem::class,
         AppIntent::class,
-        ShelfItem::class
+        ShelfItem::class,
+        SessionLog::class,
+        SessionLogEvent::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun homeLayoutDao(): HomeLayoutDao
     abstract fun appIntentDao(): AppIntentDao
     abstract fun shelfDao(): ShelfDao
+    abstract fun sessionLogDao(): SessionLogDao
 
     companion object {
         @Volatile
@@ -102,6 +105,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS session_logs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        startedAtMs INTEGER NOT NULL,
+                        title TEXT NOT NULL
+                    )"""
+                )
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS session_log_events (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        sessionId INTEGER NOT NULL,
+                        timestampMs INTEGER NOT NULL,
+                        entry TEXT NOT NULL,
+                        FOREIGN KEY(sessionId) REFERENCES session_logs(id) ON DELETE CASCADE
+                    )"""
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_session_logs_startedAtMs ON session_logs(startedAtMs)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_session_log_events_sessionId ON session_log_events(sessionId)"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_session_log_events_timestampMs ON session_log_events(timestampMs)"
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -111,7 +144,7 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
                     )
                     .build().also { INSTANCE = it }
             }

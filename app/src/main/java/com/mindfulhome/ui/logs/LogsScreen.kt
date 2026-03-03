@@ -44,12 +44,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mindfulhome.logging.SessionLogger
-import java.io.File
 
 private data class SessionEntry(
-    val file: File,
+    val id: Long,
     val title: String,
-    val content: String
+    val content: String,
+    val eventCount: Int,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -61,11 +61,15 @@ fun LogsScreen(
 
     LaunchedEffect(Unit) {
         sessions.clear()
-        SessionLogger.getAllSessionFiles().forEach { file ->
-            val content = SessionLogger.readSession(file)
-            val firstLine = content.lineSequence().firstOrNull()?.removePrefix("# ")?.trim()
-                ?: file.nameWithoutExtension
-            sessions.add(SessionEntry(file, firstLine, content))
+        SessionLogger.getAllSessions().forEach { record ->
+            sessions.add(
+                SessionEntry(
+                    id = record.id,
+                    title = record.title,
+                    content = record.markdown,
+                    eventCount = record.eventCount,
+                )
+            )
         }
     }
 
@@ -113,7 +117,7 @@ fun LogsScreen(
             ) {
                 item { Spacer(modifier = Modifier.height(4.dp)) }
 
-                items(sessions, key = { it.file.name }) { entry ->
+                items(sessions, key = { it.id }) { entry ->
                     SessionCard(entry, onCopy = entry.content)
                 }
 
@@ -134,7 +138,7 @@ private fun SessionCard(entry: SessionEntry, onCopy: String) {
         entry.content.lines()
             .filter { it.startsWith("- ") }
     }
-    val bulletCount = bullets.size
+    val bulletCount = entry.eventCount
     val preview = bullets.firstOrNull()?.removePrefix("- ") ?: ""
 
     Card(

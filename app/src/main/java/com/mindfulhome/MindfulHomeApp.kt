@@ -17,7 +17,7 @@ class MindfulHomeApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        SessionLogger.init(this)
+        SessionLogger.init(this, database)
         createNotificationChannels()
         registerUnlockReceiver()
         PackageManagerHelper.precomputeInstalledApps(this)

@@ -33,7 +33,6 @@ class ScreenUnlockReceiver : BroadcastReceiver() {
         }
 
         Log.d(TAG, "Launching MainActivity with timer screen")
-        SessionLogger.startSession()
         MainActivity.shouldShowTimer = true
 
         val launch = Intent(context, MainActivity::class.java).apply {
