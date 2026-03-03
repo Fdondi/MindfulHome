@@ -78,6 +78,7 @@ import com.mindfulhome.data.HomeLayoutItem
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
+import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
 import com.mindfulhome.ui.search.SearchOverlay
 import com.mindfulhome.util.PackageManagerHelper
@@ -164,6 +165,12 @@ fun HomeScreen(
     }
 
     LaunchedEffect(Unit) {
+        if (TimerService.timerState.value !is TimerState.Idle) {
+            SessionLogger.log("[HomeScreen] Entered home with active timer — clearing visible nudge bubbles")
+            TimerService.clearVisibleNudges(context)
+        } else {
+            SessionLogger.log("[HomeScreen] Entered home without active timer")
+        }
         Log.d("HomeScreen", "Loading installed apps from shared cache...")
         allApps = PackageManagerHelper.getInstalledApps(context)
         Log.d("HomeScreen", "Loaded ${allApps.size} apps")

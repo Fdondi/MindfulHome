@@ -81,6 +81,7 @@ class TimerService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "onCreate")
+        logSessionEvent("Timer service created")
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(this, repository)
@@ -94,12 +95,14 @@ class TimerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         Log.d(TAG, "onStartCommand action=$action startId=$startId flags=$flags")
+        logSessionEvent("Service command received: ${action ?: "null"}")
 
         if (action == null) {
             // Service can be recreated with a null intent after process death.
             // Restore quick-launch monitoring if it was active.
             if (SettingsManager.isQuickLaunchSessionActive(this)) {
                 Log.w(TAG, "Null intent restart - restoring quick launch monitoring")
+                logSessionEvent("Service restarted with null intent — restoring quick launch monitor")
                 startForeground(
                     QUICK_LAUNCH_NOTIFICATION_ID,
                     buildQuickLaunchMonitoringNotification(),
@@ -120,6 +123,9 @@ class TimerService : Service() {
                 } else {
                     durationMinutes * 60 * 1000L
                 }
+                logSessionEvent(
+                    "ACTION_START requested: durationMs=$durationMs package=${packageName.ifBlank { "<none>" }}"
+                )
                 startTimer(durationMs, packageName)
             }
             ACTION_START_QUICK_LAUNCH_SESSION -> {
@@ -127,20 +133,30 @@ class TimerService : Service() {
                 val allowedPackages = intent.getStringArrayListExtra(EXTRA_ALLOWED_PACKAGES)
                     ?.toSet()
                     ?: emptySet()
+                logSessionEvent(
+                    "ACTION_START_QUICK_LAUNCH_SESSION requested: initial=${packageName.ifBlank { "<none>" }} allowed=${allowedPackages.size}"
+                )
                 startQuickLaunchSession(packageName, allowedPackages)
             }
             ACTION_TRACK_APP -> {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
                 Log.d(TAG, "track app package=$packageName")
+                logSessionEvent("ACTION_TRACK_APP: package=${packageName.ifBlank { "<none>" }}")
                 _currentPackage.value = packageName
                 maybeForceTimerForQuickLaunchSwitch(packageName)
             }
             ACTION_EXTEND -> {
                 val extraMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
+                logSessionEvent("ACTION_EXTEND requested: +$extraMinutes min")
                 extendTimer(extraMinutes)
             }
             ACTION_STOP -> {
+                logSessionEvent("ACTION_STOP requested")
                 stopTimer()
+            }
+            ACTION_CLEAR_VISIBLE_NUDGES -> {
+                logSessionEvent("ACTION_CLEAR_VISIBLE_NUDGES requested")
+                overlayManager.dismissAllNudges()
             }
             ACTION_HANDLE_REPLY -> {
                 handleNudgeReply(intent)
@@ -152,6 +168,7 @@ class TimerService : Service() {
     // ── Timer lifecycle ──────────────────────────────────────────────
 
     private fun startTimer(durationMs: Long, packageName: String) {
+        resetNudgesForNewTimer()
         SettingsManager.clearQuickLaunchSession(this)
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissQuickLaunchFrame()
@@ -160,6 +177,9 @@ class TimerService : Service() {
         _sessionStartedAtMs.value = System.currentTimeMillis()
         _currentPackage.value = packageName
         _timerState.value = TimerState.Counting(durationMs, durationMs)
+        logSessionEvent(
+            "Timer state -> Counting (totalMs=$durationMs, startedAtMs=${_sessionStartedAtMs.value}, package=${packageName.ifBlank { "<none>" }})"
+        )
 
         val durationMinutesDisplay = ((durationMs + 59_999L) / 60_000L).toInt()
         val appLabel = getAppLabel(packageName)
@@ -180,15 +200,29 @@ class TimerService : Service() {
         }
     }
 
+    private fun resetNudgesForNewTimer() {
+        logSessionEvent("Resetting nudge state for new timer/session")
+        nudgeJob?.cancel()
+        overlayManager.dismissAllNudges()
+        nudgePauseUntilMs = 0L
+        nudgeResetRequested = false
+        _nudgeCount.value = 0
+        endNudgeConversation()
+    }
+
     private fun startQuickLaunchSession(
         initialPackageName: String,
         allowedPackages: Set<String>,
     ) {
+        resetNudgesForNewTimer()
         Log.d(
             TAG,
             "startQuickLaunchSession initial=$initialPackageName allowedCount=${allowedPackages.size}",
         )
         val normalizedAllowed = allowedPackages + initialPackageName
+        logSessionEvent(
+            "Quick Launch session activated (initial=${initialPackageName.ifBlank { "<none>" }}, allowed=${normalizedAllowed.size})"
+        )
         SettingsManager.startQuickLaunchSession(this, normalizedAllowed)
         SettingsManager.setTimerRunning(this, false)
         SettingsManager.clearLastSession(this)
@@ -232,6 +266,7 @@ class TimerService : Service() {
     private fun startQuickLaunchMonitoringLoop() {
         quickLaunchMonitorJob?.cancel()
         Log.d(TAG, "startQuickLaunchMonitoringLoop")
+        logSessionEvent("Quick Launch monitor loop started")
         quickLaunchMonitorJob = serviceScope.launch {
             var lastSeenPackage = _currentPackage.value
             while (SettingsManager.isQuickLaunchSessionActive(this@TimerService)) {
@@ -245,6 +280,7 @@ class TimerService : Service() {
                 delay(QUICK_LAUNCH_MONITOR_POLL_MS)
             }
             Log.d(TAG, "quick-launch monitoring loop ended")
+            logSessionEvent("Quick Launch monitor loop ended")
         }
     }
 
@@ -275,6 +311,7 @@ class TimerService : Service() {
 
     private fun onTimerExpired(packageName: String) {
         _timerState.value = TimerState.Expired(0)
+        logSessionEvent("Timer state -> Expired (package=${packageName.ifBlank { "<none>" }})")
         val appLabel = getAppLabel(packageName)
         SessionLogger.log("**Time's up!** Session timer expired (was using $appLabel)")
 
@@ -310,6 +347,9 @@ class TimerService : Service() {
                 "Nudge schedule: notify now, wait ${initialDelayMs / 60000}m, " +
                     "bubble every ${bubbleIntervalMs / 1000}s (no banner escalation)"
             )
+            logSessionEvent(
+                "Nudge loop started (initialDelayMs=$initialDelayMs, bubbleIntervalMs=$bubbleIntervalMs, package=${packageName.ifBlank { "<none>" }})"
+            )
 
             var stage = NudgeStage.WAITING_AFTER_NOTIFICATION
             var stageElapsedMs = 0L
@@ -325,6 +365,9 @@ class TimerService : Service() {
                     _nudgeCount.value = 0
                     nudgeResetRequested = false
                     nudgePauseUntilMs = max(nudgePauseUntilMs, now + initialDelayMs)
+                    logSessionEvent(
+                        "Nudge loop reset after interaction; pauseUntilMs=$nudgePauseUntilMs"
+                    )
                 }
                 if (now < nudgePauseUntilMs) {
                     continue
@@ -339,6 +382,7 @@ class TimerService : Service() {
                         if (stageElapsedMs >= initialDelayMs) {
                             stage = NudgeStage.BUBBLES
                             stageElapsedMs = max(0L, stageElapsedMs - initialDelayMs)
+                            logSessionEvent("Nudge stage -> BUBBLES")
                         }
                     }
                     NudgeStage.BUBBLES -> {
@@ -392,6 +436,7 @@ class TimerService : Service() {
         if (pkg.isEmpty()) return
         val appLabel = getAppLabel(pkg)
 
+        logSessionEvent("Overlay dismissed by user (package=$pkg)")
         SessionLogger.log("User dismissed overlay for $appLabel — treating as positive signal")
         nudgeJob?.cancel()
         _nudgeCount.value = 0
@@ -404,6 +449,7 @@ class TimerService : Service() {
     }
 
     private fun onOverlayNotificationRequested() {
+        logSessionEvent("Overlay tapped to open notification conversation")
         SessionLogger.log("Overlay requested notification conversation")
         overlayManager.dismissAllNudges()
         nudgePauseUntilMs = System.currentTimeMillis() + (
@@ -413,6 +459,7 @@ class TimerService : Service() {
     }
 
     private fun forceBackToTimer(reason: String) {
+        logSessionEvent("Force returning to timer screen (reason=$reason)")
         overlayManager.dismissAllNudges()
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -423,6 +470,7 @@ class TimerService : Service() {
     }
 
     private fun stopTimer() {
+        logSessionEvent("Stopping timer service workflow")
         timerJob?.cancel()
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
@@ -473,6 +521,7 @@ class TimerService : Service() {
             }
 
             _timerState.value = TimerState.Idle
+            logSessionEvent("Timer state -> Idle (stopTimer)")
             _sessionStartedAtMs.value = 0L
             _currentPackage.value = ""
             _nudgeCount.value = 0
@@ -482,10 +531,12 @@ class TimerService : Service() {
             endNudgeConversation()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+            logSessionEvent("Timer service stop completed")
         }
     }
 
     private fun suspendForScreenOff() {
+        logSessionEvent("Suspending timer workflow due to screen off")
         timerJob?.cancel()
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
@@ -532,6 +583,7 @@ class TimerService : Service() {
             }
 
             _timerState.value = TimerState.Idle
+            logSessionEvent("Timer state -> Idle (screen off suspend)")
             _sessionStartedAtMs.value = 0L
             _currentPackage.value = ""
             _nudgeCount.value = 0
@@ -541,6 +593,7 @@ class TimerService : Service() {
             endNudgeConversation()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+            logSessionEvent("Timer service suspended and stopped")
         }
     }
 
@@ -548,6 +601,7 @@ class TimerService : Service() {
 
     private fun startNudgeConversation(packageName: String) {
         nudgeMessages.clear()
+        logSessionEvent("Starting nudge conversation (package=${packageName.ifBlank { "<none>" }})")
 
         val ctx: Context = this
         val lm = LiteRtLmManager(ctx)
@@ -586,12 +640,14 @@ class TimerService : Service() {
                 nudgeMessages.add(NudgeMessage(result.responseText, isFromUser = false))
                 showConversationNotification(forceHeadsUp = true)
                 overlayManager.updateConversationMessage(result.responseText, _nudgeCount.value)
+                logSessionEvent("Initial AI nudge response received")
 
                 if (result.extensionMinutes > 0) {
                     handleExtension(result.extensionMinutes)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error starting nudge conversation", e)
+                logSessionEvent("Nudge conversation start failed: ${e.javaClass.simpleName}")
                 nudgeMessages.add(
                     NudgeMessage("Time's up! Your session has ended.", isFromUser = false)
                 )
@@ -606,6 +662,7 @@ class TimerService : Service() {
         if (replyText.isNullOrBlank()) return
         val payload = replyText.trim()
         if (payload.isBlank()) return
+        logSessionEvent("User replied to nudge (chars=${payload.length})")
         overlayManager.dismissAllNudges()
         nudgeResetRequested = true
         nudgePauseUntilMs = System.currentTimeMillis() + (
@@ -620,6 +677,7 @@ class TimerService : Service() {
     private fun handleNudgeReplyText(replyText: String) {
         val manager = negotiationManager
         if (manager == null) {
+            logSessionEvent("Nudge reply received but conversation manager is null")
             val fallback = "Take a moment to reflect on whether you still need this app."
             nudgeMessages.add(NudgeMessage(fallback, isFromUser = false))
             showConversationNotification(forceHeadsUp = false)
@@ -639,6 +697,7 @@ class TimerService : Service() {
                 showConversationNotification(forceHeadsUp = false)
                 overlayManager.updateConversationMessage(result.responseText, _nudgeCount.value)
                 SessionLogger.log("AI responded: ${result.responseText.take(120)}")
+                logSessionEvent("AI reply processed")
                 nudgeResetRequested = true
                 nudgePauseUntilMs = System.currentTimeMillis() + (
                     SettingsManager.getNudgeInitialNotificationDelayMinutes(this@TimerService)
@@ -650,6 +709,7 @@ class TimerService : Service() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling nudge reply", e)
+                logSessionEvent("AI reply handling failed: ${e.javaClass.simpleName}")
                 val fallback = "Sorry, I couldn't process that. Take a moment to reflect."
                 nudgeMessages.add(NudgeMessage(fallback, isFromUser = false))
                 showConversationNotification(forceHeadsUp = false)
@@ -664,12 +724,14 @@ class TimerService : Service() {
     }
 
     private fun handleExtension(minutes: Int) {
+        logSessionEvent("Applying AI extension: +$minutes min")
         SessionLogger.log("AI granted extension: **$minutes min**")
         endNudgeConversation()
         extendTimer(minutes)
     }
 
     private fun endNudgeConversation() {
+        logSessionEvent("Ending nudge conversation and clearing overlays/notification")
         negotiationManager?.endConversation()
         negotiationManager = null
         lmManager?.shutdown()
@@ -685,6 +747,9 @@ class TimerService : Service() {
 
     private fun showConversationNotification(forceHeadsUp: Boolean) {
         if (nudgeMessages.isEmpty()) return
+        logSessionEvent(
+            "Posting conversation notification (forceHeadsUp=$forceHeadsUp, messages=${nudgeMessages.size})"
+        )
 
         // Tapping the notification brings the user directly to the timer screen.
         val tapIntent = Intent(this, MainActivity::class.java).apply {
@@ -788,6 +853,7 @@ class TimerService : Service() {
     }
 
     override fun onDestroy() {
+        logSessionEvent("Timer service onDestroy")
         try {
             unregisterReceiver(screenOffReceiver)
         } catch (_: IllegalArgumentException) { }
@@ -804,6 +870,19 @@ class TimerService : Service() {
         super.onDestroy()
     }
 
+    private fun logSessionEvent(event: String) {
+        val snapshot = "state=${timerStateName(_timerState.value)} pkg=${_currentPackage.value.ifBlank { "<none>" }} nudgeCount=${_nudgeCount.value}"
+        SessionLogger.log("[TimerService] $event | $snapshot")
+    }
+
+    private fun timerStateName(state: TimerState): String {
+        return when (state) {
+            is TimerState.Idle -> "Idle"
+            is TimerState.Counting -> "Counting(remainingMs=${state.remainingMs},totalMs=${state.totalMs})"
+            is TimerState.Expired -> "Expired(overrunMs=${state.overrunMs})"
+        }
+    }
+
     companion object {
         private const val TAG = "TimerService"
         private const val TIMER_NOTIFICATION_ID = 1001
@@ -816,6 +895,7 @@ class TimerService : Service() {
         const val ACTION_TRACK_APP = "com.mindfulhome.ACTION_TRACK_APP"
         const val ACTION_EXTEND = "com.mindfulhome.ACTION_EXTEND_TIMER"
         const val ACTION_STOP = "com.mindfulhome.ACTION_STOP_TIMER"
+        const val ACTION_CLEAR_VISIBLE_NUDGES = "com.mindfulhome.ACTION_CLEAR_VISIBLE_NUDGES"
         const val ACTION_HANDLE_REPLY = "com.mindfulhome.ACTION_HANDLE_REPLY"
         const val EXTRA_DURATION_MINUTES = "duration_minutes"
         const val EXTRA_DURATION_MS = "duration_ms"
@@ -889,6 +969,13 @@ class TimerService : Service() {
         fun stop(context: Context) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_STOP
+            }
+            context.startService(intent)
+        }
+
+        fun clearVisibleNudges(context: Context) {
+            val intent = Intent(context, TimerService::class.java).apply {
+                action = ACTION_CLEAR_VISIBLE_NUDGES
             }
             context.startService(intent)
         }
