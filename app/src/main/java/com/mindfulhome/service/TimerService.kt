@@ -824,7 +824,7 @@ class TimerService : Service() {
         )
 
         val replyAction = NotificationCompat.Action.Builder(
-            R.drawable.ic_launcher_foreground, "Reply", replyPendingIntent,
+            R.drawable.ic_nudge_notification, "Reply", replyPendingIntent,
         )
             .addRemoteInput(remoteInput)
             .setAllowGeneratedReplies(true)
@@ -841,7 +841,7 @@ class TimerService : Service() {
         }
 
         val notification = NotificationCompat.Builder(this, MindfulHomeApp.NUDGE_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_nudge_notification)
             .setContentIntent(tapPendingIntent)
             .setStyle(messagingStyle)
             .addAction(replyAction)
@@ -930,7 +930,7 @@ class TimerService : Service() {
         return NotificationCompat.Builder(this, MindfulHomeApp.TIMER_CHANNEL_ID)
             .setContentTitle("MindfulHome")
             .setContentText("$minutes:${seconds.toString().padStart(2, '0')} remaining")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_nudge_notification)
             .setOngoing(true)
             .setSilent(true)
             .build()
@@ -946,7 +946,7 @@ class TimerService : Service() {
         return NotificationCompat.Builder(this, MindfulHomeApp.TIMER_CHANNEL_ID)
             .setContentTitle("MindfulHome")
             .setContentText("Quick Launch active - monitoring app switches")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(R.drawable.ic_nudge_notification)
             .setOngoing(true)
             .setSilent(true)
             .build()

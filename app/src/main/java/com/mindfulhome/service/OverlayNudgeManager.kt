@@ -41,6 +41,7 @@ class OverlayNudgeManager(private val context: Context) {
     private var conversationBannerBodyView: TextView? = null
     private val bubbleEntries = mutableListOf<BubbleEntry>()
     private var nextBubbleId = 1
+    private var birdTickerRunning = false
 
     var onDismissed: (() -> Unit)? = null
     var onNotificationRequested: (() -> Unit)? = null
@@ -60,9 +61,12 @@ class OverlayNudgeManager(private val context: Context) {
         handler.post { showBubbleInternal(nudgeCount) }
     }
 
-    fun updateConversationMessage(@Suppress("UNUSED_PARAMETER") message: String, nudgeCount: Int) {
+    fun updateConversationMessage(
+        @Suppress("UNUSED_PARAMETER") message: String,
+        @Suppress("UNUSED_PARAMETER") nudgeCount: Int,
+    ) {
         handler.post {
-            bubbleEntries.forEach { it.badge.text = badgeText(nudgeCount) }
+            bubbleEntries.forEach { it.badge.text = "hi" }
         }
     }
 
@@ -315,7 +319,7 @@ class OverlayNudgeManager(private val context: Context) {
         }
     }
 
-    // ── Chat head bubble ────────────────────────────────────────────
+    // ── Flying birds ────────────────────────────────────────────────
 
     @Suppress("ClickableViewAccessibility")
     private fun showBubbleInternal(nudgeCount: Int) {
@@ -335,48 +339,51 @@ class OverlayNudgeManager(private val context: Context) {
             ).toInt()
         }
 
-        // Grow bubble radius by 5% at every nudge.
-        val growthFactor = 1f + ((nudgeCount - 1).coerceAtLeast(0) * 0.05f)
-        val bubbleSize = (dp(56) * growthFactor).toInt().coerceAtLeast(dp(56))
-        val badgeSize = dp(22)
-        val containerSize = bubbleSize + badgeSize / 2
+        if (bubbleEntries.size >= MAX_FLOCK_SIZE) {
+            // Keep the flock to three birds and refresh their movement instead of spawning more.
+            bubbleEntries.forEach { entry ->
+                entry.velocityX = randomBirdVelocityPx()
+                entry.velocityY = randomBirdVelocityPx()
+            }
+            ensureBirdTicker()
+            return
+        }
+
+        val birdSize = dp(56)
+        val badgeWidth = dp(26)
+        val badgeHeight = dp(18)
+        val containerWidth = birdSize + badgeWidth / 2
+        val containerHeight = birdSize + badgeHeight / 2
 
         val container = FrameLayout(context)
 
-        val circle = FrameLayout(context).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#E6212121"))
-                setStroke(dp(3), Color.parseColor("#FFFFAB40"))
-            }
-            elevation = dp(6).toFloat()
-        }
-
-        val logo = ImageView(context).apply {
-            setImageResource(R.drawable.ic_launcher_foreground)
+        val bird = ImageView(context).apply {
+            setImageResource(R.drawable.ic_nudge_bird)
             scaleType = ImageView.ScaleType.CENTER_INSIDE
-            setPadding(dp(10), dp(10), dp(10), dp(10))
+            elevation = dp(6).toFloat()
+            setPadding(dp(6), dp(6), dp(6), dp(6))
         }
-        circle.addView(logo, FrameLayout.LayoutParams(bubbleSize, bubbleSize))
 
-        val circleParams = FrameLayout.LayoutParams(bubbleSize, bubbleSize).apply {
+        val birdParams = FrameLayout.LayoutParams(birdSize, birdSize).apply {
             gravity = Gravity.BOTTOM or Gravity.START
         }
-        container.addView(circle, circleParams)
+        container.addView(bird, birdParams)
 
         val badge = TextView(context).apply {
-            text = if (nudgeCount > 9) "9+" else nudgeCount.toString()
-            setTextColor(Color.WHITE)
-            textSize = 11f
-            typeface = Typeface.DEFAULT_BOLD
+            text = "hi"
+            setTextColor(Color.parseColor("#FF1F2937"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.parseColor("#FFE53935"))
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(9).toFloat()
+                setColor(Color.parseColor("#FFF8FAFC"))
+                setStroke(dp(1), Color.parseColor("#FFCBD5E1"))
             }
-            elevation = dp(8).toFloat()
+            setPadding(dp(4), 0, dp(4), 0)
+            elevation = dp(7).toFloat()
         }
-        val badgeParams = FrameLayout.LayoutParams(badgeSize, badgeSize).apply {
+        val badgeParams = FrameLayout.LayoutParams(badgeWidth, badgeHeight).apply {
             gravity = Gravity.TOP or Gravity.END
         }
         container.addView(badge, badgeParams)
@@ -384,8 +391,8 @@ class OverlayNudgeManager(private val context: Context) {
         val metrics = context.resources.displayMetrics
         val layoutType = overlayLayoutType()
         val params = WindowManager.LayoutParams(
-            containerSize,
-            containerSize,
+            containerWidth,
+            containerHeight,
             layoutType,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
@@ -393,9 +400,9 @@ class OverlayNudgeManager(private val context: Context) {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             val xRangeMin = dp(8)
-            val xRangeMax = (metrics.widthPixels - containerSize - dp(8)).coerceAtLeast(xRangeMin)
+            val xRangeMax = (metrics.widthPixels - containerWidth - dp(8)).coerceAtLeast(xRangeMin)
             val yRangeMin = dp(60)
-            val yRangeMax = (metrics.heightPixels - containerSize - dp(120)).coerceAtLeast(yRangeMin)
+            val yRangeMax = (metrics.heightPixels - containerHeight - dp(120)).coerceAtLeast(yRangeMin)
             x = if (xRangeMax > xRangeMin) Random.nextInt(xRangeMin, xRangeMax + 1) else xRangeMin
             y = if (yRangeMax > yRangeMin) Random.nextInt(yRangeMin, yRangeMax + 1) else yRangeMin
             val attemptOffset = bubbleEntries.size * dp(14)
@@ -431,7 +438,7 @@ class OverlayNudgeManager(private val context: Context) {
                     try {
                         windowManager.updateViewLayout(container, params)
                     } catch (e: Exception) {
-                        Log.w(TAG, "Failed to update bubble position while dragging", e)
+                        Log.w(TAG, "Failed to update bird position while dragging", e)
                     }
                     true
                 }
@@ -453,14 +460,22 @@ class OverlayNudgeManager(private val context: Context) {
                     id = id,
                     container = container,
                     badge = badge,
+                    params = params,
+                    minX = dp(8),
+                    maxX = (metrics.widthPixels - containerWidth - dp(8)).coerceAtLeast(dp(8)),
+                    minY = dp(60),
+                    maxY = (metrics.heightPixels - containerHeight - dp(120)).coerceAtLeast(dp(60)),
+                    velocityX = randomBirdVelocityPx(),
+                    velocityY = randomBirdVelocityPx(),
                 )
             )
+            ensureBirdTicker()
             Log.d(
                 TAG,
-                "Bubble added id=$id count=${bubbleEntries.size} size=$bubbleSize x=${params.x} y=${params.y}"
+                "Bird added id=$id count=${bubbleEntries.size} x=${params.x} y=${params.y}"
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to add bubble overlay", e)
+            Log.e(TAG, "Failed to add bird overlay", e)
         }
     }
 
@@ -469,10 +484,11 @@ class OverlayNudgeManager(private val context: Context) {
             try {
                 windowManager.removeView(entry.container)
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to remove bubble overlay", e)
+                Log.e(TAG, "Failed to remove bird overlay", e)
             }
         }
         bubbleEntries.clear()
+        birdTickerRunning = false
         dismissConversationBannerInternal()
     }
 
@@ -499,8 +515,49 @@ class OverlayNudgeManager(private val context: Context) {
         }
     }
 
-    private fun badgeText(nudgeCount: Int): String {
-        return if (nudgeCount > 9) "9+" else nudgeCount.toString()
+    private fun ensureBirdTicker() {
+        if (birdTickerRunning) return
+        birdTickerRunning = true
+        handler.post(birdTicker)
+    }
+
+    private val birdTicker = object : Runnable {
+        override fun run() {
+            if (bubbleEntries.isEmpty()) {
+                birdTickerRunning = false
+                return
+            }
+
+            bubbleEntries.toList().forEach { entry ->
+                var nextX = entry.params.x + entry.velocityX
+                var nextY = entry.params.y + entry.velocityY
+
+                if (nextX < entry.minX || nextX > entry.maxX) {
+                    entry.velocityX = -entry.velocityX
+                    nextX = nextX.coerceIn(entry.minX, entry.maxX)
+                }
+                if (nextY < entry.minY || nextY > entry.maxY) {
+                    entry.velocityY = -entry.velocityY
+                    nextY = nextY.coerceIn(entry.minY, entry.maxY)
+                }
+
+                entry.params.x = nextX
+                entry.params.y = nextY
+                try {
+                    windowManager.updateViewLayout(entry.container, entry.params)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to animate bird #${entry.id}", e)
+                }
+            }
+
+            handler.postDelayed(this, BIRD_FRAME_DELAY_MS)
+        }
+    }
+
+    private fun randomBirdVelocityPx(): Int {
+        val speedPx = dp(Random.nextInt(MIN_BIRD_SPEED_DP, MAX_BIRD_SPEED_DP + 1))
+        val direction = if (Random.nextBoolean()) 1 else -1
+        return speedPx * direction
     }
 
     private fun dismissConversationBannerInternal() {
@@ -519,9 +576,20 @@ class OverlayNudgeManager(private val context: Context) {
         val id: Int,
         val container: View,
         val badge: TextView,
+        val params: WindowManager.LayoutParams,
+        val minX: Int,
+        val maxX: Int,
+        val minY: Int,
+        val maxY: Int,
+        var velocityX: Int,
+        var velocityY: Int,
     )
 
     companion object {
         private const val TAG = "OverlayNudgeManager"
+        private const val MAX_FLOCK_SIZE = 3
+        private const val BIRD_FRAME_DELAY_MS = 40L
+        private const val MIN_BIRD_SPEED_DP = 1
+        private const val MAX_BIRD_SPEED_DP = 2
     }
 }
