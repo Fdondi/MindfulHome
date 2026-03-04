@@ -9,6 +9,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,21 +30,15 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Article
-import androidx.compose.material.icons.filled.Chat
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -81,13 +76,17 @@ import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
+import com.mindfulhome.ui.common.PullTabShelf
 import com.mindfulhome.ui.search.SearchOverlay
 import com.mindfulhome.util.PackageManagerHelper
 import android.util.Log
+import androidx.compose.material.icons.automirrored.filled.Article
+import androidx.compose.material.icons.automirrored.filled.Chat
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+import kotlin.math.ceil
 
 private const val FAVORITE_CELL_MIN_WIDTH_DP = 64
 private const val FAVORITES_COLLAPSED_ROWS = 1
@@ -243,7 +242,8 @@ fun HomeScreen(
                 onSearchClick = { showSearch = true },
                 onLogsClick = onOpenLogs,
                 onKarmaClick = onOpenKarma,
-                onSettingsClick = onOpenSettings
+                onSettingsClick = onOpenSettings,
+                onAiClick = { onRequestAi("") },
             )
 
             // Suggested apps based on unlock reason
@@ -333,27 +333,8 @@ fun HomeScreen(
                     dragDropState.registerFavoriteSlotBounds(slot, topLeft, size)
                 },
                 modifier = Modifier
-                    .navigationBarsPadding()
                     .fillMaxWidth()
             )
-        }
-
-        // FAB - hide during drag to avoid interference
-        if (!dragDropState.isDragging) {
-            FloatingActionButton(
-                onClick = { onRequestAi("") },
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 16.dp, bottom = 80.dp)
-                    .navigationBarsPadding(),
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(
-                    Icons.Default.Chat,
-                    contentDescription = "Talk to AI",
-                    tint = MaterialTheme.colorScheme.onPrimary
-                )
-            }
         }
 
         // Drag overlay
@@ -425,7 +406,8 @@ private fun TopBar(
     onSearchClick: () -> Unit,
     onLogsClick: () -> Unit,
     onKarmaClick: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onAiClick: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -451,7 +433,7 @@ private fun TopBar(
         }
         IconButton(onClick = onLogsClick) {
             Icon(
-                Icons.Default.Article,
+                Icons.AutoMirrored.Filled.Article,
                 contentDescription = "Session logs",
                 tint = MaterialTheme.colorScheme.onBackground
             )
@@ -467,6 +449,13 @@ private fun TopBar(
             Icon(
                 Icons.Default.Settings,
                 contentDescription = "Settings",
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+        }
+        IconButton(onClick = onAiClick) {
+            Icon(
+                Icons.AutoMirrored.Filled.Chat,
+                contentDescription = "Talk to AI",
                 tint = MaterialTheme.colorScheme.onBackground
             )
         }
@@ -585,102 +574,89 @@ private fun FavoriteDock(
     } else {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     }
-    val collapsedHeight = (SHELF_ROW_HEIGHT_DP * FAVORITES_COLLAPSED_ROWS).dp
-    val gridHeight = if (expanded) SHELF_MAX_EXPANDED_HEIGHT_DP.dp else collapsedHeight
-
-    Box(
+    PullTabShelf(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        showBodyWhenCollapsed = true,
         modifier = modifier
             .onGloballyPositioned { coords ->
-                onRegisterBounds(
-                    coords.positionInRoot(),
-                    coords.size.toSize()
-                )
+                onRegisterBounds(coords.positionInRoot(), coords.size.toSize())
             }
-            .background(highlightColor)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
+            .background(highlightColor),
+        contentDescriptionExpand = "Expand favorites",
+        contentDescriptionCollapse = "Collapse favorites",
     ) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = FAVORITE_CELL_MIN_WIDTH_DP.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = gridHeight),
-            contentPadding = PaddingValues(4.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            items(
-                count = slots.size,
-                key = { slots[it].slotPosition }
-            ) { index ->
-                val slot = slots[index]
-                val firstApp = slot.apps.firstOrNull()
-                val isFolder = slot.apps.size > 1
-                if (firstApp != null) {
-                    Column(
-                        modifier = Modifier
-                            .onGloballyPositioned { coords ->
-                                onRegisterSlotBounds(
-                                    slot.slotPosition,
-                                    coords.positionInRoot(),
-                                    coords.size.toSize()
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val columns = (maxWidth / FAVORITE_CELL_MIN_WIDTH_DP.dp).toInt().coerceAtLeast(1)
+            val totalRows = ceil(slots.size.toDouble() / columns.toDouble()).toInt().coerceAtLeast(1)
+            val visibleRows = if (expanded) totalRows else FAVORITES_COLLAPSED_ROWS
+            val targetHeight = (SHELF_ROW_HEIGHT_DP * visibleRows).dp
+                .coerceAtMost(SHELF_MAX_EXPANDED_HEIGHT_DP.dp)
+
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = FAVORITE_CELL_MIN_WIDTH_DP.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(targetHeight),
+                contentPadding = PaddingValues(4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                items(
+                    count = slots.size,
+                    key = { slots[it].slotPosition }
+                ) { index ->
+                    val slot = slots[index]
+                    val firstApp = slot.apps.firstOrNull()
+                    val isFolder = slot.apps.size > 1
+                    if (firstApp != null) {
+                        Column(
+                            modifier = Modifier
+                                .onGloballyPositioned { coords ->
+                                    onRegisterSlotBounds(
+                                        slot.slotPosition,
+                                        coords.positionInRoot(),
+                                        coords.size.toSize()
+                                    )
+                                }
+                                .combinedClickable(
+                                    onClick = {
+                                        if (isFolder) onOpenFolder(slot) else onAppClick(firstApp)
+                                    },
+                                    onLongClick = {
+                                        if (isFolder) onOpenFolder(slot) else onRemove(firstApp)
+                                    }
+                                )
+                                .background(
+                                    color = if (hoveredSlot == slot.slotPosition) {
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                    } else {
+                                        Color.Transparent
+                                    },
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 2.dp, vertical = 2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            if (firstApp.icon != null) {
+                                Image(
+                                    painter = rememberDrawablePainter(drawable = firstApp.icon),
+                                    contentDescription = firstApp.label,
+                                    modifier = Modifier.size(34.dp)
                                 )
                             }
-                            .combinedClickable(
-                                onClick = {
-                                    if (isFolder) onOpenFolder(slot) else onAppClick(firstApp)
-                                },
-                                onLongClick = {
-                                    if (isFolder) onOpenFolder(slot) else onRemove(firstApp)
-                                }
-                            )
-                            .background(
-                                color = if (hoveredSlot == slot.slotPosition) {
-                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                } else {
-                                    Color.Transparent
-                                },
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            .padding(horizontal = 2.dp, vertical = 2.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        if (firstApp.icon != null) {
-                            Image(
-                                painter = rememberDrawablePainter(drawable = firstApp.icon),
-                                contentDescription = firstApp.label,
-                                modifier = Modifier.size(34.dp)
+                            Text(
+                                text = if (isFolder) "Folder (${slot.apps.size})" else firstApp.label,
+                                fontSize = 8.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier.width(60.dp)
                             )
                         }
-                        Text(
-                            text = if (isFolder) "Folder (${slot.apps.size})" else firstApp.label,
-                            fontSize = 8.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            modifier = Modifier.width(60.dp)
-                        )
                     }
                 }
             }
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .offset(x = 10.dp)
-                .size(width = 22.dp, height = 56.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
-                )
-                .clickable { expanded = !expanded },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                contentDescription = if (expanded) "Collapse favorites" else "Expand favorites",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

@@ -36,6 +36,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.max
 
 class TimerService : Service() {
@@ -57,6 +58,10 @@ class TimerService : Service() {
     private var awaitingNotificationInteraction: Boolean = false
     private var preferBannerFallbackForOverlayTap: Boolean = false
     private var logSessionHandle: SessionLogger.SessionHandle? = null
+    private var hardDeadlineAtMs: Long? = null
+    private var softDeadlineAtMs: Long? = null
+    private var userAwayOverlayActive: Boolean = false
+    private var lastAwayOverlayTapAtMs: Long = 0L
 
     // Nudge conversation: notification is the single chat surface.
     private var negotiationManager: NegotiationManager? = null
@@ -100,6 +105,8 @@ class TimerService : Service() {
         overlayManager.onDismissed = { onOverlayDismissed() }
         overlayManager.onNotificationRequested = { onOverlayNotificationRequested() }
         overlayManager.onBannerReplySubmitted = { onBannerReplySubmitted(it) }
+        overlayManager.onAwayShieldTapped = { onAwayShieldTapped() }
+        overlayManager.onAwayReturnRequested = { onAwayReturnRequested() }
         preferBannerFallbackForOverlayTap = SettingsManager.isNudgeBannerFallbackArmed(this)
         logSessionHandle = SessionLogger.getActiveSessionHandle()
 
@@ -136,15 +143,17 @@ class TimerService : Service() {
                 val explicitDurationMs = intent.getLongExtra(EXTRA_DURATION_MS, -1L)
                 val durationMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
+                val hardDeadlineRaw = intent.getLongExtra(EXTRA_HARD_DEADLINE_AT_MS, 0L)
+                val hardDeadlineAtMs = hardDeadlineRaw.takeIf { it > 0L }
                 val durationMs = if (explicitDurationMs > 0L) {
                     explicitDurationMs
                 } else {
                     durationMinutes * 60 * 1000L
                 }
                 logSessionEvent(
-                    "ACTION_START requested: durationMs=$durationMs package=${packageName.ifBlank { "<none>" }}"
+                    "ACTION_START requested: durationMs=$durationMs package=${packageName.ifBlank { "<none>" }} hardDeadlineAtMs=${hardDeadlineAtMs ?: 0L}"
                 )
-                startTimer(durationMs, packageName)
+                startTimer(durationMs, packageName, hardDeadlineAtMs)
             }
             ACTION_START_QUICK_LAUNCH_SESSION -> {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
@@ -169,7 +178,10 @@ class TimerService : Service() {
             ACTION_EXTEND -> {
                 val extraMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
                 logSessionEvent("ACTION_EXTEND requested: +$extraMinutes min")
-                extendTimer(extraMinutes)
+                val extended = extendTimer(extraMinutes)
+                if (!extended) {
+                    logWithSession("Extension blocked due to hard deadline proximity")
+                }
             }
             ACTION_STOP -> {
                 logSessionEvent("ACTION_STOP requested")
@@ -192,8 +204,11 @@ class TimerService : Service() {
 
     // ── Timer lifecycle ──────────────────────────────────────────────
 
-    private fun startTimer(durationMs: Long, packageName: String) {
+    private fun startTimer(durationMs: Long, packageName: String, hardDeadlineAtMs: Long?) {
         resetNudgesForNewTimer()
+        softDeadlineAtMs = null
+        this.hardDeadlineAtMs = hardDeadlineAtMs
+        overlayManager.setDeadlineState(softDeadlineAtMs, this.hardDeadlineAtMs)
         SettingsManager.clearQuickLaunchSession(this)
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissQuickLaunchFrame()
@@ -203,7 +218,7 @@ class TimerService : Service() {
         _currentPackage.value = packageName
         _timerState.value = TimerState.Counting(durationMs, durationMs)
         logSessionEvent(
-            "Timer state -> Counting (totalMs=$durationMs, startedAtMs=${_sessionStartedAtMs.value}, package=${packageName.ifBlank { "<none>" }})"
+            "Timer state -> Counting (totalMs=$durationMs, startedAtMs=${_sessionStartedAtMs.value}, package=${packageName.ifBlank { "<none>" }}, hardDeadlineAtMs=${hardDeadlineAtMs ?: 0L})"
         )
 
         val durationMinutesDisplay = ((durationMs + 59_999L) / 60_000L).toInt()
@@ -261,6 +276,9 @@ class TimerService : Service() {
         _sessionStartedAtMs.value = 0L
         _currentPackage.value = initialPackageName
         _timerState.value = TimerState.Idle
+        softDeadlineAtMs = null
+        hardDeadlineAtMs = null
+        overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
 
         val appLabel = getAppLabel(initialPackageName)
         logWithSession("Quick Launch started: **$appLabel** (no timer running)")
@@ -389,9 +407,15 @@ class TimerService : Service() {
         }
     }
 
-    private fun extendTimer(extraMinutes: Int) {
+    private fun extendTimer(extraMinutes: Int): Boolean {
         val state = _timerState.value
         val extraMs = extraMinutes * 60 * 1000L
+        if (isHardDeadlineCloserThanSessionDeadline()) {
+            logSessionEvent(
+                "Extension denied (+$extraMinutes min): hard deadline is closer than session deadline",
+            )
+            return false
+        }
 
         nudgeJob?.cancel()
         _nudgeCount.value = 0
@@ -403,7 +427,7 @@ class TimerService : Service() {
         when (state) {
             is TimerState.Expired -> {
                 val pkg = _currentPackage.value
-                startTimer(extraMinutes * 60 * 1000L, pkg)
+                startTimer(extraMinutes * 60 * 1000L, pkg, hardDeadlineAtMs)
             }
             is TimerState.Counting -> {
                 val newRemaining = state.remainingMs + extraMs
@@ -412,10 +436,13 @@ class TimerService : Service() {
             }
             is TimerState.Idle -> { }
         }
+        return true
     }
 
     private fun onTimerExpired(packageName: String) {
         _timerState.value = TimerState.Expired(0)
+        softDeadlineAtMs = System.currentTimeMillis()
+        overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
         logSessionEvent("Timer state -> Expired (package=${packageName.ifBlank { "<none>" }})")
         val appLabel = getAppLabel(packageName)
         logWithSession("**Time's up!** Session timer expired (was using $appLabel)")
@@ -423,15 +450,12 @@ class TimerService : Service() {
         val canOverlay = overlayManager.canDrawOverlay()
         Log.d(TAG, "onTimerExpired: canDrawOverlay=$canOverlay")
 
-        val initialMessage = "Time's up! Ready to put down $appLabel?"
         if (!canOverlay) {
             Log.w(TAG, "Overlay permission not granted — nudges will appear as notifications only")
             logWithSession("(Overlay permission not granted — nudges will appear as notifications only)")
         }
 
         startNudgeConversation(packageName)
-        nudgeMessages.add(NudgeMessage(initialMessage, isFromUser = false))
-        showConversationNotification(forceHeadsUp = true)
         _nudgeCount.value = 0
         startNudging(packageName)
     }
@@ -441,6 +465,13 @@ class TimerService : Service() {
         nudgeJob = serviceScope.launch {
             var overrunMs = 0L
             var bubbleCount = 0
+            var lastUserActivityAtMs: Long? = UsageTracker.getLastUserActivityTimestampMs(
+                context = this@TimerService,
+                lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
+                includeForegroundTransitions = false,
+            )
+            var awaySignalUnavailableLogged = false
+            var lastAwaySignalPollAtMs = 0L
             val initialDelayMs = SettingsManager
                 .getNudgeInitialNotificationDelayMinutes(this@TimerService)
                 .coerceAtLeast(0) * 60_000L
@@ -463,6 +494,65 @@ class TimerService : Service() {
             while (true) {
                 delay(1_000L)
                 val now = System.currentTimeMillis()
+                if (now - lastAwaySignalPollAtMs >= USER_AWAY_SIGNAL_POLL_MS) {
+                    val detectedActivityAtMs = UsageTracker.getLastUserActivityTimestampMs(
+                        context = this@TimerService,
+                        lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
+                        includeForegroundTransitions = false,
+                    )
+                    if (detectedActivityAtMs != null) {
+                        val current = lastUserActivityAtMs
+                        lastUserActivityAtMs = if (current == null) {
+                            detectedActivityAtMs
+                        } else {
+                            max(current, detectedActivityAtMs)
+                        }
+                    }
+                    val tapActivityAtMs = lastAwayOverlayTapAtMs
+                    if (tapActivityAtMs > 0L) {
+                        val current = lastUserActivityAtMs
+                        lastUserActivityAtMs = if (current == null) {
+                            tapActivityAtMs
+                        } else {
+                            max(current, tapActivityAtMs)
+                        }
+                    }
+                    lastAwaySignalPollAtMs = now
+                }
+                val lastActivityAtMs = lastUserActivityAtMs
+                if (lastActivityAtMs == null) {
+                    if (userAwayOverlayActive) {
+                        userAwayOverlayActive = false
+                        overlayManager.dismissAwayShield()
+                        logSessionEvent("Away shield hidden: USER_INTERACTION signal unavailable")
+                    }
+                    if (!awaySignalUnavailableLogged) {
+                        awaySignalUnavailableLogged = true
+                        logSessionEvent(
+                            "Away detection disabled: no USER_INTERACTION signal available on this device/interval",
+                        )
+                    }
+                }
+                val inactivityMs = lastActivityAtMs?.let { (now - it).coerceAtLeast(0L) } ?: 0L
+                val isUserAway =
+                    lastActivityAtMs != null && inactivityMs >= USER_AWAY_INACTIVITY_THRESHOLD_MS
+                if (isUserAway) {
+                    if (!userAwayOverlayActive) {
+                        userAwayOverlayActive = true
+                        overlayManager.showAwayShield()
+                        logSessionEvent(
+                            "User away inferred from inactivity (${inactivityMs / 1000}s); showing away shield",
+                        )
+                        logWithSession(
+                            "User appears away (${inactivityMs / 1000}s idle) — pausing nudge escalation and overrun",
+                        )
+                    }
+                    continue
+                } else if (userAwayOverlayActive) {
+                    userAwayOverlayActive = false
+                    overlayManager.dismissAwayShield()
+                    logSessionEvent("User activity resumed; hiding away shield")
+                }
                 if (nudgeResetRequested) {
                     stage = NudgeStage.WAITING_AFTER_NOTIFICATION
                     stageElapsedMs = 0L
@@ -510,10 +600,10 @@ class TimerService : Service() {
                                 "Bubble trigger dispatch: canOverlay=$canOverlayNow count=$bubbleCount"
                             )
                             if (canOverlayNow) {
-                                overlayManager.showBubble(bubbleCount)
+                                overlayManager.showBubble(nudgeCount = bubbleCount)
                                 overlayManager.updateConversationMessage("", bubbleCount)
                             } else {
-                                showConversationNotification(forceHeadsUp = false)
+                                logSessionEvent("Bubble fallback notification suppressed (single notification mode)")
                             }
 
                             logWithSession(
@@ -553,15 +643,14 @@ class TimerService : Service() {
             SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
             )
         if (preferBannerFallbackForOverlayTap) {
-            showConversationNotification(forceHeadsUp = false)
             overlayManager.showConversationBanner(buildBannerPreviewLines())
             logWithSession("Banner fallback shown after prior notification-open failure")
             logSessionEvent("Overlay tap used banner fallback")
         } else {
-            showConversationNotification(forceHeadsUp = true)
-            logSessionEvent("Overlay tap requested heads-up notification")
+            overlayManager.showConversationBanner(buildBannerPreviewLines())
+            logSessionEvent("Overlay tap kept in birds/banner flow (no repost)")
         }
-        armNotificationInteractionWatch("overlay tap")
+        clearNotificationInteractionWatch(reason = "overlay tap handled in birds/banner flow", markSuccess = false)
     }
 
     private fun onBannerReplySubmitted(replyText: String) {
@@ -575,9 +664,23 @@ class TimerService : Service() {
             )
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
         overlayManager.showConversationBanner(buildBannerPreviewLines())
-        showConversationNotification(forceHeadsUp = false)
+        showConversationNotification(alertUser = false)
         logWithSession("You (banner): $payload")
-        handleNudgeReplyText(payload)
+        handleNudgeReplyText(payload, keepBannerVisible = true)
+    }
+
+    private fun onAwayReturnRequested() {
+        userAwayOverlayActive = false
+        overlayManager.dismissAwayShield()
+        logSessionEvent("Away shield acknowledged by user")
+        logWithSession("Away shield acknowledged — returning to timer")
+        forceBackToTimer(MainActivity.FORCE_TIMER_REASON_AWAY_RETURN)
+    }
+
+    private fun onAwayShieldTapped() {
+        userAwayOverlayActive = false
+        lastAwayOverlayTapAtMs = System.currentTimeMillis()
+        logSessionEvent("Away shield dismissed by passive tap")
     }
 
     private fun forceBackToTimer(reason: String) {
@@ -648,6 +751,9 @@ class TimerService : Service() {
             _sessionStartedAtMs.value = 0L
             _currentPackage.value = ""
             _nudgeCount.value = 0
+            softDeadlineAtMs = null
+            hardDeadlineAtMs = null
+            overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
             SettingsManager.setTimerRunning(this@TimerService, false)
             SettingsManager.clearQuickLaunchSession(this@TimerService)
 
@@ -710,6 +816,9 @@ class TimerService : Service() {
             _sessionStartedAtMs.value = 0L
             _currentPackage.value = ""
             _nudgeCount.value = 0
+            softDeadlineAtMs = null
+            hardDeadlineAtMs = null
+            overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
             SettingsManager.setTimerRunning(this@TimerService, false)
             SettingsManager.clearQuickLaunchSession(this@TimerService)
 
@@ -761,7 +870,7 @@ class TimerService : Service() {
                     overrunMinutes = 0, nudgeCount = 0,
                 )
                 nudgeMessages.add(NudgeMessage(result.responseText, isFromUser = false))
-                showConversationNotification(forceHeadsUp = true)
+                showConversationNotification(alertUser = true)
                 overlayManager.updateConversationMessage(result.responseText, _nudgeCount.value)
                 logSessionEvent("Initial AI nudge response received")
 
@@ -774,7 +883,7 @@ class TimerService : Service() {
                 nudgeMessages.add(
                     NudgeMessage("Time's up! Your session has ended.", isFromUser = false)
                 )
-                showConversationNotification(forceHeadsUp = true)
+                showConversationNotification(alertUser = true)
             }
         }
     }
@@ -793,18 +902,18 @@ class TimerService : Service() {
             SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
             )
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
-        showConversationNotification(forceHeadsUp = false)
+        showConversationNotification(alertUser = false)
         logWithSession("You: $payload")
-        handleNudgeReplyText(payload)
+        handleNudgeReplyText(payload, keepBannerVisible = false)
     }
 
-    private fun handleNudgeReplyText(replyText: String) {
+    private fun handleNudgeReplyText(replyText: String, keepBannerVisible: Boolean) {
         val manager = negotiationManager
         if (manager == null) {
             logSessionEvent("Nudge reply received but conversation manager is null")
             val fallback = "Take a moment to reflect on whether you still need this app."
             nudgeMessages.add(NudgeMessage(fallback, isFromUser = false))
-            showConversationNotification(forceHeadsUp = false)
+            showConversationNotification(alertUser = false)
             overlayManager.updateConversationMessage(fallback, _nudgeCount.value)
             nudgeResetRequested = true
             nudgePauseUntilMs = System.currentTimeMillis() + (
@@ -818,9 +927,11 @@ class TimerService : Service() {
             try {
                 val result = manager.reply(replyText)
                 nudgeMessages.add(NudgeMessage(result.responseText, isFromUser = false))
-                showConversationNotification(forceHeadsUp = false)
+                showConversationNotification(alertUser = false)
                 overlayManager.updateConversationMessage(result.responseText, _nudgeCount.value)
-                overlayManager.showConversationBanner(buildBannerPreviewLines())
+                if (keepBannerVisible) {
+                    overlayManager.showConversationBanner(buildBannerPreviewLines())
+                }
                 logWithSession("MindfulHome: ${result.responseText}")
                 logSessionEvent("AI reply processed")
                 nudgeResetRequested = true
@@ -830,16 +941,18 @@ class TimerService : Service() {
                     )
 
                 if (result.extensionMinutes > 0) {
-                    handleExtension(result.extensionMinutes)
+                    handleExtension(result.extensionMinutes, keepBannerVisible)
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling nudge reply", e)
                 logSessionEvent("AI reply handling failed: ${e.javaClass.simpleName}")
                 val fallback = "Sorry, I couldn't process that. Take a moment to reflect."
                 nudgeMessages.add(NudgeMessage(fallback, isFromUser = false))
-                showConversationNotification(forceHeadsUp = false)
+                showConversationNotification(alertUser = false)
                 overlayManager.updateConversationMessage(fallback, _nudgeCount.value)
-                overlayManager.showConversationBanner(buildBannerPreviewLines())
+                if (keepBannerVisible) {
+                    overlayManager.showConversationBanner(buildBannerPreviewLines())
+                }
                 nudgeResetRequested = true
                 nudgePauseUntilMs = System.currentTimeMillis() + (
                     SettingsManager.getNudgeInitialNotificationDelayMinutes(this@TimerService)
@@ -849,11 +962,25 @@ class TimerService : Service() {
         }
     }
 
-    private fun handleExtension(minutes: Int) {
-        logSessionEvent("Applying AI extension: +$minutes min")
-        logWithSession("AI granted extension: **$minutes min**")
-        endNudgeConversation()
-        extendTimer(minutes)
+    private fun handleExtension(minutes: Int, keepBannerVisible: Boolean = true) {
+        val extended = extendTimer(minutes)
+        if (extended) {
+            logSessionEvent("Applying AI extension: +$minutes min")
+            logWithSession("AI granted extension: **$minutes min**")
+            endNudgeConversation()
+            return
+        }
+
+        val message =
+            "I can't grant an extension now - your hard deadline is now the closest limit."
+        nudgeMessages.add(NudgeMessage(message, isFromUser = false))
+        showConversationNotification(alertUser = false)
+        overlayManager.updateConversationMessage(message, _nudgeCount.value)
+        if (keepBannerVisible) {
+            overlayManager.showConversationBanner(buildBannerPreviewLines())
+        }
+        logWithSession("AI extension blocked by hard deadline")
+        logSessionEvent("AI extension blocked by hard deadline")
     }
 
     private fun endNudgeConversation() {
@@ -871,10 +998,10 @@ class TimerService : Service() {
 
     // ── Notification builders ────────────────────────────────────────
 
-    private fun showConversationNotification(forceHeadsUp: Boolean) {
+    private fun showConversationNotification(alertUser: Boolean) {
         if (nudgeMessages.isEmpty()) return
         logSessionEvent(
-            "Posting conversation notification (forceHeadsUp=$forceHeadsUp, messages=${nudgeMessages.size})"
+            "Posting conversation notification (alertUser=$alertUser, messages=${nudgeMessages.size})"
         )
 
         // Tapping the notification brings the user directly to the timer screen.
@@ -925,15 +1052,13 @@ class TimerService : Service() {
             .addAction(replyAction)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setOnlyAlertOnce(true)
+            .setSilent(!alertUser)
             .setAutoCancel(false)
             .setOngoing(false)
             .build()
 
         val notificationManager = getSystemService(NotificationManager::class.java)
-        if (forceHeadsUp) {
-            // Cancel before reposting so users can intentionally re-open heads-up.
-            notificationManager.cancel(NUDGE_NOTIFICATION_ID)
-        }
         notificationManager.notify(NUDGE_NOTIFICATION_ID, notification)
     }
 
@@ -1079,6 +1204,24 @@ class TimerService : Service() {
 
     // ── Helpers ──────────────────────────────────────────────────────
 
+    private fun isHardDeadlineCloserThanSessionDeadline(nowMs: Long = System.currentTimeMillis()): Boolean {
+        val hardDeadline = hardDeadlineAtMs ?: return false
+        val softDistanceMs = currentSessionDeadlineDistanceMs(nowMs) ?: return false
+        val hardDistanceMs = abs(hardDeadline - nowMs)
+        return hardDistanceMs < softDistanceMs
+    }
+
+    private fun currentSessionDeadlineDistanceMs(nowMs: Long): Long? {
+        return when (val state = _timerState.value) {
+            is TimerState.Counting -> state.remainingMs.coerceAtLeast(0L)
+            is TimerState.Expired -> state.overrunMs.coerceAtLeast(0L)
+            is TimerState.Idle -> {
+                val startedAt = _sessionStartedAtMs.value
+                if (startedAt <= 0L) null else (nowMs - startedAt).coerceAtLeast(0L)
+            }
+        }
+    }
+
     private fun getAppLabel(packageName: String): String {
         if (packageName.isEmpty()) return "your phone"
         return try {
@@ -1106,6 +1249,9 @@ class TimerService : Service() {
         SettingsManager.setTimerRunning(this, false)
         SettingsManager.clearQuickLaunchSession(this)
         _sessionStartedAtMs.value = 0L
+        softDeadlineAtMs = null
+        hardDeadlineAtMs = null
+        overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
         super.onDestroy()
     }
 
@@ -1129,6 +1275,9 @@ class TimerService : Service() {
         private const val QUICK_LAUNCH_NOTIFICATION_ID = 1003
         private const val QUICK_LAUNCH_MONITOR_POLL_MS = 1500L
         private const val QUICK_LAUNCH_SWITCH_GRACE_MS = 60_000L
+        private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
+        private const val USER_AWAY_SIGNAL_POLL_MS = 5_000L
+        private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
         private const val DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT =
             "Quick Launch active - monitoring app switches"
         private val QUICK_LAUNCH_UTILITY_PACKAGES_EXACT = setOf(
@@ -1181,6 +1330,7 @@ class TimerService : Service() {
         const val ACTION_HANDLE_REPLY = "com.mindfulhome.ACTION_HANDLE_REPLY"
         const val EXTRA_DURATION_MINUTES = "duration_minutes"
         const val EXTRA_DURATION_MS = "duration_ms"
+        const val EXTRA_HARD_DEADLINE_AT_MS = "hard_deadline_at_ms"
         const val EXTRA_PACKAGE_NAME = "package_name"
         const val EXTRA_ALLOWED_PACKAGES = "allowed_packages"
         const val EXTRA_SESSION_TOKEN = "session_token"
@@ -1204,11 +1354,18 @@ class TimerService : Service() {
             durationMinutes: Int,
             packageName: String,
             sessionHandle: SessionLogger.SessionHandle? = null,
+            hardDeadlineMinutes: Int? = null,
         ) {
+            val hardDeadlineAtMs = hardDeadlineMinutes
+                ?.coerceAtLeast(1)
+                ?.let { System.currentTimeMillis() + it * 60_000L }
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_DURATION_MINUTES, durationMinutes)
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
+                if (hardDeadlineAtMs != null) {
+                    putExtra(EXTRA_HARD_DEADLINE_AT_MS, hardDeadlineAtMs)
+                }
                 attachSession(sessionHandle)
             }
             context.startForegroundService(intent)

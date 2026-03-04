@@ -26,6 +26,7 @@ import com.mindfulhome.R
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.random.Random
 
 /**
@@ -45,13 +46,21 @@ class OverlayNudgeManager(private val context: Context) {
     private var conversationBannerParams: WindowManager.LayoutParams? = null
     private var conversationBannerBodyView: TextView? = null
     private var conversationBannerReplyInput: EditText? = null
+    private var awayShieldView: View? = null
+    private var awayShieldPromptButton: TextView? = null
+    private var awayShieldEscalationRunnable: Runnable? = null
     private val bubbleEntries = mutableListOf<BubbleEntry>()
     private var nextBubbleId = 1
     private var birdTickerRunning = false
+    private var softDeadlineAtMs: Long? = null
+    private var hardDeadlineAtMs: Long? = null
+    private var lastBadgeRefreshSecond: Long = -1L
 
     var onDismissed: (() -> Unit)? = null
     var onNotificationRequested: (() -> Unit)? = null
     var onBannerReplySubmitted: ((String) -> Unit)? = null
+    var onAwayShieldTapped: (() -> Unit)? = null
+    var onAwayReturnRequested: (() -> Unit)? = null
 
     fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
 
@@ -67,12 +76,20 @@ class OverlayNudgeManager(private val context: Context) {
         handler.post { showBubbleInternal(nudgeCount) }
     }
 
+    fun setDeadlineState(softDeadlineAtMs: Long?, hardDeadlineAtMs: Long?) {
+        handler.post {
+            this.softDeadlineAtMs = softDeadlineAtMs
+            this.hardDeadlineAtMs = hardDeadlineAtMs
+            refreshBubbleBadges(nowMs = System.currentTimeMillis(), force = true)
+        }
+    }
+
     fun updateConversationMessage(
         @Suppress("UNUSED_PARAMETER") message: String,
         @Suppress("UNUSED_PARAMETER") nudgeCount: Int,
     ) {
         handler.post {
-            bubbleEntries.forEach { it.badge.text = it.badgeText }
+            refreshBubbleBadges(nowMs = System.currentTimeMillis(), force = true)
         }
     }
 
@@ -82,6 +99,14 @@ class OverlayNudgeManager(private val context: Context) {
 
     fun showConversationBanner(previewLines: List<String>) {
         handler.post { showConversationBannerInternal(previewLines) }
+    }
+
+    fun showAwayShield() {
+        handler.post { showAwayShieldInternal() }
+    }
+
+    fun dismissAwayShield() {
+        handler.post { dismissAwayShieldInternal() }
     }
 
     /**
@@ -341,6 +366,90 @@ class OverlayNudgeManager(private val context: Context) {
         }
     }
 
+    private fun showAwayShieldInternal() {
+        if (awayShieldView != null) return
+        if (!canDrawOverlay()) return
+
+        val container = FrameLayout(context).apply {
+            setBackgroundColor(Color.parseColor(AWAY_SHIELD_PASSIVE_COLOR))
+            isClickable = true
+            isFocusable = true
+            // Passive phase: any tap means user is present, dismiss immediately.
+            setOnClickListener {
+                onAwayShieldTapped?.invoke()
+                dismissAwayShieldInternal()
+            }
+        }
+
+        val promptButton = TextView(context).apply {
+            text = "you're back?"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            gravity = Gravity.CENTER
+            typeface = Typeface.DEFAULT_BOLD
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(Color.parseColor("#E61F2937"))
+                setStroke(dp(1), Color.parseColor("#66FFFFFF"))
+            }
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+            isClickable = true
+            visibility = View.GONE
+            setOnClickListener {
+                onAwayReturnRequested?.invoke()
+            }
+        }
+
+        container.addView(
+            promptButton,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = dp(28)
+            },
+        )
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            overlayLayoutType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            x = 0
+            y = 0
+        }
+
+        try {
+            windowManager.addView(container, params)
+            awayShieldView = container
+            awayShieldPromptButton = promptButton
+            scheduleAwayShieldEscalation()
+            Log.d(TAG, "Away shield overlay shown")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to add away shield overlay", e)
+        }
+    }
+
+    private fun scheduleAwayShieldEscalation() {
+        awayShieldEscalationRunnable?.let { handler.removeCallbacks(it) }
+        val runnable = Runnable {
+            val activeView = awayShieldView as? FrameLayout ?: return@Runnable
+            // Escalated phase: stronger dim + explicit confirmation button.
+            activeView.setBackgroundColor(Color.parseColor(AWAY_SHIELD_ACTIVE_COLOR))
+            activeView.setOnClickListener(null)
+            activeView.setOnTouchListener { _, _ -> true }
+            awayShieldPromptButton?.visibility = View.VISIBLE
+            Log.d(TAG, "Away shield escalated to active mode")
+        }
+        awayShieldEscalationRunnable = runnable
+        handler.postDelayed(runnable, AWAY_SHIELD_ESCALATION_DELAY_MS)
+    }
+
     // ── Flying birds ────────────────────────────────────────────────
 
     @Suppress("ClickableViewAccessibility")
@@ -361,14 +470,11 @@ class OverlayNudgeManager(private val context: Context) {
             ).toInt()
         }
 
-        val badgeText = if (bubbleEntries.isEmpty()) {
-            "hi"
-        } else {
-            formatBirdBadgeTime(System.currentTimeMillis())
-        }
+        val birdType = randomBirdType()
+        val badgeText = badgeTextForType(birdType, System.currentTimeMillis())
 
         val birdSize = dp(56)
-        val badgeWidth = if (badgeText == "hi") dp(26) else dp(46)
+        val badgeWidth = dp(56)
         val badgeHeight = dp(18)
         val containerWidth = birdSize + badgeWidth / 2
         val containerHeight = birdSize + badgeHeight / 2
@@ -376,11 +482,12 @@ class OverlayNudgeManager(private val context: Context) {
         val container = FrameLayout(context)
 
         val bird = ImageView(context).apply {
-            setImageResource(randomBirdDrawableResId())
+            setImageResource(birdDrawableResIdForType(birdType))
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             elevation = dp(6).toFloat()
             setPadding(dp(6), dp(6), dp(6), dp(6))
         }
+        applyBirdTint(bird, birdType)
 
         val birdParams = FrameLayout.LayoutParams(birdSize, birdSize).apply {
             gravity = Gravity.BOTTOM or Gravity.START
@@ -389,18 +496,19 @@ class OverlayNudgeManager(private val context: Context) {
 
         val badge = TextView(context).apply {
             text = badgeText
-            setTextColor(Color.parseColor("#FF1F2937"))
+            setTextColor(Color.parseColor("#FF0F172A"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(9).toFloat()
-                setColor(Color.parseColor("#FFF8FAFC"))
-                setStroke(dp(1), Color.parseColor("#FFCBD5E1"))
+                setColor(Color.parseColor("#1A0F172A"))
+                setStroke(dp(1), Color.parseColor("#55334155"))
             }
             setPadding(dp(4), 0, dp(4), 0)
             elevation = dp(7).toFloat()
         }
+        applyBadgeStyle(badge, birdType)
         val badgeParams = FrameLayout.LayoutParams(badgeWidth, badgeHeight).apply {
             gravity = Gravity.TOP or Gravity.END
         }
@@ -473,13 +581,13 @@ class OverlayNudgeManager(private val context: Context) {
         try {
             windowManager.addView(container, params)
             val id = nextBubbleId++
-            val badgeLabel = badge.text?.toString().orEmpty()
             bubbleEntries.add(
                 BubbleEntry(
                     id = id,
                     container = container,
+                    bird = bird,
                     badge = badge,
-                    badgeText = badgeLabel,
+                    birdType = birdType,
                     params = params,
                     minX = dp(8),
                     maxX = (metrics.widthPixels - containerWidth - dp(8)).coerceAtLeast(dp(8)),
@@ -489,6 +597,7 @@ class OverlayNudgeManager(private val context: Context) {
                     velocityY = randomBirdVelocityPx(),
                 )
             )
+            refreshBubbleBadges(nowMs = System.currentTimeMillis(), force = true)
             ensureBirdTicker()
             Log.d(
                 TAG,
@@ -509,7 +618,11 @@ class OverlayNudgeManager(private val context: Context) {
         }
         bubbleEntries.clear()
         birdTickerRunning = false
+        softDeadlineAtMs = null
+        hardDeadlineAtMs = null
+        lastBadgeRefreshSecond = -1L
         dismissConversationBannerInternal()
+        dismissAwayShieldInternal()
     }
 
     private fun dismissAllNudgesInternalIfPresent(): Boolean {
@@ -570,6 +683,8 @@ class OverlayNudgeManager(private val context: Context) {
                 }
             }
 
+            refreshBubbleBadges(nowMs = System.currentTimeMillis())
+
             handler.postDelayed(this, BIRD_FRAME_DELAY_MS)
         }
     }
@@ -580,14 +695,78 @@ class OverlayNudgeManager(private val context: Context) {
         return speedPx * direction
     }
 
-    private fun randomBirdDrawableResId(): Int {
-        val index = Random.nextInt(BIRD_MODEL_RES_IDS.size)
-        return BIRD_MODEL_RES_IDS[index]
+    private fun birdDrawableResIdForType(type: BirdType): Int {
+        return when (type) {
+            BirdType.GREEN_NOW -> R.drawable.ic_nudge_bird
+            BirdType.PURPLE_SOFT -> R.drawable.ic_nudge_bird_alt1
+            BirdType.RED_HARD -> R.drawable.ic_nudge_bird_alt2
+        }
+    }
+
+    private fun randomBirdType(): BirdType {
+        val types = BirdType.values()
+        return types[Random.nextInt(types.size)]
     }
 
     private fun formatBirdBadgeTime(timestampMs: Long): String {
         val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
         return formatter.format(Date(timestampMs))
+    }
+
+    private fun refreshBubbleBadges(nowMs: Long, force: Boolean = false) {
+        val nowSecond = nowMs / 1000L
+        if (!force && nowSecond == lastBadgeRefreshSecond) return
+        lastBadgeRefreshSecond = nowSecond
+        bubbleEntries.forEach { entry ->
+            entry.badge.text = badgeTextForType(entry.birdType, nowMs)
+        }
+    }
+
+    private fun badgeTextForType(type: BirdType, nowMs: Long): String {
+        return when (type) {
+            BirdType.GREEN_NOW -> formatBirdBadgeTime(nowMs)
+            BirdType.PURPLE_SOFT -> {
+                val softAt = softDeadlineAtMs
+                if (softAt == null) {
+                    "+0m"
+                } else {
+                    val deltaMs = (nowMs - softAt).coerceAtLeast(0L)
+                    "+${deltaMs / 60_000L}m"
+                }
+            }
+            BirdType.RED_HARD -> {
+                val hardAt = hardDeadlineAtMs ?: return "hi"
+                val diffMs = hardAt - nowMs
+                val absMinutes = (abs(diffMs) + 59_999L) / 60_000L
+                val sign = if (diffMs >= 0L) "-" else "+"
+                "$sign${absMinutes}m"
+            }
+        }
+    }
+
+    private fun applyBirdTint(
+        bird: ImageView,
+        @Suppress("UNUSED_PARAMETER") type: BirdType,
+    ) {
+        bird.clearColorFilter()
+        bird.background = null
+    }
+
+    private fun applyBadgeStyle(badge: TextView, type: BirdType) {
+        val accent = when (type) {
+            BirdType.GREEN_NOW -> Color.parseColor("#22C55E")
+            BirdType.PURPLE_SOFT -> Color.parseColor("#A855F7")
+            BirdType.RED_HARD -> Color.parseColor("#EF4444")
+        }
+        badge.setTextColor(Color.parseColor("#FF000000"))
+        val bg = (badge.background as? GradientDrawable) ?: return
+        bg.setColor(withAlpha(accent, 0.10f))
+        bg.setStroke(dp(1), withAlpha(accent, 0.35f))
+    }
+
+    private fun withAlpha(color: Int, alphaFraction: Float): Int {
+        val a = (alphaFraction.coerceIn(0f, 1f) * 255f).toInt()
+        return Color.argb(a, Color.red(color), Color.green(color), Color.blue(color))
     }
 
     private fun dismissConversationBannerInternal() {
@@ -603,6 +782,20 @@ class OverlayNudgeManager(private val context: Context) {
         conversationBannerParams = null
         conversationBannerBodyView = null
         conversationBannerReplyInput = null
+    }
+
+    private fun dismissAwayShieldInternal() {
+        awayShieldEscalationRunnable?.let { handler.removeCallbacks(it) }
+        awayShieldEscalationRunnable = null
+        awayShieldView?.let {
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove away shield overlay", e)
+            }
+        }
+        awayShieldView = null
+        awayShieldPromptButton = null
     }
 
     private fun setConversationBannerFocusable(
@@ -647,8 +840,9 @@ class OverlayNudgeManager(private val context: Context) {
     private data class BubbleEntry(
         val id: Int,
         val container: View,
+        val bird: ImageView,
         val badge: TextView,
-        val badgeText: String,
+        val birdType: BirdType,
         val params: WindowManager.LayoutParams,
         val minX: Int,
         val maxX: Int,
@@ -658,16 +852,20 @@ class OverlayNudgeManager(private val context: Context) {
         var velocityY: Int,
     )
 
+    private enum class BirdType {
+        GREEN_NOW,
+        PURPLE_SOFT,
+        RED_HARD,
+    }
+
     companion object {
         private const val TAG = "OverlayNudgeManager"
+        private const val AWAY_SHIELD_ESCALATION_DELAY_MS = 60_000L
+        private const val AWAY_SHIELD_PASSIVE_COLOR = "#1A000000"
+        private const val AWAY_SHIELD_ACTIVE_COLOR = "#33000000"
         // Lower overlay churn to reduce UI-thread load on slower devices/emulators.
         private const val BIRD_FRAME_DELAY_MS = 80L
         private const val MIN_BIRD_SPEED_DP = 1
         private const val MAX_BIRD_SPEED_DP = 2
-        private val BIRD_MODEL_RES_IDS = intArrayOf(
-            R.drawable.ic_nudge_bird,
-            R.drawable.ic_nudge_bird_alt1,
-            R.drawable.ic_nudge_bird_alt2,
-        )
     }
 }

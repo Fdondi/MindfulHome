@@ -60,6 +60,38 @@ object UsageTracker {
         return stats != null && stats.isNotEmpty()
     }
 
+    fun getLastUserActivityTimestampMs(
+        context: Context,
+        lookbackMs: Long = 5 * 60_000L,
+        includeForegroundTransitions: Boolean = true,
+    ): Long? {
+        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
+            as? UsageStatsManager ?: return null
+        val now = System.currentTimeMillis()
+        val events = usageStatsManager.queryEvents(
+            now - lookbackMs.coerceAtLeast(60_000L),
+            now,
+        )
+        val event = UsageEvents.Event()
+        var latestTimestamp = 0L
+        while (events.hasNextEvent()) {
+            events.getNextEvent(event)
+            val isUserActivityEvent =
+                event.eventType == UsageEvents.Event.USER_INTERACTION ||
+                    (
+                        includeForegroundTransitions &&
+                            (
+                                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+                                )
+                        )
+            if (isUserActivityEvent && event.timeStamp > latestTimestamp) {
+                latestTimestamp = event.timeStamp
+            }
+        }
+        return latestTimestamp.takeIf { it > 0L }
+    }
+
     fun getMostUsedAppsToday(context: Context, maxItems: Int = 15): List<DailyAppUsage> {
         if (maxItems <= 0) return emptyList()
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)

@@ -59,6 +59,7 @@ class MainActivity : ComponentActivity() {
         const val EXTRA_FORCE_TIMER_REASON = "force_timer_reason"
         const val FORCE_TIMER_REASON_EXPIRED = "expired_timer"
         const val FORCE_TIMER_REASON_QUICK_LAUNCH = "quick_launch_exit"
+        const val FORCE_TIMER_REASON_AWAY_RETURN = "away_return"
 
         var shouldShowTimer by mutableStateOf(true)
 
@@ -134,8 +135,11 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                         TimerScreen(
-                            onTimerSet = { durationMinutes, reason ->
-                                Log.d("MainActivity", "onTimerSet: duration=$durationMinutes reason='$reason'")
+                            onTimerSet = { durationMinutes, reason, hardDeadlineMinutes ->
+                                Log.d(
+                                    "MainActivity",
+                                    "onTimerSet: duration=$durationMinutes reason='$reason' hardDeadlineMinutes=$hardDeadlineMinutes",
+                                )
                                 shouldShowTimer = false
                                 lastDurationMinutes = durationMinutes
                                 unlockReason = reason
@@ -151,7 +155,11 @@ class MainActivity : ComponentActivity() {
                                     "Timer + intention set: **$durationMinutes min** - $normalizedReason",
                                 )
                                 TimerService.start(
-                                    this@MainActivity, durationMinutes, "", handle
+                                    context = this@MainActivity,
+                                    durationMinutes = durationMinutes,
+                                    packageName = "",
+                                    sessionHandle = handle,
+                                    hardDeadlineMinutes = hardDeadlineMinutes,
                                 )
                                 Log.d("MainActivity", "TimerService.start called, navigating to home")
                                 navCtrl.navigate("home") {

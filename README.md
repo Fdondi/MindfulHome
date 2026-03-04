@@ -12,24 +12,22 @@ MindfulHome helps you use your phone more intentionally through soft nudges, not
 - **AI gatekeeper**: Hidden apps can only be accessed by talking to an on-device AI that gently pushes back, but always ultimately relents
 - **No force**: You are always in control
 
+## Development Environment
+
+MindfulHome uses a single development workflow:
+
+- **Standard (local development):** Android Studio + local Android SDK/JDK on your machine
+
+If you are using AI assistant rules, keep environment assumptions **project-scoped** in `.cursor/rules/` for this repository rather than as global rules.
+
 ## Building
 
-### With Android Studio (recommended for development)
+### With Android Studio (standard development workflow)
 
 Open the project in Android Studio. It will sync Gradle automatically. Use Run/Debug as usual -- debugger, logcat, layout inspector all work normally.
 
 **Prerequisites:** Android Studio with SDK 35 and JDK 17.
-
-### With Podman (optional, for reproducible CI builds)
-
-A `Containerfile` and build script are provided for headless builds without a local Android SDK:
-
-```powershell
-# Windows
-.\build-in-container.ps1 assembleDebug
-
-# The APK will be at app/build/outputs/apk/debug/app-debug.apk
-```
+**Build performance:** Gradle configuration cache is enabled by default in `gradle.properties`.
 
 ### AI Model (Optional)
 

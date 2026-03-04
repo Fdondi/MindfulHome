@@ -7,6 +7,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,7 +23,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,7 +31,6 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -74,6 +74,7 @@ import com.mindfulhome.AppVersion
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.service.UsageTracker
+import com.mindfulhome.ui.common.PullTabShelf
 import com.mindfulhome.util.PackageManagerHelper
 import java.text.DateFormat
 import java.util.Date
@@ -81,6 +82,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlin.math.ceil
 
 private const val MAX_MINUTES = 120
 private const val VISIBLE_ITEMS = 5
@@ -89,12 +91,13 @@ private const val MOST_USED_VISIBLE_ITEMS = 3
 private const val MOST_USED_MAX_ITEMS = 15
 private const val MOST_USED_ROW_HEIGHT_DP = 44
 private const val SHELF_CELL_MIN_WIDTH_DP = 64
+private const val SHELF_ROW_HEIGHT_DP = 72
 private const val SHELF_MAX_EXPANDED_HEIGHT_DP = 220
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimerScreen(
-    onTimerSet: (minutes: Int, reason: String) -> Unit,
+    onTimerSet: (minutes: Int, reason: String, hardDeadlineMinutes: Int?) -> Unit,
     savedAppLabel: String? = null,
     savedMinutes: Int = 0,
     onResumeSession: (() -> Unit)? = null,
@@ -113,7 +116,10 @@ fun TimerScreen(
 
     val items = (1..MAX_MINUTES).toList()
     val listState = rememberLazyListState()
+    val hardDeadlineItems = (1..MAX_MINUTES).toList()
+    val hardDeadlineListState = rememberLazyListState()
     var reason by remember { mutableStateOf("") }
+    var hardDeadlineEnabled by remember { mutableStateOf(false) }
     var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
     val clockFormatter = remember { DateFormat.getTimeInstance(DateFormat.SHORT) }
 
@@ -132,6 +138,20 @@ fun TimerScreen(
     // Keep all actions relative to the same highlighted center row.
     val selectedMinutes by remember {
         derivedStateOf { items.getOrElse(centerIndex) { 1 } }
+    }
+    val hardDeadlineCenterIndex by remember {
+        derivedStateOf {
+            val layoutInfo = hardDeadlineListState.layoutInfo
+            val viewportCenter = layoutInfo.viewportStartOffset +
+                (layoutInfo.viewportEndOffset - layoutInfo.viewportStartOffset) / 2
+            layoutInfo.visibleItemsInfo.minByOrNull {
+                val itemCenter = it.offset + it.size / 2
+                kotlin.math.abs(itemCenter - viewportCenter)
+            }?.index ?: 0
+        }
+    }
+    val selectedHardDeadlineMinutes by remember {
+        derivedStateOf { hardDeadlineItems.getOrElse(hardDeadlineCenterIndex) { 15 } }
     }
 
     // Restore scroll position when viewport resizes (keyboard open/close)
@@ -198,6 +218,7 @@ fun TimerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .imePadding()
+                .verticalScroll(rememberScrollState())
                 .padding(bottom = if (hasShelf) 20.dp else 0.dp)
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -213,7 +234,7 @@ fun TimerScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Until when do you want\nto use your phone?",
+                text = "When should you be done?",
                 style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onBackground
@@ -223,7 +244,7 @@ fun TimerScreen(
 
             BoxWithConstraints(
                 modifier = Modifier
-                    .weight(1f)
+                    .height((ITEM_HEIGHT_DP * VISIBLE_ITEMS).dp)
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
@@ -312,6 +333,133 @@ fun TimerScreen(
                 }
             }
 
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth(0.8f)
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                        shape = MaterialTheme.shapes.large
+                    )
+                    .clickable { hardDeadlineEnabled = !hardDeadlineEnabled }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "hard deadline?",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Icon(
+                    imageVector = if (hardDeadlineEnabled) {
+                        Icons.Default.KeyboardArrowUp
+                    } else {
+                        Icons.Default.KeyboardArrowDown
+                    },
+                    contentDescription = if (hardDeadlineEnabled) {
+                        "Hide hard deadline"
+                    } else {
+                        "Show hard deadline"
+                    },
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            if (hardDeadlineEnabled) {
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = "When MUST you be done?",
+                    style = MaterialTheme.typography.titleMedium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.error
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Box(
+                    modifier = Modifier
+                        .height((ITEM_HEIGHT_DP * 3).dp)
+                        .fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .height(ITEM_HEIGHT_DP.dp)
+                            .fillMaxWidth(0.55f)
+                            .background(
+                                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.75f),
+                                MaterialTheme.shapes.medium
+                            )
+                    )
+
+                    LazyColumn(
+                        state = hardDeadlineListState,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height((ITEM_HEIGHT_DP * 3).dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        flingBehavior = rememberSnapFlingBehavior(lazyListState = hardDeadlineListState),
+                        contentPadding = PaddingValues(vertical = ITEM_HEIGHT_DP.dp)
+                    ) {
+                        items(hardDeadlineItems.size) { index ->
+                            val distanceFromCenter = kotlin.math.abs(index - hardDeadlineCenterIndex)
+                            val itemMinutes = hardDeadlineItems[index]
+                            val endTimeText = formatEndTime(nowMs, itemMinutes, clockFormatter)
+                            val alphaValue by animateFloatAsState(
+                                targetValue = when (distanceFromCenter) {
+                                    0 -> 1f
+                                    1 -> 0.6f
+                                    else -> 0.3f
+                                },
+                                label = "hard-deadline-alpha"
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .height(ITEM_HEIGHT_DP.dp)
+                                    .fillMaxWidth()
+                                    .alpha(alphaValue),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (distanceFromCenter == 0) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        Text(
+                                            text = endTimeText,
+                                            fontSize = 28.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onErrorContainer
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = formatMinutes(itemMinutes),
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
+                                        )
+                                    }
+                                } else {
+                                    Text(
+                                        text = endTimeText,
+                                        fontSize = 20.sp,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                TextButton(onClick = { hardDeadlineEnabled = false }) {
+                    Text("Hide hard deadline")
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             OutlinedTextField(
@@ -330,7 +478,8 @@ fun TimerScreen(
                 onClick = {
                     Log.d("TimerScreen", "Start clicked: selectedMinutes=$selectedMinutes reason='${reason.trim()}'")
                     Log.d("TimerScreen", "Calling onTimerSet")
-                    onTimerSet(selectedMinutes, reason.trim())
+                    val hardDeadlineMinutes = if (hardDeadlineEnabled) selectedHardDeadlineMinutes else null
+                    onTimerSet(selectedMinutes, reason.trim(), hardDeadlineMinutes)
                     Log.d("TimerScreen", "onTimerSet returned")
                 },
                 modifier = Modifier
@@ -384,7 +533,7 @@ fun TimerScreen(
                 expanded = quickLaunchExpanded,
                 onExpandedChange = { quickLaunchExpanded = it },
                 onAppClick = { appInfo ->
-                    onShelfAppLaunch?.invoke(
+                    onShelfAppLaunch.invoke(
                         selectedMinutes,
                         reason.trim(),
                         appInfo.packageName,
@@ -392,13 +541,12 @@ fun TimerScreen(
                     )
                 },
                 onRemoveApp = { packageName ->
-                    scope.launch { repository?.removeFromShelf(packageName) }
+                    scope.launch { repository.removeFromShelf(packageName) }
                 },
                 onAddClick = { showAddDialog = true },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .navigationBarsPadding()
             )
         }
     }
@@ -408,7 +556,7 @@ fun TimerScreen(
             allApps = allApps,
             shelfPackages = shelfItems.map { it.packageName }.toSet(),
             onAdd = { packageName ->
-                scope.launch { repository?.addToShelf(packageName) }
+                scope.launch { repository .addToShelf(packageName) }
             },
             onDismiss = { showAddDialog = false }
         )
@@ -430,62 +578,53 @@ private fun QuickLaunchDock(
     onAddClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val gridHeight = if (expanded) SHELF_MAX_EXPANDED_HEIGHT_DP.dp else 0.dp
-    Box(
-        modifier = modifier
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-    ) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = SHELF_CELL_MIN_WIDTH_DP.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(max = gridHeight),
-            contentPadding = PaddingValues(4.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            items(
-                count = shelfApps.size,
-                key = { shelfApps[it].packageName }
-            ) { index ->
-                val app = shelfApps[index]
-                ShelfAppItem(
-                    appInfo = app,
-                    onClick = { onAppClick(app) },
-                    onLongClick = { onRemoveApp(app.packageName) }
+    PullTabShelf(
+        expanded = expanded,
+        onExpandedChange = onExpandedChange,
+        showBodyWhenCollapsed = false,
+        modifier = modifier,
+        contentDescriptionExpand = "Expand quick launch",
+        contentDescriptionCollapse = "Collapse quick launch",
+        overlayContent = {
+            IconButton(
+                onClick = onAddClick,
+                modifier = Modifier.align(Alignment.CenterStart)
+            ) {
+                Icon(
+                    Icons.Default.Add,
+                    contentDescription = "Add app to shelf",
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
         }
+    ) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            val columns = (maxWidth / SHELF_CELL_MIN_WIDTH_DP.dp).toInt().coerceAtLeast(1)
+            val totalRows = ceil(shelfApps.size.toDouble() / columns.toDouble()).toInt().coerceAtLeast(1)
+            val targetHeight = (SHELF_ROW_HEIGHT_DP * totalRows).dp
+                .coerceAtMost(SHELF_MAX_EXPANDED_HEIGHT_DP.dp)
 
-        IconButton(
-            onClick = onAddClick,
-            modifier = Modifier.align(Alignment.CenterStart)
-        ) {
-            Icon(
-                Icons.Default.Add,
-                contentDescription = "Add app to shelf",
-                tint = MaterialTheme.colorScheme.primary
-            )
-        }
-
-        Box(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .offset(x = 10.dp)
-                .size(width = 22.dp, height = 56.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    shape = RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
-                )
-                .clickable { onExpandedChange(!expanded) },
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
-                contentDescription = if (expanded) "Collapse quick launch" else "Expand quick launch",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = SHELF_CELL_MIN_WIDTH_DP.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(targetHeight),
+                contentPadding = PaddingValues(4.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                items(
+                    count = shelfApps.size,
+                    key = { shelfApps[it].packageName }
+                ) { index ->
+                    val app = shelfApps[index]
+                    ShelfAppItem(
+                        appInfo = app,
+                        onClick = { onAppClick(app) },
+                        onLongClick = { onRemoveApp(app.packageName) }
+                    )
+                }
+            }
         }
     }
 }
