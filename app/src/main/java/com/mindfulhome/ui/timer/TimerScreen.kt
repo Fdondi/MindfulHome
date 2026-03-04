@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,8 +34,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.BottomSheetScaffold
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -42,11 +45,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetScaffoldState
-import androidx.compose.material3.rememberStandardBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -75,7 +75,10 @@ import com.mindfulhome.data.AppRepository
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.util.PackageManagerHelper
+import java.text.DateFormat
+import java.util.Date
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
@@ -85,6 +88,8 @@ private const val ITEM_HEIGHT_DP = 64
 private const val MOST_USED_VISIBLE_ITEMS = 3
 private const val MOST_USED_MAX_ITEMS = 15
 private const val MOST_USED_ROW_HEIGHT_DP = 44
+private const val SHELF_CELL_MIN_WIDTH_DP = 64
+private const val SHELF_MAX_EXPANDED_HEIGHT_DP = 220
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,6 +114,8 @@ fun TimerScreen(
     val items = (1..MAX_MINUTES).toList()
     val listState = rememberLazyListState()
     var reason by remember { mutableStateOf("") }
+    var nowMs by remember { mutableStateOf(System.currentTimeMillis()) }
+    val clockFormatter = remember { DateFormat.getTimeInstance(DateFormat.SHORT) }
 
     val centerIndex by remember {
         derivedStateOf {
@@ -147,6 +154,14 @@ fun TimerScreen(
         }
     }
 
+    // Keep end-time labels current while user is picking a duration.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(1000L)
+            nowMs = System.currentTimeMillis()
+        }
+    }
+
     // Shelf state
     val shelfItems by repository?.shelfApps()?.collectAsState(initial = emptyList())
         ?: remember { mutableStateOf(emptyList()) }
@@ -172,45 +187,18 @@ fun TimerScreen(
     }
 
     val hasShelf = repository != null && onShelfAppLaunch != null
+    var quickLaunchExpanded by remember { mutableStateOf(false) }
 
-    val scaffoldState = rememberBottomSheetScaffoldState(
-        bottomSheetState = rememberStandardBottomSheetState(
-            initialValue = SheetValue.PartiallyExpanded,
-            skipHiddenState = true
-        )
-    )
-
-    BottomSheetScaffold(
-        scaffoldState = scaffoldState,
-        sheetPeekHeight = if (hasShelf) 48.dp else 0.dp,
-        sheetContainerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        sheetShape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-        sheetContent = {
-            if (hasShelf) {
-                ShelfContent(
-                    shelfApps = shelfApps,
-                    onAppClick = { appInfo ->
-                        onShelfAppLaunch?.invoke(
-                            selectedMinutes,
-                            reason.trim(),
-                            appInfo.packageName,
-                            shelfApps.map { it.packageName }.toSet(),
-                        )
-                    },
-                    onRemoveApp = { packageName ->
-                        scope.launch { repository?.removeFromShelf(packageName) }
-                    },
-                    onAddClick = { showAddDialog = true }
-                )
-            }
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { innerPadding ->
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
                 .imePadding()
+                .padding(bottom = if (hasShelf) 20.dp else 0.dp)
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -225,7 +213,7 @@ fun TimerScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "How long do you want\nto use your phone?",
+                text = "Until when do you want\nto use your phone?",
                 style = MaterialTheme.typography.headlineMedium,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onBackground
@@ -266,6 +254,8 @@ fun TimerScreen(
                 ) {
                     items(items.size) { index ->
                         val distanceFromCenter = kotlin.math.abs(index - centerIndex)
+                        val itemMinutes = items[index]
+                        val endTimeText = formatEndTime(nowMs, itemMinutes, clockFormatter)
                         val alphaValue by animateFloatAsState(
                             targetValue = when (distanceFromCenter) {
                                 0 -> 1f
@@ -282,16 +272,33 @@ fun TimerScreen(
                                 .alpha(alphaValue),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = formatMinutes(items[index]),
-                                fontSize = if (distanceFromCenter == 0) 32.sp else 22.sp,
-                                fontWeight = if (distanceFromCenter == 0) FontWeight.Bold else FontWeight.Normal,
-                                color = if (distanceFromCenter == 0) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onBackground
+                            if (distanceFromCenter == 0) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    Text(
+                                        text = endTimeText,
+                                        fontSize = 32.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = formatMinutes(itemMinutes),
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
+                                    )
                                 }
-                            )
+                            } else {
+                                Text(
+                                    text = endTimeText,
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Normal,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                            }
                         }
                     }
                 }
@@ -362,6 +369,30 @@ fun TimerScreen(
                 hasUsagePermission = hasUsagePermission
             )
         }
+
+        if (hasShelf) {
+            QuickLaunchDock(
+                shelfApps = shelfApps,
+                expanded = quickLaunchExpanded,
+                onExpandedChange = { quickLaunchExpanded = it },
+                onAppClick = { appInfo ->
+                    onShelfAppLaunch?.invoke(
+                        selectedMinutes,
+                        reason.trim(),
+                        appInfo.packageName,
+                        shelfApps.map { it.packageName }.toSet(),
+                    )
+                },
+                onRemoveApp = { packageName ->
+                    scope.launch { repository?.removeFromShelf(packageName) }
+                },
+                onAddClick = { showAddDialog = true },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+            )
+        }
     }
 
     if (showAddDialog && hasShelf) {
@@ -377,63 +408,52 @@ fun TimerScreen(
 }
 
 // ---------------------------------------------------------------------------
-// Shelf content (inside the bottom sheet)
+// Quick launch shelf
 // ---------------------------------------------------------------------------
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ShelfContent(
+private fun QuickLaunchDock(
     shelfApps: List<AppInfo>,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onAppClick: (AppInfo) -> Unit,
     onRemoveApp: (String) -> Unit,
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    val gridHeight = if (expanded) SHELF_MAX_EXPANDED_HEIGHT_DP.dp else 0.dp
+    Box(
+        modifier = modifier
+            .background(MaterialTheme.colorScheme.surfaceContainerLow)
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
-        Text(
-            text = "Quick Launch",
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (shelfApps.isEmpty()) {
-            Text(
-                text = "Swipe up and tap + to add apps",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.padding(vertical = 24.dp)
-            )
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(4),
-                modifier = Modifier.heightIn(max = 300.dp),
-                contentPadding = PaddingValues(4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(
-                    count = shelfApps.size,
-                    key = { shelfApps[it].packageName }
-                ) { index ->
-                    val app = shelfApps[index]
-                    ShelfAppItem(
-                        appInfo = app,
-                        onClick = { onAppClick(app) },
-                        onLongClick = { onRemoveApp(app.packageName) }
-                    )
-                }
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = SHELF_CELL_MIN_WIDTH_DP.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = gridHeight),
+            contentPadding = PaddingValues(4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            items(
+                count = shelfApps.size,
+                key = { shelfApps[it].packageName }
+            ) { index ->
+                val app = shelfApps[index]
+                ShelfAppItem(
+                    appInfo = app,
+                    onClick = { onAppClick(app) },
+                    onLongClick = { onRemoveApp(app.packageName) }
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        IconButton(onClick = onAddClick) {
+        IconButton(
+            onClick = onAddClick,
+            modifier = Modifier.align(Alignment.CenterStart)
+        ) {
             Icon(
                 Icons.Default.Add,
                 contentDescription = "Add app to shelf",
@@ -441,7 +461,24 @@ private fun ShelfContent(
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .offset(x = 10.dp)
+                .size(width = 22.dp, height = 56.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
+                )
+                .clickable { onExpandedChange(!expanded) },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                contentDescription = if (expanded) "Collapse quick launch" else "Expand quick launch",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
@@ -713,6 +750,11 @@ private fun formatMinutes(minutes: Int): String {
         minutes % 60 == 0 -> "${minutes / 60} hr"
         else -> "${minutes / 60} hr ${minutes % 60} min"
     }
+}
+
+private fun formatEndTime(nowMs: Long, minutesFromNow: Int, formatter: DateFormat): String {
+    val endMs = nowMs + minutesFromNow.coerceAtLeast(1) * 60_000L
+    return formatter.format(Date(endMs))
 }
 
 private fun formatUsageDuration(durationMs: Long): String {

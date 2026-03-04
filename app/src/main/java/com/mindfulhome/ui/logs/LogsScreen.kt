@@ -139,7 +139,12 @@ private fun SessionCard(entry: SessionEntry, onCopy: String) {
             .filter { it.startsWith("- ") }
     }
     val bulletCount = entry.eventCount
-    val preview = bullets.firstOrNull()?.removePrefix("- ") ?: ""
+    val preview = bullets.firstOrNull()
+        ?.removePrefix("- ")
+        ?.replace("**", "")
+        ?.trim()
+        ?: ""
+    val isSingleEventSession = bulletCount == 1
 
     Card(
         modifier = Modifier
@@ -156,17 +161,28 @@ private fun SessionCard(entry: SessionEntry, onCopy: String) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                if (isSingleEventSession && !expanded) {
                     Text(
                         text = entry.title,
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
                     )
-                    Text(
-                        text = "$bulletCount events",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                } else {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = entry.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "$bulletCount events",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 if (expanded) {
                     IconButton(onClick = {
@@ -187,7 +203,7 @@ private fun SessionCard(entry: SessionEntry, onCopy: String) {
                 )
             }
 
-            if (!expanded) {
+            if (!expanded && !isSingleEventSession) {
                 // Show a one-line preview
                 if (preview.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
@@ -199,7 +215,7 @@ private fun SessionCard(entry: SessionEntry, onCopy: String) {
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-            } else {
+            } else if (expanded) {
                 Spacer(modifier = Modifier.height(8.dp))
                 bullets.forEach { line ->
                     Text(

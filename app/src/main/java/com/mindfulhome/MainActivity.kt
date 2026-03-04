@@ -145,12 +145,11 @@ class MainActivity : ComponentActivity() {
                                     durationMinutes,
                                     reason,
                                 )
-                                SessionLogger.log(handle, "Timer set: **$durationMinutes min**")
-                                if (reason.isNotBlank()) {
-                                    SessionLogger.log(handle, "Intention: $reason")
-                                } else {
-                                    SessionLogger.log(handle, "Intention: _(not provided)_")
-                                }
+                                val normalizedReason = reason.ifBlank { "_(not provided)_" }
+                                SessionLogger.log(
+                                    handle,
+                                    "Timer + intention set: **$durationMinutes min** - $normalizedReason",
+                                )
                                 TimerService.start(
                                     this@MainActivity, durationMinutes, "", handle
                                 )
@@ -203,19 +202,18 @@ class MainActivity : ComponentActivity() {
                                 Log.d("MainActivity", "Shelf launch: pkg=$packageName duration=$durationMinutes")
                                 shouldShowTimer = false
                                 lastDurationMinutes = durationMinutes
-                                unlockReason = reason
+                                unlockReason = ""
                                 val handle = ensureSessionHandle()
-                                SettingsManager.saveLastDeclaredIntent(
-                                    this@MainActivity,
-                                    durationMinutes,
-                                    reason,
-                                )
-                                SessionLogger.log(handle, "Quick Launch timer: **$durationMinutes min**")
-                                if (reason.isNotBlank()) {
-                                    SessionLogger.log(handle, "Quick Launch intention: $reason")
-                                } else {
-                                    SessionLogger.log(handle, "Quick Launch intention: _(not provided)_")
+                                val quickStartLabel = try {
+                                    val appInfo = packageManager.getApplicationInfo(packageName, 0)
+                                    packageManager.getApplicationLabel(appInfo).toString()
+                                } catch (_: Exception) {
+                                    packageName
                                 }
+                                SessionLogger.log(
+                                    handle,
+                                    "Quick Start launched: **$quickStartLabel** (`$packageName`) - no timer or intention set",
+                                )
                                 TimerService.startQuickLaunchSession(
                                     this@MainActivity,
                                     initialPackageName = packageName,

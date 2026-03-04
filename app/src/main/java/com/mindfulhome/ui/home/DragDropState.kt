@@ -9,7 +9,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 
-const val MAX_DOCK_SLOTS = 5
 private const val FOLDER_CREATE_THRESHOLD_MS = 600L
 
 class DragDropState {
@@ -30,10 +29,15 @@ class DragDropState {
     private var hoverStartMs: Long = 0L
 
     private val itemBounds = mutableMapOf<String, Rect>()
+    private val favoriteSlotBounds = mutableMapOf<Int, Rect>()
     var dockBounds: Rect by mutableStateOf(Rect.Zero)
 
     fun registerItemBounds(key: String, topLeft: Offset, size: Size) {
         itemBounds[key] = Rect(topLeft, size)
+    }
+
+    fun registerFavoriteSlotBounds(slot: Int, topLeft: Offset, size: Size) {
+        favoriteSlotBounds[slot] = Rect(topLeft, size)
     }
 
     fun startDrag(item: HomeGridItem, itemTopLeft: Offset, localTouchOffset: Offset) {
@@ -94,6 +98,11 @@ class DragDropState {
     }
 
     private fun findTargetAt(position: Offset): DropTarget {
+        for ((slot, bounds) in favoriteSlotBounds) {
+            if (bounds.contains(position)) {
+                return DropTarget.OnFavoriteSlot(slot)
+            }
+        }
         if (dockBounds.contains(position)) {
             return DropTarget.Dock
         }
@@ -110,6 +119,7 @@ class DragDropState {
 sealed class DropTarget {
     data object None : DropTarget()
     data object Dock : DropTarget()
+    data class OnFavoriteSlot(val slot: Int) : DropTarget()
     data class OnItem(val key: String) : DropTarget()
 }
 

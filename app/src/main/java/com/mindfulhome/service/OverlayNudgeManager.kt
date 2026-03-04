@@ -16,12 +16,16 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.mindfulhome.R
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.random.Random
 
 /**
@@ -38,7 +42,9 @@ class OverlayNudgeManager(private val context: Context) {
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private var quickLaunchFrameView: View? = null
     private var conversationBannerView: View? = null
+    private var conversationBannerParams: WindowManager.LayoutParams? = null
     private var conversationBannerBodyView: TextView? = null
+    private var conversationBannerReplyInput: EditText? = null
     private val bubbleEntries = mutableListOf<BubbleEntry>()
     private var nextBubbleId = 1
     private var birdTickerRunning = false
@@ -66,7 +72,7 @@ class OverlayNudgeManager(private val context: Context) {
         @Suppress("UNUSED_PARAMETER") nudgeCount: Int,
     ) {
         handler.post {
-            bubbleEntries.forEach { it.badge.text = "hi" }
+            bubbleEntries.forEach { it.badge.text = it.badgeText }
         }
     }
 
@@ -195,7 +201,7 @@ class OverlayNudgeManager(private val context: Context) {
         }
         conversationBannerBodyView = body
         val footer = TextView(context).apply {
-            text = "Use Send to reply, or tap title for notification"
+            text = "Tap field to type here, or tap title for notification"
             setTextColor(Color.parseColor("#FFFFCC80"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
         }
@@ -219,12 +225,25 @@ class OverlayNudgeManager(private val context: Context) {
                         onBannerReplySubmitted?.invoke(payload)
                         setText("")
                     }
+                    setConversationBannerFocusable(false)
                     true
                 } else {
                     false
                 }
             }
+            setOnTouchListener { _, event ->
+                if (event.action == MotionEvent.ACTION_DOWN) {
+                    setConversationBannerFocusable(true, requestInputFocus = true)
+                }
+                false
+            }
+            setOnFocusChangeListener { _, hasFocus ->
+                if (!hasFocus) {
+                    setConversationBannerFocusable(false)
+                }
+            }
         }
+        conversationBannerReplyInput = replyInput
         val sendButton = TextView(context).apply {
             text = "Send"
             setTextColor(Color.WHITE)
@@ -241,6 +260,7 @@ class OverlayNudgeManager(private val context: Context) {
                 if (payload.isBlank()) return@setOnClickListener
                 onBannerReplySubmitted?.invoke(payload)
                 replyInput.setText("")
+                setConversationBannerFocusable(false)
             }
         }
         val composerRow = LinearLayout(context).apply {
@@ -301,7 +321,8 @@ class OverlayNudgeManager(private val context: Context) {
             WindowManager.LayoutParams.MATCH_PARENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayLayoutType(),
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT,
         ).apply {
@@ -313,6 +334,7 @@ class OverlayNudgeManager(private val context: Context) {
         try {
             windowManager.addView(container, params)
             conversationBannerView = container
+            conversationBannerParams = params
             Log.d(TAG, "Conversation banner shown")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to add conversation banner overlay", e)
@@ -339,18 +361,14 @@ class OverlayNudgeManager(private val context: Context) {
             ).toInt()
         }
 
-        if (bubbleEntries.size >= MAX_FLOCK_SIZE) {
-            // Keep the flock to three birds and refresh their movement instead of spawning more.
-            bubbleEntries.forEach { entry ->
-                entry.velocityX = randomBirdVelocityPx()
-                entry.velocityY = randomBirdVelocityPx()
-            }
-            ensureBirdTicker()
-            return
+        val badgeText = if (bubbleEntries.isEmpty()) {
+            "hi"
+        } else {
+            formatBirdBadgeTime(System.currentTimeMillis())
         }
 
         val birdSize = dp(56)
-        val badgeWidth = dp(26)
+        val badgeWidth = if (badgeText == "hi") dp(26) else dp(46)
         val badgeHeight = dp(18)
         val containerWidth = birdSize + badgeWidth / 2
         val containerHeight = birdSize + badgeHeight / 2
@@ -358,7 +376,7 @@ class OverlayNudgeManager(private val context: Context) {
         val container = FrameLayout(context)
 
         val bird = ImageView(context).apply {
-            setImageResource(R.drawable.ic_nudge_bird)
+            setImageResource(randomBirdDrawableResId())
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             elevation = dp(6).toFloat()
             setPadding(dp(6), dp(6), dp(6), dp(6))
@@ -370,7 +388,7 @@ class OverlayNudgeManager(private val context: Context) {
         container.addView(bird, birdParams)
 
         val badge = TextView(context).apply {
-            text = "hi"
+            text = badgeText
             setTextColor(Color.parseColor("#FF1F2937"))
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
             gravity = Gravity.CENTER
@@ -455,11 +473,13 @@ class OverlayNudgeManager(private val context: Context) {
         try {
             windowManager.addView(container, params)
             val id = nextBubbleId++
+            val badgeLabel = badge.text?.toString().orEmpty()
             bubbleEntries.add(
                 BubbleEntry(
                     id = id,
                     container = container,
                     badge = badge,
+                    badgeText = badgeLabel,
                     params = params,
                     minX = dp(8),
                     maxX = (metrics.widthPixels - containerWidth - dp(8)).coerceAtLeast(dp(8)),
@@ -560,7 +580,18 @@ class OverlayNudgeManager(private val context: Context) {
         return speedPx * direction
     }
 
+    private fun randomBirdDrawableResId(): Int {
+        val index = Random.nextInt(BIRD_MODEL_RES_IDS.size)
+        return BIRD_MODEL_RES_IDS[index]
+    }
+
+    private fun formatBirdBadgeTime(timestampMs: Long): String {
+        val formatter = SimpleDateFormat("HH:mm", Locale.getDefault())
+        return formatter.format(Date(timestampMs))
+    }
+
     private fun dismissConversationBannerInternal() {
+        setConversationBannerFocusable(false)
         conversationBannerView?.let {
             try {
                 windowManager.removeView(it)
@@ -569,13 +600,55 @@ class OverlayNudgeManager(private val context: Context) {
             }
         }
         conversationBannerView = null
+        conversationBannerParams = null
         conversationBannerBodyView = null
+        conversationBannerReplyInput = null
+    }
+
+    private fun setConversationBannerFocusable(
+        focusable: Boolean,
+        requestInputFocus: Boolean = false,
+    ) {
+        val bannerView = conversationBannerView ?: return
+        val params = conversationBannerParams ?: return
+        val replyInput = conversationBannerReplyInput
+
+        val currentlyFocusable =
+            (params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE) == 0
+        if (currentlyFocusable == focusable && !requestInputFocus) return
+
+        params.flags = if (focusable) {
+            params.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
+        } else {
+            params.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+        }
+
+        try {
+            windowManager.updateViewLayout(bannerView, params)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to update conversation banner focus mode", e)
+            return
+        }
+
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+        if (focusable) {
+            replyInput?.requestFocus()
+            if (requestInputFocus) {
+                replyInput?.post {
+                    imm?.showSoftInput(replyInput, InputMethodManager.SHOW_IMPLICIT)
+                }
+            }
+        } else {
+            replyInput?.clearFocus()
+            imm?.hideSoftInputFromWindow(replyInput?.windowToken, 0)
+        }
     }
 
     private data class BubbleEntry(
         val id: Int,
         val container: View,
         val badge: TextView,
+        val badgeText: String,
         val params: WindowManager.LayoutParams,
         val minX: Int,
         val maxX: Int,
@@ -587,9 +660,14 @@ class OverlayNudgeManager(private val context: Context) {
 
     companion object {
         private const val TAG = "OverlayNudgeManager"
-        private const val MAX_FLOCK_SIZE = 3
-        private const val BIRD_FRAME_DELAY_MS = 40L
+        // Lower overlay churn to reduce UI-thread load on slower devices/emulators.
+        private const val BIRD_FRAME_DELAY_MS = 80L
         private const val MIN_BIRD_SPEED_DP = 1
         private const val MAX_BIRD_SPEED_DP = 2
+        private val BIRD_MODEL_RES_IDS = intArrayOf(
+            R.drawable.ic_nudge_bird,
+            R.drawable.ic_nudge_bird_alt1,
+            R.drawable.ic_nudge_bird_alt2,
+        )
     }
 }

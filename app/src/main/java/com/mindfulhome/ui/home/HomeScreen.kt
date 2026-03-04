@@ -27,11 +27,12 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Article
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stars
@@ -65,7 +66,6 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -75,6 +75,7 @@ import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.HomeLayoutItem
+import com.mindfulhome.data.ShelfItem
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
@@ -87,6 +88,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
+
+private const val FAVORITE_CELL_MIN_WIDTH_DP = 64
+private const val FAVORITES_COLLAPSED_ROWS = 1
+private const val SHELF_ROW_HEIGHT_DP = 72
+private const val SHELF_MAX_EXPANDED_HEIGHT_DP = 220
 
 @Composable
 fun HomeScreen(
@@ -104,15 +110,13 @@ fun HomeScreen(
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
-    Log.d("HomeScreen", "HomeScreen composing: duration=$durationMinutes reason='$unlockReason'")
-
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var showSearch by remember { mutableStateOf(false) }
 
     // DB flows
     val hiddenApps by repository.hiddenApps().collectAsState(initial = emptyList())
     val layoutItems by repository.homeLayout().collectAsState(initial = emptyList())
-    val dockedItems by repository.dockedApps().collectAsState(initial = emptyList())
+    val shelfItems by repository.shelfApps().collectAsState(initial = emptyList())
     val allIntents by repository.allIntents().collectAsState(initial = emptyList())
 
     // Derived state
@@ -158,12 +162,11 @@ fun HomeScreen(
         }
     }
 
-    // Dock items resolved to AppInfo
-    val dockApps = remember(dockedItems, allApps) {
-        dockedItems.sortedBy { it.dockPosition }.mapNotNull { docked ->
-            allApps.find { it.packageName == docked.packageName }
-        }
+    val favoriteSlots = remember(shelfItems, allApps) {
+        buildFavoriteSlots(shelfItems, allApps)
     }
+    val favoritePackages = remember(shelfItems) { shelfItems.map { it.packageName }.toSet() }
+    var openFolderSlot by remember { mutableStateOf<FavoriteSlot?>(null) }
 
     LaunchedEffect(Unit) {
         if (TimerService.timerState.value !is TimerState.Idle) {
@@ -187,34 +190,38 @@ fun HomeScreen(
         }
     }
 
-    fun addToDock(packageName: String) {
+    fun addToFavorites(packageName: String) {
         scope.launch {
-            val count = repository.dockedCount()
-            if (count < MAX_DOCK_SLOTS) {
-                repository.setDocked(packageName, count)
+            if (packageName !in favoritePackages) {
+                repository.addToShelf(packageName)
             }
         }
     }
 
-    fun removeFromDock(packageName: String) {
-        scope.launch { repository.removeDocked(packageName) }
+    fun removeFromFavorites(packageName: String) {
+        scope.launch { repository.removeFromShelf(packageName) }
     }
 
     fun handleDrop(draggedItem: HomeGridItem, result: DropResult) {
         scope.launch {
             when {
                 result.target is DropTarget.Dock && draggedItem is HomeGridItem.AppEntry -> {
-                    addToDock(draggedItem.appInfo.packageName)
+                    addToFavorites(draggedItem.appInfo.packageName)
+                }
+
+                result.target is DropTarget.OnFavoriteSlot && draggedItem is HomeGridItem.AppEntry -> {
+                    val favoriteSlot = result.target
+                    repository.addToShelfSlot(draggedItem.appInfo.packageName, favoriteSlot.slot)
                 }
 
                 result.target is DropTarget.OnItem -> {
-                    val onItem = result.target as DropTarget.OnItem
+                    val onItem = result.target
                     val fromIdx = gridItems.indexOfFirst { it.key == draggedItem.key }
                     val toIdx = gridItems.indexOfFirst { it.key == onItem.key }
                     if (fromIdx >= 0 && toIdx >= 0 && fromIdx != toIdx) {
                         val moved = gridItems.removeAt(fromIdx)
                         gridItems.add(toIdx, moved)
-                        persistGridOrder(gridItems, dockedItems, repository)
+                        persistGridOrder(gridItems, repository)
                     }
                 }
             }
@@ -310,16 +317,24 @@ fun HomeScreen(
                 }
             }
 
-            BottomDock(
-                apps = dockApps,
-                isDragOver = dragDropState.hoverTarget is DropTarget.Dock,
+            FavoriteDock(
+                slots = favoriteSlots,
+                isDragOver = dragDropState.hoverTarget is DropTarget.Dock ||
+                    dragDropState.hoverTarget is DropTarget.OnFavoriteSlot,
+                hoveredSlot = (dragDropState.hoverTarget as? DropTarget.OnFavoriteSlot)?.slot,
                 onAppClick = { launchApp(it) },
-                onRemove = { removeFromDock(it.packageName) },
+                onOpenFolder = { openFolderSlot = it },
+                onRemove = { removeFromFavorites(it.packageName) },
                 onRegisterBounds = { topLeft, size ->
                     dragDropState.dockBounds =
                         androidx.compose.ui.geometry.Rect(topLeft, size)
                 },
-                modifier = Modifier.navigationBarsPadding()
+                onRegisterSlotBounds = { slot, topLeft, size ->
+                    dragDropState.registerFavoriteSlotBounds(slot, topLeft, size)
+                },
+                modifier = Modifier
+                    .navigationBarsPadding()
+                    .fillMaxWidth()
             )
         }
 
@@ -355,9 +370,48 @@ fun HomeScreen(
                 launchApp(app)
             },
             onDismiss = { showSearch = false },
-            onAddToDock = { app -> addToDock(app.packageName) }
+            onAddToDock = { app -> addToFavorites(app.packageName) }
         )
 
+    }
+
+    openFolderSlot?.let { folder ->
+        AlertDialog(
+            onDismissRequest = { openFolderSlot = null },
+            title = { Text("Favorites folder") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    folder.apps.forEach { app ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    openFolderSlot = null
+                                    launchApp(app)
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = app.label,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            TextButton(onClick = { removeFromFavorites(app.packageName) }) {
+                                Text("Remove")
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { openFolderSlot = null }) {
+                    Text("Done")
+                }
+            }
+        )
     }
 }
 
@@ -514,24 +568,28 @@ private fun DragItemOverlay(dragDropState: DragDropState) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BottomDock(
-    apps: List<AppInfo>,
+private fun FavoriteDock(
+    slots: List<FavoriteSlot>,
     isDragOver: Boolean,
+    hoveredSlot: Int?,
     onAppClick: (AppInfo) -> Unit,
+    onOpenFolder: (FavoriteSlot) -> Unit,
     onRemove: (AppInfo) -> Unit,
     onRegisterBounds: (Offset, Size) -> Unit,
+    onRegisterSlotBounds: (Int, Offset, Size) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var expanded by remember { mutableStateOf(false) }
     val highlightColor = if (isDragOver) {
         MaterialTheme.colorScheme.primaryContainer
     } else {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     }
+    val collapsedHeight = (SHELF_ROW_HEIGHT_DP * FAVORITES_COLLAPSED_ROWS).dp
+    val gridHeight = if (expanded) SHELF_MAX_EXPANDED_HEIGHT_DP.dp else collapsedHeight
 
-    Row(
+    Box(
         modifier = modifier
-            .fillMaxWidth()
-            .height(72.dp)
             .onGloballyPositioned { coords ->
                 onRegisterBounds(
                     coords.positionInRoot(),
@@ -539,63 +597,90 @@ private fun BottomDock(
                 )
             }
             .background(highlightColor)
-            .padding(horizontal = 24.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
-        if (apps.isEmpty()) {
-            repeat(MAX_DOCK_SLOTS) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                            CircleShape
-                        )
-                )
-            }
-        } else {
-            apps.forEach { app ->
-                Column(
-                    modifier = Modifier
-                        .combinedClickable(
-                            onClick = { onAppClick(app) },
-                            onLongClick = { onRemove(app) }
-                        )
-                        .padding(horizontal = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    if (app.icon != null) {
-                        Image(
-                            painter = rememberDrawablePainter(drawable = app.icon),
-                            contentDescription = app.label,
-                            modifier = Modifier.size(44.dp)
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = FAVORITE_CELL_MIN_WIDTH_DP.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = gridHeight),
+            contentPadding = PaddingValues(4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            items(
+                count = slots.size,
+                key = { slots[it].slotPosition }
+            ) { index ->
+                val slot = slots[index]
+                val firstApp = slot.apps.firstOrNull()
+                val isFolder = slot.apps.size > 1
+                if (firstApp != null) {
+                    Column(
+                        modifier = Modifier
+                            .onGloballyPositioned { coords ->
+                                onRegisterSlotBounds(
+                                    slot.slotPosition,
+                                    coords.positionInRoot(),
+                                    coords.size.toSize()
+                                )
+                            }
+                            .combinedClickable(
+                                onClick = {
+                                    if (isFolder) onOpenFolder(slot) else onAppClick(firstApp)
+                                },
+                                onLongClick = {
+                                    if (isFolder) onOpenFolder(slot) else onRemove(firstApp)
+                                }
+                            )
+                            .background(
+                                color = if (hoveredSlot == slot.slotPosition) {
+                                    MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                                } else {
+                                    Color.Transparent
+                                },
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .padding(horizontal = 2.dp, vertical = 2.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        if (firstApp.icon != null) {
+                            Image(
+                                painter = rememberDrawablePainter(drawable = firstApp.icon),
+                                contentDescription = firstApp.label,
+                                modifier = Modifier.size(34.dp)
+                            )
+                        }
+                        Text(
+                            text = if (isFolder) "Folder (${slot.apps.size})" else firstApp.label,
+                            fontSize = 8.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onBackground,
+                            modifier = Modifier.width(60.dp)
                         )
                     }
-                    Text(
-                        text = app.label,
-                        fontSize = 9.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = TextAlign.Center,
-                        color = MaterialTheme.colorScheme.onBackground,
-                        modifier = Modifier.width(56.dp)
-                    )
                 }
             }
-            val remaining = MAX_DOCK_SLOTS - apps.size
-            if (remaining > 0) {
-                repeat(remaining) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                                CircleShape
-                            )
-                    )
-                }
-            }
+        }
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .offset(x = 10.dp)
+                .size(width = 22.dp, height = 56.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
+                    shape = RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
+                )
+                .clickable { expanded = !expanded },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = if (expanded) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                contentDescription = if (expanded) "Collapse favorites" else "Expand favorites",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -623,21 +708,40 @@ private fun buildGridItems(
 
 private suspend fun persistGridOrder(
     items: List<HomeGridItem>,
-    dockedItems: List<HomeLayoutItem>,
     repository: AppRepository
 ) {
-    val dockedMap = dockedItems.associateBy { it.packageName }
     val layoutUpdates = items.mapIndexedNotNull { index, item ->
         if (item is HomeGridItem.AppEntry) {
             val pkg = item.appInfo.packageName
-            val docked = dockedMap[pkg]
             HomeLayoutItem(
                 packageName = pkg,
                 position = index,
-                isDocked = docked?.isDocked == true,
-                dockPosition = docked?.dockPosition ?: 0
+                isDocked = false,
+                dockPosition = 0
             )
         } else null
     }
     repository.updateGridPositions(layoutUpdates)
+}
+
+private data class FavoriteSlot(
+    val slotPosition: Int,
+    val apps: List<AppInfo>
+)
+
+private fun buildFavoriteSlots(
+    shelfItems: List<ShelfItem>,
+    allApps: List<AppInfo>
+): List<FavoriteSlot> {
+    if (shelfItems.isEmpty()) return emptyList()
+    val appsByPackage = allApps.associateBy { it.packageName }
+    return shelfItems
+        .groupBy { it.slotPosition }
+        .toSortedMap()
+        .mapNotNull { (slot, itemsInSlot) ->
+            val apps = itemsInSlot
+                .sortedBy { it.orderInSlot }
+                .mapNotNull { item -> appsByPackage[item.packageName] }
+            if (apps.isEmpty()) null else FavoriteSlot(slot, apps)
+        }
 }

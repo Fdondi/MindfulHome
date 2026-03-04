@@ -15,6 +15,11 @@ class ScreenUnlockReceiver : BroadcastReceiver() {
 
         if (intent.action != Intent.ACTION_USER_PRESENT) return
 
+        if (SettingsManager.isQuickLaunchSessionActive(context)) {
+            Log.d(TAG, "Quick Launch session active on unlock — skipping timer")
+            return
+        }
+
         val screenOffTimestamp = SettingsManager.getScreenOffTimestamp(context)
         val awayMs = if (screenOffTimestamp > 0)
             System.currentTimeMillis() - screenOffTimestamp

@@ -4,11 +4,14 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.pm.ApplicationInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.os.IBinder
+import android.os.Process
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
@@ -42,6 +45,10 @@ class TimerService : Service() {
     private var nudgeJob: Job? = null
     private var quickLaunchMonitorJob: Job? = null
     private var notificationInteractionTimeoutJob: Job? = null
+    private var quickLaunchExitCandidatePackage: String? = null
+    private var quickLaunchExitCandidateStartedAtMs: Long = 0L
+    private var quickLaunchExitCandidateLabel: String? = null
+    private var lastQuickLaunchNotificationText: String? = null
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
     private lateinit var overlayManager: OverlayNudgeManager
@@ -102,7 +109,10 @@ class TimerService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
         updateLogSessionHandleFromIntent(intent)
-        Log.d(TAG, "onStartCommand action=$action startId=$startId flags=$flags")
+        Log.d(
+            TAG,
+            "onStartCommand action=$action startId=$startId flags=$flags sessionToken=${sessionTokenForLogs()}",
+        )
         logSessionEvent("Service command received: ${action ?: "null"}")
 
         if (action == null) {
@@ -236,6 +246,7 @@ class TimerService : Service() {
         allowedPackages: Set<String>,
     ) {
         resetNudgesForNewTimer()
+        clearQuickLaunchExitCandidate()
         Log.d(
             TAG,
             "startQuickLaunchSession initial=$initialPackageName allowedCount=${allowedPackages.size}",
@@ -259,6 +270,7 @@ class TimerService : Service() {
             QUICK_LAUNCH_NOTIFICATION_ID,
             buildQuickLaunchMonitoringNotification(),
         )
+        refreshQuickLaunchMonitoringNotification()
         overlayManager.showQuickLaunchFrame()
         startQuickLaunchMonitoringLoop()
     }
@@ -267,21 +279,92 @@ class TimerService : Service() {
         if (!SettingsManager.isQuickLaunchSessionActive(this)) return
 
         val allowedPackages = SettingsManager.getQuickLaunchPackages(this) + this.packageName
-        if (packageName in allowedPackages) {
-            Log.v(TAG, "quick-launch app allowed: $packageName")
+        val isAllowedQuickLaunchPackage = packageName in allowedPackages
+        val isSystemUtilityPackage = isSystemOrUtilityPackage(packageName)
+        if (isAllowedQuickLaunchPackage || isSystemUtilityPackage) {
+            clearQuickLaunchExitCandidate()
+            if (isAllowedQuickLaunchPackage) {
+                Log.v(TAG, "quick-launch app allowed: $packageName")
+            } else {
+                Log.v(TAG, "quick-launch system/utility app ignored: $packageName")
+            }
             return
         }
         if (packageName.isBlank()) return
+
+        val now = System.currentTimeMillis()
+        if (quickLaunchExitCandidatePackage != packageName) {
+            quickLaunchExitCandidatePackage = packageName
+            quickLaunchExitCandidateStartedAtMs = now
+            quickLaunchExitCandidateLabel = getAppLabel(packageName)
+            val appLabel = getAppLabel(packageName)
+            logWithSession(
+                "Quick Launch switch observed: **$appLabel** — waiting 1m grace period"
+            )
+            logSessionEvent(
+                "Quick Launch grace window started for package=$packageName"
+            )
+            refreshQuickLaunchMonitoringNotification()
+            return
+        }
+
+        val elapsedMs = now - quickLaunchExitCandidateStartedAtMs
+        if (elapsedMs < QUICK_LAUNCH_SWITCH_GRACE_MS) {
+            return
+        }
 
         val appLabel = getAppLabel(packageName)
         Log.d(TAG, "non-quick app detected: $packageName")
         logWithSession(
             "Quick Launch exit detected: opened **$appLabel** — returning to timer"
         )
+        clearQuickLaunchExitCandidate()
         SettingsManager.clearQuickLaunchSession(this)
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissQuickLaunchFrame()
         forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
+    }
+
+    private fun clearQuickLaunchExitCandidate() {
+        quickLaunchExitCandidatePackage = null
+        quickLaunchExitCandidateStartedAtMs = 0L
+        quickLaunchExitCandidateLabel = null
+        refreshQuickLaunchMonitoringNotification()
+    }
+
+    private fun isSystemOrUtilityPackage(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        if (packageName == this.packageName) return true
+
+        val normalized = packageName.lowercase()
+        if (
+            normalized in QUICK_LAUNCH_UTILITY_PACKAGES_EXACT ||
+            QUICK_LAUNCH_UTILITY_PACKAGE_PREFIXES.any { normalized.startsWith(it) } ||
+            QUICK_LAUNCH_UTILITY_PACKAGE_KEYWORDS.any { normalized.contains(it) }
+        ) {
+            return true
+        }
+        val label = getAppLabel(packageName).lowercase()
+        if (QUICK_LAUNCH_UTILITY_LABEL_KEYWORDS.any { label.contains(it) }) {
+            return true
+        }
+
+        return try {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val isSystemApp =
+                (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
+                    (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0 ||
+                    appInfo.uid < Process.FIRST_APPLICATION_UID
+            val isMediaCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                appInfo.category == ApplicationInfo.CATEGORY_IMAGE ||
+                    appInfo.category == ApplicationInfo.CATEGORY_VIDEO
+            } else {
+                false
+            }
+            isSystemApp || isMediaCategory
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun startQuickLaunchMonitoringLoop() {
@@ -298,6 +381,7 @@ class TimerService : Service() {
                     _currentPackage.value = foregroundPackage
                     maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
                 }
+                refreshQuickLaunchMonitoringNotification()
                 delay(QUICK_LAUNCH_MONITOR_POLL_MS)
             }
             Log.d(TAG, "quick-launch monitoring loop ended")
@@ -420,12 +504,6 @@ class TimerService : Service() {
                             _nudgeCount.value = bubbleCount
                             karmaManager.onNudgeIgnored(packageName)
 
-                            val message = when {
-                                bubbleCount <= 2 -> "Still on $appLabel. Do you need more time?"
-                                bubbleCount <= 6 -> "Checking in again: why do you still need $appLabel?"
-                                else -> "Let's decide together: continue, or close $appLabel?"
-                            }
-                            nudgeMessages.add(NudgeMessage(message, isFromUser = false))
                             val canOverlayNow = overlayManager.canDrawOverlay()
                             Log.d(
                                 TAG,
@@ -433,7 +511,7 @@ class TimerService : Service() {
                             )
                             if (canOverlayNow) {
                                 overlayManager.showBubble(bubbleCount)
-                                overlayManager.updateConversationMessage(message, bubbleCount)
+                                overlayManager.updateConversationMessage("", bubbleCount)
                             } else {
                                 showConversationNotification(forceHeadsUp = false)
                             }
@@ -917,6 +995,11 @@ class TimerService : Service() {
         SessionLogger.log(logSessionHandle, entry)
     }
 
+    private fun sessionTokenForLogs(): String {
+        val token = logSessionHandle?.token ?: 0L
+        return if (token > 0L) token.toString() else "none"
+    }
+
     private fun updateLogSessionHandleFromIntent(intent: Intent?) {
         val token = intent?.getLongExtra(EXTRA_SESSION_TOKEN, 0L) ?: 0L
         if (token <= 0L) return
@@ -945,11 +1028,53 @@ class TimerService : Service() {
     private fun buildQuickLaunchMonitoringNotification(): Notification {
         return NotificationCompat.Builder(this, MindfulHomeApp.TIMER_CHANNEL_ID)
             .setContentTitle("MindfulHome")
-            .setContentText("Quick Launch active - monitoring app switches")
+            .setContentText(DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT)
             .setSmallIcon(R.drawable.ic_nudge_notification)
             .setOngoing(true)
             .setSilent(true)
             .build()
+    }
+
+    private fun refreshQuickLaunchMonitoringNotification() {
+        if (!SettingsManager.isQuickLaunchSessionActive(this)) {
+            lastQuickLaunchNotificationText = null
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        val contentText = buildQuickLaunchMonitoringStatusText(now)
+        if (contentText == lastQuickLaunchNotificationText) return
+        lastQuickLaunchNotificationText = contentText
+
+        val notification = NotificationCompat.Builder(this, MindfulHomeApp.TIMER_CHANNEL_ID)
+            .setContentTitle("MindfulHome")
+            .setContentText(contentText)
+            .setSmallIcon(R.drawable.ic_nudge_notification)
+            .setOngoing(true)
+            .setSilent(true)
+            .build()
+        val notificationManager = getSystemService(NotificationManager::class.java)
+        notificationManager.notify(QUICK_LAUNCH_NOTIFICATION_ID, notification)
+    }
+
+    private fun buildQuickLaunchMonitoringStatusText(nowMs: Long): String {
+        val candidatePackage = quickLaunchExitCandidatePackage
+        val candidateStartedAt = quickLaunchExitCandidateStartedAtMs
+        if (candidatePackage.isNullOrBlank() || candidateStartedAt <= 0L) {
+            return DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT
+        }
+
+        val candidateLabel = quickLaunchExitCandidateLabel ?: getAppLabel(candidatePackage)
+        val elapsedMs = (nowMs - candidateStartedAt).coerceAtLeast(0L)
+        val remainingMs = (QUICK_LAUNCH_SWITCH_GRACE_MS - elapsedMs).coerceAtLeast(0L)
+        return "Non-Quick Launch app: $candidateLabel. Grace ${formatGraceCountdown(remainingMs)}"
+    }
+
+    private fun formatGraceCountdown(ms: Long): String {
+        val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+        val minutes = totalSeconds / 60L
+        val seconds = totalSeconds % 60L
+        return "${minutes}:${seconds.toString().padStart(2, '0')}"
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -972,6 +1097,7 @@ class TimerService : Service() {
         timerJob?.cancel()
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
+        clearQuickLaunchExitCandidate()
         clearNotificationInteractionWatch(reason = "service destroy", markSuccess = false)
         negotiationManager?.endConversation()
         lmManager?.shutdown()
@@ -984,7 +1110,7 @@ class TimerService : Service() {
     }
 
     private fun logSessionEvent(event: String) {
-        val snapshot = "state=${timerStateName(_timerState.value)} pkg=${_currentPackage.value.ifBlank { "<none>" }} nudgeCount=${_nudgeCount.value}"
+        val snapshot = "sessionToken=${sessionTokenForLogs()} state=${timerStateName(_timerState.value)} pkg=${_currentPackage.value.ifBlank { "<none>" }} nudgeCount=${_nudgeCount.value}"
         Log.d(TAG, "$event | $snapshot")
     }
 
@@ -1002,6 +1128,49 @@ class TimerService : Service() {
         private const val NUDGE_NOTIFICATION_ID = 1002
         private const val QUICK_LAUNCH_NOTIFICATION_ID = 1003
         private const val QUICK_LAUNCH_MONITOR_POLL_MS = 1500L
+        private const val QUICK_LAUNCH_SWITCH_GRACE_MS = 60_000L
+        private const val DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT =
+            "Quick Launch active - monitoring app switches"
+        private val QUICK_LAUNCH_UTILITY_PACKAGES_EXACT = setOf(
+            "com.android.camera",
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.apps.photos",
+            "com.android.gallery3d",
+            "com.google.android.documentsui",
+            "com.android.documentsui",
+            "com.android.providers.media.module",
+            "com.android.permissioncontroller",
+            "com.android.systemui",
+        )
+        private val QUICK_LAUNCH_UTILITY_PACKAGE_PREFIXES = setOf(
+            "com.android.camera",
+            "com.android.gallery",
+            "com.google.android.apps.photos",
+            "com.google.android.documentsui",
+            "com.android.documentsui",
+            "com.android.providers.media",
+            "com.android.providers.downloads",
+        )
+        private val QUICK_LAUNCH_UTILITY_PACKAGE_KEYWORDS = setOf(
+            "camera",
+            "gallery",
+            "photos",
+            "media",
+            "picker",
+            "documentsui",
+            "filemanager",
+            "files",
+        )
+        private val QUICK_LAUNCH_UTILITY_LABEL_KEYWORDS = setOf(
+            "camera",
+            "gallery",
+            "photos",
+            "photo",
+            "media",
+            "files",
+            "file manager",
+            "file picker",
+        )
 
         const val ACTION_START = "com.mindfulhome.ACTION_START_TIMER"
         const val ACTION_START_QUICK_LAUNCH_SESSION = "com.mindfulhome.ACTION_START_QUICK_LAUNCH_SESSION"
