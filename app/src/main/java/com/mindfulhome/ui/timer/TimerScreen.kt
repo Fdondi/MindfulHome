@@ -227,9 +227,17 @@ fun TimerScreen(
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
-                val visibleCount = (maxHeight / ITEM_HEIGHT_DP.dp)
+                val maxVisibleCount = (maxHeight / ITEM_HEIGHT_DP.dp)
                     .toInt()
                     .coerceIn(1, VISIBLE_ITEMS)
+                // Picker needs a single center row. Force an odd row count so
+                // highlight and snapped item stay anchored to the same vertical center.
+                val visibleCount = when {
+                    maxVisibleCount == 1 -> 1
+                    maxVisibleCount % 2 == 0 -> maxVisibleCount - 1
+                    else -> maxVisibleCount
+                }
+                val pickerHeight = (ITEM_HEIGHT_DP * visibleCount).dp
 
                 Box(
                     modifier = Modifier
@@ -244,7 +252,7 @@ fun TimerScreen(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier
-                        .heightIn(max = (ITEM_HEIGHT_DP * visibleCount).dp)
+                        .height(pickerHeight)
                         .fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     flingBehavior = rememberSnapFlingBehavior(lazyListState = listState),
