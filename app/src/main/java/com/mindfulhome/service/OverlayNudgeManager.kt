@@ -753,15 +753,15 @@ class OverlayNudgeManager(private val context: Context) {
     }
 
     private fun applyBadgeStyle(badge: TextView, type: BirdType) {
-        val accent = when (type) {
-            BirdType.GREEN_NOW -> Color.parseColor("#22C55E")
-            BirdType.PURPLE_SOFT -> Color.parseColor("#A855F7")
-            BirdType.RED_HARD -> Color.parseColor("#EF4444")
+        val (bgColor, strokeColor) = when (type) {
+            BirdType.GREEN_NOW -> Color.parseColor("#DCFCE7") to Color.parseColor("#22C55E")
+            BirdType.PURPLE_SOFT -> Color.parseColor("#F3E8FF") to Color.parseColor("#A855F7")
+            BirdType.RED_HARD -> Color.parseColor("#FEE2E2") to Color.parseColor("#EF4444")
         }
-        badge.setTextColor(Color.parseColor("#FF000000"))
+        badge.setTextColor(Color.parseColor("#FF0F172A"))
         val bg = (badge.background as? GradientDrawable) ?: return
-        bg.setColor(withAlpha(accent, 0.10f))
-        bg.setStroke(dp(1), withAlpha(accent, 0.35f))
+        bg.setColor(bgColor)
+        bg.setStroke(dp(1), strokeColor)
     }
 
     private fun withAlpha(color: Int, alphaFraction: Float): Int {
