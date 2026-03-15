@@ -99,6 +99,7 @@ fun HomeScreen(
     repository: AppRepository,
     karmaManager: KarmaManager,
     onRequestAi: (packageName: String) -> Unit,
+    onTimerClick: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     onOpenKarma: () -> Unit = {}
@@ -238,6 +239,7 @@ fun HomeScreen(
         ) {
             TopBar(
                 durationMinutes = durationMinutes,
+                onTimerClick = onTimerClick,
                 onSearchClick = { showSearch = true },
                 onLogsClick = onOpenLogs,
                 onKarmaClick = onOpenKarma,
@@ -413,6 +415,7 @@ fun HomeScreen(
 @Composable
 private fun TopBar(
     durationMinutes: Int,
+    onTimerClick: () -> Unit,
     onSearchClick: () -> Unit,
     onLogsClick: () -> Unit,
     onKarmaClick: () -> Unit,
@@ -429,7 +432,8 @@ private fun TopBar(
             text = "$durationMinutes min",
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.clickable(onClick = onTimerClick)
         )
 
         Spacer(modifier = Modifier.weight(1f))

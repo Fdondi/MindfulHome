@@ -251,6 +251,12 @@ class MainActivity : ComponentActivity() {
                             onRequestAi = { packageName ->
                                 navCtrl.navigate("negotiate/$packageName")
                             },
+                            onTimerClick = {
+                                shouldShowTimer = true
+                                navCtrl.navigate("timer") {
+                                    popUpTo("home") { inclusive = true }
+                                }
+                            },
                             onOpenSettings = {
                                 navCtrl.navigate("settings")
                             },
