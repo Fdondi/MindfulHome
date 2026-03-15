@@ -61,6 +61,7 @@ class TimerService : Service() {
     private var hardDeadlineAtMs: Long? = null
     private var softDeadlineAtMs: Long? = null
     private var userAwayOverlayActive: Boolean = false
+    private var awayShieldShownForCurrentAwayEpisode: Boolean = false
     private var lastAwayOverlayTapAtMs: Long = 0L
 
     // Nudge conversation: notification is the single chat surface.
@@ -253,6 +254,9 @@ class TimerService : Service() {
         nudgePauseUntilMs = 0L
         nudgeResetRequested = false
         _nudgeCount.value = 0
+        userAwayOverlayActive = false
+        awayShieldShownForCurrentAwayEpisode = false
+        lastAwayOverlayTapAtMs = 0L
         endNudgeConversation()
     }
 
@@ -544,6 +548,7 @@ class TimerService : Service() {
                         overlayManager.dismissAwayShield()
                         logSessionEvent("Away shield hidden: USER_INTERACTION signal unavailable")
                     }
+                    awayShieldShownForCurrentAwayEpisode = false
                     if (!awaySignalUnavailableLogged) {
                         awaySignalUnavailableLogged = true
                         logSessionEvent(
@@ -555,7 +560,8 @@ class TimerService : Service() {
                 val isUserAway =
                     lastActivityAtMs != null && inactivityMs >= USER_AWAY_INACTIVITY_THRESHOLD_MS
                 if (isUserAway) {
-                    if (!userAwayOverlayActive) {
+                    if (!awayShieldShownForCurrentAwayEpisode) {
+                        awayShieldShownForCurrentAwayEpisode = true
                         userAwayOverlayActive = true
                         overlayManager.showAwayShield()
                         logSessionEvent(
@@ -570,6 +576,9 @@ class TimerService : Service() {
                     userAwayOverlayActive = false
                     overlayManager.dismissAwayShield()
                     logSessionEvent("User activity resumed; hiding away shield")
+                    awayShieldShownForCurrentAwayEpisode = false
+                } else {
+                    awayShieldShownForCurrentAwayEpisode = false
                 }
                 if (nudgeResetRequested) {
                     stage = NudgeStage.WAITING_AFTER_NOTIFICATION
@@ -689,6 +698,7 @@ class TimerService : Service() {
 
     private fun onAwayReturnRequested() {
         userAwayOverlayActive = false
+        awayShieldShownForCurrentAwayEpisode = false
         overlayManager.dismissAwayShield()
         logSessionEvent("Away shield acknowledged by user")
         logWithSession("Away shield acknowledged — returning to timer")
@@ -697,6 +707,8 @@ class TimerService : Service() {
 
     private fun onAwayShieldTapped() {
         userAwayOverlayActive = false
+        // Keep current away episode marked as already-shown to avoid immediate re-show spam.
+        awayShieldShownForCurrentAwayEpisode = true
         lastAwayOverlayTapAtMs = System.currentTimeMillis()
         logSessionEvent("Away shield dismissed by passive tap")
     }
