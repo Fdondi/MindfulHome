@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -27,6 +29,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -106,6 +110,8 @@ fun TimerScreen(
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val appVersion = AppVersion.versionName
+    val startButtonBringIntoViewRequester = remember { BringIntoViewRequester() }
+    val imeBottomPx = WindowInsets.ime.getBottom(density)
 
     val items = (1..MAX_MINUTES).toList()
     val listState = rememberLazyListState()
@@ -172,6 +178,13 @@ fun TimerScreen(
         while (true) {
             delay(1000L)
             nowMs = System.currentTimeMillis()
+        }
+    }
+
+    // Keep the primary action visible when keyboard opens from the reason field.
+    LaunchedEffect(imeBottomPx) {
+        if (imeBottomPx > 0) {
+            startButtonBringIntoViewRequester.bringIntoView()
         }
     }
 
@@ -476,6 +489,7 @@ fun TimerScreen(
                     Log.d("TimerScreen", "onTimerSet returned")
                 },
                 modifier = Modifier
+                    .bringIntoViewRequester(startButtonBringIntoViewRequester)
                     .fillMaxWidth(0.6f)
                     .height(56.dp),
                 colors = ButtonDefaults.buttonColors(
