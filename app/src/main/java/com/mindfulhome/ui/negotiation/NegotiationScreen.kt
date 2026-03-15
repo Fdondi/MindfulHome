@@ -92,6 +92,9 @@ fun NegotiationScreen(
             "an app"
         }
     }
+    val focusModeActive = remember {
+        SettingsManager.isFocusTimeActiveNow(context)
+    }
 
     val messages = remember { mutableStateListOf<ChatMessage>() }
     var userInput by remember { mutableStateOf("") }
@@ -186,7 +189,11 @@ fun NegotiationScreen(
                 // Gatekeeper flow
                 SessionLogger.log(sessionHandle, "AI negotiation started for **$appLabel** via $modelLabel")
                 isWaitingForAi = true
-                val result = negotiationManager.startGatekeeperNegotiation(packageName, appLabel)
+                val result = negotiationManager.startGatekeeperNegotiation(
+                    packageName = packageName,
+                    appName = appLabel,
+                    focusModeActive = focusModeActive,
+                )
                 addMessage(result.responseText, isFromUser = false)
                 isWaitingForAi = false
                 if (result.accessGranted) {

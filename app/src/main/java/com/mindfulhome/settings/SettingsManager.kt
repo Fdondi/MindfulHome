@@ -3,6 +3,7 @@ package com.mindfulhome.settings
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import java.util.Calendar
 
 /**
  * Persists user preferences using SharedPreferences.
@@ -27,6 +28,10 @@ object SettingsManager {
     const val DEFAULT_QUICK_RETURN_MINUTES = 3
     const val MIN_QUICK_RETURN_MINUTES = 1
     const val MAX_QUICK_RETURN_MINUTES = 10
+
+    // Focus time windows (AI-first mode)
+    private const val FOCUS_TIME_ENABLED_KEY = "focus_time_enabled"
+    private const val FOCUS_TIME_INTERVALS_KEY = "focus_time_intervals"
 
     // Escalation threshold (number of nudge cycles before forcing back to timer)
     private const val ESCALATION_THRESHOLD_KEY = "escalation_nudge_threshold"
@@ -173,6 +178,10 @@ object SettingsManager {
         val intent: String,
         val declaredAtMs: Long,
     )
+    data class FocusInterval(
+        val startMinutes: Int,
+        val endMinutes: Int,
+    )
 
     enum class PermissionPrompt {
         NOTIFICATIONS,
@@ -281,6 +290,59 @@ object SettingsManager {
     fun setQuickReturnMinutes(context: Context, minutes: Int) {
         prefs(context).edit {
             putInt(QUICK_RETURN_THRESHOLD_KEY, minutes.coerceIn(MIN_QUICK_RETURN_MINUTES, MAX_QUICK_RETURN_MINUTES))
+        }
+    }
+
+    // ── Focus time windows ───────────────────────────────────────────
+
+    fun isFocusTimeEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(FOCUS_TIME_ENABLED_KEY, false)
+
+    fun setFocusTimeEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit { putBoolean(FOCUS_TIME_ENABLED_KEY, enabled) }
+    }
+
+    fun getFocusTimeIntervals(context: Context): List<FocusInterval> {
+        val raw = prefs(context).getString(FOCUS_TIME_INTERVALS_KEY, "") ?: ""
+        if (raw.isBlank()) return emptyList()
+        return raw.split(",")
+            .mapNotNull { token ->
+                val parts = token.split("-")
+                if (parts.size != 2) return@mapNotNull null
+                val start = parts[0].toIntOrNull() ?: return@mapNotNull null
+                val end = parts[1].toIntOrNull() ?: return@mapNotNull null
+                FocusInterval(
+                    startMinutes = start.coerceIn(0, MINUTES_PER_DAY - 1),
+                    endMinutes = end.coerceIn(0, MINUTES_PER_DAY - 1),
+                )
+            }
+    }
+
+    fun setFocusTimeIntervals(context: Context, intervals: List<FocusInterval>) {
+        val serialized = intervals
+            .map { interval ->
+                val start = interval.startMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
+                val end = interval.endMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
+                "$start-$end"
+            }
+            .joinToString(",")
+        prefs(context).edit { putString(FOCUS_TIME_INTERVALS_KEY, serialized) }
+    }
+
+    fun isFocusTimeActiveNow(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Boolean {
+        if (!isFocusTimeEnabled(context)) return false
+        val intervals = getFocusTimeIntervals(context)
+        if (intervals.isEmpty()) return false
+        val minuteOfDay = minuteOfDay(nowMs)
+        return intervals.any { interval ->
+            isMinuteWithinInterval(
+                minuteOfDay = minuteOfDay,
+                startMinutes = interval.startMinutes,
+                endMinutes = interval.endMinutes,
+            )
         }
     }
 
@@ -463,4 +525,29 @@ object SettingsManager {
         if (raw.isBlank()) return emptySet()
         return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     }
+
+    private fun minuteOfDay(nowMs: Long): Int {
+        val calendar = Calendar.getInstance()
+        calendar.timeInMillis = nowMs
+        val hour = calendar.get(Calendar.HOUR_OF_DAY)
+        val minute = calendar.get(Calendar.MINUTE)
+        return hour * 60 + minute
+    }
+
+    private fun isMinuteWithinInterval(
+        minuteOfDay: Int,
+        startMinutes: Int,
+        endMinutes: Int,
+    ): Boolean {
+        val start = startMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
+        val end = endMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
+        if (start == end) return true
+        return if (start < end) {
+            minuteOfDay in start until end
+        } else {
+            minuteOfDay >= start || minuteOfDay < end
+        }
+    }
+
+    private const val MINUTES_PER_DAY = 24 * 60
 }

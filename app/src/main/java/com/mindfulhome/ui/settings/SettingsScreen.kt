@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.app.TimePickerDialog
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -32,6 +33,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -256,6 +258,117 @@ fun SettingsScreen(
 
             // Behavior section
             SectionHeader("Behavior")
+
+            var focusTimeEnabled by remember {
+                mutableStateOf(SettingsManager.isFocusTimeEnabled(context))
+            }
+            var focusTimeIntervals by remember {
+                mutableStateOf(SettingsManager.getFocusTimeIntervals(context))
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Focus Time (AI-first)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                text = "During active intervals, launcher stays hidden after timer. " +
+                                    "Use AI to open non-Quick Launch apps.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        Switch(
+                            checked = focusTimeEnabled,
+                            onCheckedChange = { enabled ->
+                                focusTimeEnabled = enabled
+                                SettingsManager.setFocusTimeEnabled(context, enabled)
+                            },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    if (focusTimeIntervals.isEmpty()) {
+                        Text(
+                            text = "No intervals configured.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        focusTimeIntervals.forEachIndexed { index, interval ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    text = "${formatMinutesOfDay(interval.startMinutes)} - " +
+                                        formatMinutesOfDay(interval.endMinutes),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextButton(onClick = {
+                                    showTimePicker(
+                                        context = context,
+                                        initialMinutes = interval.startMinutes,
+                                    ) { pickedStart ->
+                                        val updated = focusTimeIntervals.toMutableList()
+                                        updated[index] = interval.copy(startMinutes = pickedStart)
+                                        focusTimeIntervals = updated
+                                        SettingsManager.setFocusTimeIntervals(context, updated)
+                                    }
+                                }) {
+                                    Text("Start")
+                                }
+                                TextButton(onClick = {
+                                    showTimePicker(
+                                        context = context,
+                                        initialMinutes = interval.endMinutes,
+                                    ) { pickedEnd ->
+                                        val updated = focusTimeIntervals.toMutableList()
+                                        updated[index] = interval.copy(endMinutes = pickedEnd)
+                                        focusTimeIntervals = updated
+                                        SettingsManager.setFocusTimeIntervals(context, updated)
+                                    }
+                                }) {
+                                    Text("End")
+                                }
+                                TextButton(onClick = {
+                                    val updated = focusTimeIntervals.toMutableList()
+                                    updated.removeAt(index)
+                                    focusTimeIntervals = updated
+                                    SettingsManager.setFocusTimeIntervals(context, updated)
+                                }) {
+                                    Text("Remove")
+                                }
+                            }
+                        }
+                    }
+
+                    TextButton(
+                        onClick = {
+                            val next = suggestedNewInterval(focusTimeIntervals)
+                            val updated = focusTimeIntervals + next
+                            focusTimeIntervals = updated
+                            SettingsManager.setFocusTimeIntervals(context, updated)
+                        },
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Text("Add interval")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             var quickReturnMinutes by remember {
                 mutableFloatStateOf(
@@ -985,4 +1098,38 @@ private fun SettingsCard(
             }
         }
     }
+}
+
+private fun showTimePicker(
+    context: Context,
+    initialMinutes: Int,
+    onPicked: (Int) -> Unit,
+) {
+    val clamped = initialMinutes.coerceIn(0, 1439)
+    val initialHour = clamped / 60
+    val initialMinute = clamped % 60
+    TimePickerDialog(
+        context,
+        { _, hourOfDay, minute ->
+            onPicked((hourOfDay * 60 + minute).coerceIn(0, 1439))
+        },
+        initialHour,
+        initialMinute,
+        true,
+    ).show()
+}
+
+private fun formatMinutesOfDay(minutes: Int): String {
+    val clamped = minutes.coerceIn(0, 1439)
+    val hour = clamped / 60
+    val minute = clamped % 60
+    return "${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}"
+}
+
+private fun suggestedNewInterval(
+    existing: List<SettingsManager.FocusInterval>
+): SettingsManager.FocusInterval {
+    val seed = existing.lastOrNull()?.endMinutes ?: (9 * 60)
+    val end = (seed + 60) % (24 * 60)
+    return SettingsManager.FocusInterval(startMinutes = seed, endMinutes = end)
 }

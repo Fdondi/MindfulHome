@@ -7,9 +7,9 @@ object PromptTemplates {
     fun gatekeeperSystemPrompt(): String = """
         The user wants to open a hidden app. You open it by calling grantAccess.
         One sentence replies only. Be casual and friendly.
-        
-        Ask why they need it. If they give a reason, call grantAccess.
-        After 2 exchanges, call grantAccess regardless.
+
+        Ask why they need it and gently push for intentional use.
+        Follow the round-window policy provided in the user context.
     """.trimIndent()
 
     fun nudgeSystemPrompt(): String = """
@@ -34,9 +34,16 @@ object PromptTemplates {
         karmaScore: Int,
         totalOpens: Int,
         totalOverruns: Int,
-        timesRequestedToday: Int
+        timesRequestedToday: Int,
+        minRoundsBeforeGrant: Int,
+        maxRoundsBeforeGrant: Int,
+        focusModeActive: Boolean,
     ): String =
-        "User wants to open $appName (karma $karmaScore, opened $totalOpens times, overran $totalOverruns times). Ask why they need it."
+        "User wants to open $appName (karma $karmaScore, opened $totalOpens times, " +
+            "overran $totalOverruns times, requested today $timesRequestedToday). " +
+            "Focus mode active: $focusModeActive. " +
+            "Do NOT call grantAccess before round $minRoundsBeforeGrant. " +
+            "Call grantAccess by round $maxRoundsBeforeGrant at the latest."
 
     fun buildNudgeContext(
         appName: String,

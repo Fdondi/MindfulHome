@@ -18,6 +18,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.math.ceil
+import kotlin.math.ln
 
 enum class NegotiationType {
     GATEKEEPER,
@@ -42,6 +44,8 @@ class NegotiationManager(
     private var currentType: NegotiationType? = null
     private var exchangeCount = 0
     private var currentAppPackage: String = ""
+    private var gatekeeperMinRounds = 0
+    private var gatekeeperMaxRounds = 0
 
     // Backend state: stateless API needs full history on each call
     private var usingBackend = false
@@ -59,12 +63,18 @@ class NegotiationManager(
     suspend fun startGatekeeperNegotiation(
         packageName: String,
         appName: String,
+        focusModeActive: Boolean,
     ): NegotiationResult = withContext(Dispatchers.IO) {
         currentAppPackage = packageName
         currentType = NegotiationType.GATEKEEPER
         exchangeCount = 0
 
         val karma = repository.getKarma(packageName)
+        val negativeKarma = (-karma.karmaScore).coerceAtLeast(0)
+        val baseMinRounds = ceil(ln(1.0 + negativeKarma.toDouble())).toInt()
+        val focusRoundsBonus = if (focusModeActive) 1 else 0
+        gatekeeperMinRounds = (baseMinRounds + focusRoundsBonus).coerceAtLeast(0)
+        gatekeeperMaxRounds = (gatekeeperMinRounds * 2).coerceAtLeast(gatekeeperMinRounds)
 
         val systemPrompt = PromptTemplates.gatekeeperSystemPrompt()
         val userContext = PromptTemplates.buildGatekeeperUserContext(
@@ -73,6 +83,9 @@ class NegotiationManager(
             totalOpens = karma.totalOpens,
             totalOverruns = karma.totalOverruns,
             timesRequestedToday = 0,
+            minRoundsBeforeGrant = gatekeeperMinRounds,
+            maxRoundsBeforeGrant = gatekeeperMaxRounds,
+            focusModeActive = focusModeActive,
         )
 
         // Try backend first
@@ -81,7 +94,9 @@ class NegotiationManager(
                 val result = startBackendConversation(
                     systemPrompt, userContext, BackendToolDeclarations.GATEKEEPER_TOOLS,
                 )
-                if (result != null) return@withContext result
+                if (result != null) {
+                    return@withContext applyGatekeeperRoundPolicy(result)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Backend gatekeeper failed, falling back", e)
                 if ((e as? BackendHttpException)?.code == "model_not_found") {
@@ -96,8 +111,10 @@ class NegotiationManager(
         // Fallback: hardcoded responses (on-device LLM can't do tool calling)
         exchangeCount++
         val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount - 1)
-        val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount - 1)
-        NegotiationResult(responseText = text, accessGranted = grant)
+        val grant = exchangeCount >= gatekeeperMinRounds
+        applyGatekeeperRoundPolicy(
+            NegotiationResult(responseText = text, accessGranted = grant)
+        )
     }
 
     // ── Nudge ────────────────────────────────────────────────────────
@@ -220,18 +237,7 @@ class NegotiationManager(
                 backendHistory.add(modelContent(text))
 
                 val result = parseBackendResult(text, response.function_calls)
-
-                // Auto-relent for gatekeeper after enough exchanges
-                if (currentType == NegotiationType.GATEKEEPER &&
-                    exchangeCount >= 3 && !result.accessGranted
-                ) {
-                    return@withContext NegotiationResult(
-                        responseText = "$text\n\nAlright, I can see you've made up your mind. Go ahead.",
-                        accessGranted = true,
-                    )
-                }
-
-                return@withContext result
+                return@withContext applyGatekeeperRoundPolicy(result)
             } catch (e: Exception) {
                 val httpEx = e as? BackendHttpException
                 val detail = if (httpEx != null) "HTTP ${httpEx.statusCode}: ${httpEx.message}" else e.toString()
@@ -263,19 +269,7 @@ class NegotiationManager(
                 val response = lmManager.sendMessage(conversation, userMessage)
                 exchangeCount++
 
-                if (currentType == NegotiationType.GATEKEEPER && exchangeCount >= 3) {
-                    val tools = gatekeeperTools
-                    if (tools != null && !tools.accessGranted) {
-                        tools.reset()
-                        tools.grantAccess()
-                        return@withContext NegotiationResult(
-                            responseText = "$response\n\nAlright, I can see you've made up your mind. Go ahead.",
-                            accessGranted = true,
-                        )
-                    }
-                }
-
-                return@withContext when (currentType) {
+                val result = when (currentType) {
                     NegotiationType.GATEKEEPER -> NegotiationResult(
                         responseText = response,
                         accessGranted = gatekeeperTools?.accessGranted == true,
@@ -294,6 +288,7 @@ class NegotiationManager(
                     )
                     null -> NegotiationResult(response)
                 }
+                return@withContext applyGatekeeperRoundPolicy(result)
             } catch (e: Exception) {
                 Log.e(TAG, "Error in on-device reply", e)
             }
@@ -305,8 +300,10 @@ class NegotiationManager(
             NegotiationType.GATEKEEPER -> {
                 val appName = currentAppPackage.substringAfterLast('.')
                 val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount - 1)
-                val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount - 1)
-                NegotiationResult(responseText = text, accessGranted = grant)
+                val grant = exchangeCount >= gatekeeperMinRounds
+                applyGatekeeperRoundPolicy(
+                    NegotiationResult(responseText = text, accessGranted = grant)
+                )
             }
             NegotiationType.NUDGE -> {
                 val appName = currentAppPackage.substringAfterLast('.')
@@ -335,6 +332,8 @@ class NegotiationManager(
         gatekeeperTools = null
         nudgeTools = null
         generalChatTools = null
+        gatekeeperMinRounds = 0
+        gatekeeperMaxRounds = 0
         usingBackend = false
         backendHistory.clear()
         backendTools = null
@@ -420,6 +419,31 @@ class NegotiationManager(
         role = "model",
         parts = listOf(BackendClient.BackendPart(text)),
     )
+
+    private fun applyGatekeeperRoundPolicy(result: NegotiationResult): NegotiationResult {
+        if (currentType != NegotiationType.GATEKEEPER) return result
+
+        val minRounds = gatekeeperMinRounds.coerceAtLeast(0)
+        val maxRounds = gatekeeperMaxRounds.coerceAtLeast(minRounds)
+        if (exchangeCount < minRounds) {
+            if (!result.accessGranted) return result
+            return result.copy(
+                responseText = result.responseText +
+                    "\n\nOne more quick reflection before I open it.",
+                accessGranted = false,
+            )
+        }
+
+        if (exchangeCount >= maxRounds && !result.accessGranted) {
+            return result.copy(
+                responseText = result.responseText +
+                    "\n\nAlright, you've stayed with this. Go ahead.",
+                accessGranted = true,
+            )
+        }
+
+        return result
+    }
 
     companion object {
         private const val TAG = "NegotiationManager"

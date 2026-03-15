@@ -101,11 +101,13 @@ class MainActivity : ComponentActivity() {
             MindfulHomeTheme {
                 val navCtrl = rememberNavController()
                 navController = navCtrl
+                val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this@MainActivity)
 
                 val startDestination = when {
                     !onboardingDone -> "onboarding"
-                    SettingsManager.isQuickLaunchSessionActive(this@MainActivity) -> "home"
+                    quickLaunchSessionActive -> postTimerTargetRoute()
                     shouldShowTimer -> "timer"
+                    shouldShowAssistantAfterUnlock() -> "assistant"
                     else -> "home"
                 }
 
@@ -163,10 +165,11 @@ class MainActivity : ComponentActivity() {
                                     hardDeadlineMinutes = hardDeadlineMinutes,
                                 )
                                 Log.d("MainActivity", "TimerService.start called, navigating to home")
-                                navCtrl.navigate("home") {
+                                val targetRoute = postTimerTargetRoute()
+                                navCtrl.navigate(targetRoute) {
                                     popUpTo("timer") { inclusive = true }
                                 }
-                                Log.d("MainActivity", "Navigation to home completed")
+                                Log.d("MainActivity", "Navigation to $targetRoute completed")
                             },
                             savedAppLabel = savedAppLabel,
                             savedMinutes = savedSession?.remainingMinutes ?: 0,
@@ -191,7 +194,7 @@ class MainActivity : ComponentActivity() {
                                         session.packageName,
                                         handle,
                                     )
-                                    navCtrl.navigate("home") {
+                                    navCtrl.navigate(postTimerTargetRoute()) {
                                         popUpTo("timer") { inclusive = true }
                                     }
                                     val launchIntent = packageManager
@@ -229,7 +232,7 @@ class MainActivity : ComponentActivity() {
                                     allowedQuickLaunchPackages = quickLaunchPackages.toList(),
                                     sessionHandle = handle,
                                 )
-                                navCtrl.navigate("home") {
+                                navCtrl.navigate(postTimerTargetRoute()) {
                                     popUpTo("timer") { inclusive = true }
                                 }
                                 val launchIntent = packageManager
@@ -249,7 +252,11 @@ class MainActivity : ComponentActivity() {
                             repository = repository,
                             karmaManager = karmaManager,
                             onRequestAi = { packageName ->
-                                navCtrl.navigate("negotiate/$packageName")
+                                if (packageName.isBlank()) {
+                                    navCtrl.navigate("assistant")
+                                } else {
+                                    navCtrl.navigate("negotiate/$packageName")
+                                }
                             },
                             onTimerClick = {
                                 shouldShowTimer = true
@@ -288,6 +295,35 @@ class MainActivity : ComponentActivity() {
                             },
                             onDismiss = {
                                 navCtrl.popBackStack()
+                            }
+                        )
+                    }
+
+                    composable("assistant") {
+                        NegotiationScreen(
+                            packageName = "",
+                            unlockReason = unlockReason,
+                            sessionHandle = sessionHandle,
+                            repository = repository,
+                            karmaManager = karmaManager,
+                            onAppGranted = {
+                                if (shouldShowAssistantAfterUnlock()) {
+                                    navCtrl.navigate("assistant") {
+                                        popUpTo("assistant") { inclusive = true }
+                                    }
+                                } else {
+                                    navCtrl.popBackStack()
+                                }
+                            },
+                            onDismiss = {
+                                if (shouldShowAssistantAfterUnlock()) {
+                                    shouldShowTimer = true
+                                    navCtrl.navigate("timer") {
+                                        popUpTo("root") { inclusive = true }
+                                    }
+                                } else {
+                                    navCtrl.popBackStack()
+                                }
                             }
                         )
                     }
@@ -398,6 +434,7 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "onResume: wentToBackground=$wentToBackground navController=${navController != null}")
 
         val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this)
+        val assistantRequired = shouldShowAssistantAfterUnlock()
 
         if (quickLaunchSessionActive && shouldShowTimer) {
             shouldShowTimer = false
@@ -414,10 +451,11 @@ class MainActivity : ComponentActivity() {
             Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
 
             if (quickLaunchSessionActive) {
-                Log.d("MainActivity", "onResume: quick launch session active, navigating to home")
+                val destination = if (assistantRequired) "assistant" else "home"
+                Log.d("MainActivity", "onResume: quick launch session active, navigating to $destination")
                 shouldShowTimer = false
                 lifecycleScope.launch {
-                    navController?.navigate("home") {
+                    navController?.navigate(destination) {
                         popUpTo("root") { inclusive = true }
                     }
                 }
@@ -427,8 +465,9 @@ class MainActivity : ComponentActivity() {
                     ensureSessionHandle(),
                     "Quick return (${awayMs / 1000}s) — back to app selection"
                 )
+                val destination = if (assistantRequired) "assistant" else "home"
                 lifecycleScope.launch {
-                    navController?.navigate("home") {
+                    navController?.navigate(destination) {
                         popUpTo("root") { inclusive = true }
                     }
                 }
@@ -575,5 +614,13 @@ class MainActivity : ComponentActivity() {
         val created = SessionLogger.startSession("Session resumed")
         sessionHandle = created
         return created
+    }
+
+    private fun postTimerTargetRoute(): String {
+        return if (shouldShowAssistantAfterUnlock()) "assistant" else "home"
+    }
+
+    private fun shouldShowAssistantAfterUnlock(): Boolean {
+        return SettingsManager.isFocusTimeActiveNow(this)
     }
 }
