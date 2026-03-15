@@ -9,7 +9,6 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -76,7 +75,9 @@ import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
-import com.mindfulhome.ui.common.PullTabShelf
+import com.mindfulhome.ui.common.AddAppsDialog
+import com.mindfulhome.ui.common.AppShelf
+import com.mindfulhome.ui.common.AppShelfEntry
 import com.mindfulhome.ui.search.SearchOverlay
 import com.mindfulhome.util.PackageManagerHelper
 import android.util.Log
@@ -88,10 +89,7 @@ import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 import kotlin.math.ceil
 
-private const val FAVORITE_CELL_MIN_WIDTH_DP = 64
 private const val FAVORITES_COLLAPSED_ROWS = 1
-private const val SHELF_ROW_HEIGHT_DP = 72
-private const val SHELF_MAX_EXPANDED_HEIGHT_DP = 220
 
 @Composable
 fun HomeScreen(
@@ -111,6 +109,7 @@ fun HomeScreen(
 
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var showSearch by remember { mutableStateOf(false) }
+    var showAddDialog by remember { mutableStateOf(false) }
 
     // DB flows
     val hiddenApps by repository.hiddenApps().collectAsState(initial = emptyList())
@@ -325,6 +324,7 @@ fun HomeScreen(
                 onAppClick = { launchApp(it) },
                 onOpenFolder = { openFolderSlot = it },
                 onRemove = { removeFromFavorites(it.packageName) },
+                onAddClick = { showAddDialog = true },
                 onRegisterBounds = { topLeft, size ->
                     dragDropState.dockBounds =
                         androidx.compose.ui.geometry.Rect(topLeft, size)
@@ -353,6 +353,16 @@ fun HomeScreen(
             onDismiss = { showSearch = false },
             onAddToDock = { app -> addToFavorites(app.packageName) }
         )
+
+        if (showAddDialog) {
+            AddAppsDialog(
+                title = "Add to Favorites",
+                apps = visibleApps,
+                excludedPackages = favoritePackages,
+                onAdd = { packageName -> addToFavorites(packageName) },
+                onDismiss = { showAddDialog = false },
+            )
+        }
 
     }
 
@@ -564,6 +574,7 @@ private fun FavoriteDock(
     onAppClick: (AppInfo) -> Unit,
     onOpenFolder: (FavoriteSlot) -> Unit,
     onRemove: (AppInfo) -> Unit,
+    onAddClick: () -> Unit,
     onRegisterBounds: (Offset, Size) -> Unit,
     onRegisterSlotBounds: (Int, Offset, Size) -> Unit,
     modifier: Modifier = Modifier
@@ -574,91 +585,48 @@ private fun FavoriteDock(
     } else {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     }
-    PullTabShelf(
+    val entries = remember(slots, hoveredSlot, onAppClick, onOpenFolder, onRemove, onRegisterSlotBounds) {
+        slots.mapNotNull { slot ->
+            val firstApp = slot.apps.firstOrNull() ?: return@mapNotNull null
+            val isFolder = slot.apps.size > 1
+            AppShelfEntry(
+                key = "slot_${slot.slotPosition}",
+                label = if (isFolder) "Folder (${slot.apps.size})" else firstApp.label,
+                icon = firstApp.icon,
+                isHighlighted = hoveredSlot == slot.slotPosition,
+                onClick = {
+                    if (isFolder) onOpenFolder(slot) else onAppClick(firstApp)
+                },
+                onLongClick = {
+                    if (isFolder) onOpenFolder(slot) else onRemove(firstApp)
+                },
+                onPositioned = { x, y, w, h ->
+                    onRegisterSlotBounds(
+                        slot.slotPosition,
+                        Offset(x, y),
+                        Size(w, h)
+                    )
+                }
+            )
+        }
+    }
+
+    AppShelf(
+        entries = entries,
         expanded = expanded,
         onExpandedChange = { expanded = it },
+        collapsedRows = FAVORITES_COLLAPSED_ROWS,
         showBodyWhenCollapsed = true,
+        onAddClick = onAddClick,
+        addContentDescription = "Add app to favorites",
+        contentDescriptionExpand = "Expand favorites",
+        contentDescriptionCollapse = "Collapse favorites",
         modifier = modifier
             .onGloballyPositioned { coords ->
                 onRegisterBounds(coords.positionInRoot(), coords.size.toSize())
-            }
-            .background(highlightColor),
-        contentDescriptionExpand = "Expand favorites",
-        contentDescriptionCollapse = "Collapse favorites",
-    ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val columns = (maxWidth / FAVORITE_CELL_MIN_WIDTH_DP.dp).toInt().coerceAtLeast(1)
-            val totalRows = ceil(slots.size.toDouble() / columns.toDouble()).toInt().coerceAtLeast(1)
-            val visibleRows = if (expanded) totalRows else FAVORITES_COLLAPSED_ROWS
-            val targetHeight = (SHELF_ROW_HEIGHT_DP * visibleRows).dp
-                .coerceAtMost(SHELF_MAX_EXPANDED_HEIGHT_DP.dp)
-
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = FAVORITE_CELL_MIN_WIDTH_DP.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(targetHeight),
-                contentPadding = PaddingValues(4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                items(
-                    count = slots.size,
-                    key = { slots[it].slotPosition }
-                ) { index ->
-                    val slot = slots[index]
-                    val firstApp = slot.apps.firstOrNull()
-                    val isFolder = slot.apps.size > 1
-                    if (firstApp != null) {
-                        Column(
-                            modifier = Modifier
-                                .onGloballyPositioned { coords ->
-                                    onRegisterSlotBounds(
-                                        slot.slotPosition,
-                                        coords.positionInRoot(),
-                                        coords.size.toSize()
-                                    )
-                                }
-                                .combinedClickable(
-                                    onClick = {
-                                        if (isFolder) onOpenFolder(slot) else onAppClick(firstApp)
-                                    },
-                                    onLongClick = {
-                                        if (isFolder) onOpenFolder(slot) else onRemove(firstApp)
-                                    }
-                                )
-                                .background(
-                                    color = if (hoveredSlot == slot.slotPosition) {
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                    } else {
-                                        Color.Transparent
-                                    },
-                                    shape = RoundedCornerShape(10.dp)
-                                )
-                                .padding(horizontal = 2.dp, vertical = 2.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            if (firstApp.icon != null) {
-                                Image(
-                                    painter = rememberDrawablePainter(drawable = firstApp.icon),
-                                    contentDescription = firstApp.label,
-                                    modifier = Modifier.size(34.dp)
-                                )
-                            }
-                            Text(
-                                text = if (isFolder) "Folder (${slot.apps.size})" else firstApp.label,
-                                fontSize = 8.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = MaterialTheme.colorScheme.onBackground,
-                                modifier = Modifier.width(60.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
+            },
+        containerColor = highlightColor,
+    )
 }
 
 // ---------------------------------------------------------------------------

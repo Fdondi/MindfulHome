@@ -5,7 +5,6 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -27,16 +26,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,7 +68,9 @@ import com.mindfulhome.AppVersion
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.service.UsageTracker
-import com.mindfulhome.ui.common.PullTabShelf
+import com.mindfulhome.ui.common.AddAppsDialog
+import com.mindfulhome.ui.common.AppShelf
+import com.mindfulhome.ui.common.AppShelfEntry
 import com.mindfulhome.util.PackageManagerHelper
 import java.text.DateFormat
 import java.util.Date
@@ -90,9 +86,6 @@ private const val ITEM_HEIGHT_DP = 64
 private const val MOST_USED_VISIBLE_ITEMS = 3
 private const val MOST_USED_MAX_ITEMS = 15
 private const val MOST_USED_ROW_HEIGHT_DP = 44
-private const val SHELF_CELL_MIN_WIDTH_DP = 64
-private const val SHELF_ROW_HEIGHT_DP = 72
-private const val SHELF_MAX_EXPANDED_HEIGHT_DP = 220
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -552,9 +545,10 @@ fun TimerScreen(
     }
 
     if (showAddDialog && hasShelf) {
-        AddToShelfDialog(
-            allApps = allApps,
-            shelfPackages = shelfItems.map { it.packageName }.toSet(),
+        AddAppsDialog(
+            title = "Add to Quick Launch",
+            apps = allApps,
+            excludedPackages = shelfItems.map { it.packageName }.toSet(),
             onAdd = { packageName ->
                 scope.launch { repository .addToShelf(packageName) }
             },
@@ -578,196 +572,30 @@ private fun QuickLaunchDock(
     onAddClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    PullTabShelf(
+    val entries = remember(shelfApps, onAppClick, onRemoveApp) {
+        shelfApps.map { app ->
+            AppShelfEntry(
+                key = app.packageName,
+                label = app.label,
+                icon = app.icon,
+                onClick = { onAppClick(app) },
+                onLongClick = { onRemoveApp(app.packageName) },
+            )
+        }
+    }
+
+    AppShelf(
+        entries = entries,
         expanded = expanded,
         onExpandedChange = onExpandedChange,
+        collapsedRows = 0,
         showBodyWhenCollapsed = false,
-        modifier = modifier,
+        onAddClick = onAddClick,
+        addContentDescription = "Add app to quick launch",
         contentDescriptionExpand = "Expand quick launch",
         contentDescriptionCollapse = "Collapse quick launch",
-        overlayContent = {
-            IconButton(
-                onClick = onAddClick,
-                modifier = Modifier.align(Alignment.CenterStart)
-            ) {
-                Icon(
-                    Icons.Default.Add,
-                    contentDescription = "Add app to shelf",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
-        }
-    ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val columns = (maxWidth / SHELF_CELL_MIN_WIDTH_DP.dp).toInt().coerceAtLeast(1)
-            val totalRows = ceil(shelfApps.size.toDouble() / columns.toDouble()).toInt().coerceAtLeast(1)
-            val targetHeight = (SHELF_ROW_HEIGHT_DP * totalRows).dp
-                .coerceAtMost(SHELF_MAX_EXPANDED_HEIGHT_DP.dp)
-
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = SHELF_CELL_MIN_WIDTH_DP.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(targetHeight),
-                contentPadding = PaddingValues(4.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                items(
-                    count = shelfApps.size,
-                    key = { shelfApps[it].packageName }
-                ) { index ->
-                    val app = shelfApps[index]
-                    ShelfAppItem(
-                        appInfo = app,
-                        onClick = { onAppClick(app) },
-                        onLongClick = { onRemoveApp(app.packageName) }
-                    )
-                }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Single shelf app icon
-// ---------------------------------------------------------------------------
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun ShelfAppItem(
-    appInfo: AppInfo,
-    onClick: () -> Unit,
-    onLongClick: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
-            )
-            .padding(4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (appInfo.icon != null) {
-            Image(
-                painter = rememberDrawablePainter(drawable = appInfo.icon),
-                contentDescription = appInfo.label,
-                modifier = Modifier.size(48.dp)
-            )
-        }
-        Text(
-            text = appInfo.label,
-            fontSize = 10.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier
-                .padding(top = 2.dp)
-                .width(60.dp)
-        )
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Dialog to add apps to the shelf
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun AddToShelfDialog(
-    allApps: List<AppInfo>,
-    shelfPackages: Set<String>,
-    onAdd: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var searchQuery by remember { mutableStateOf("") }
-    val filtered = remember(allApps, searchQuery, shelfPackages) {
-        allApps
-            .filter { it.packageName !in shelfPackages }
-            .filter {
-                searchQuery.isBlank() ||
-                        it.label.contains(searchQuery, ignoreCase = true)
-            }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Column {
-                Text("Add to Quick Launch")
-                Spacer(modifier = Modifier.height(8.dp))
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search apps\u2026") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear")
-                            }
-                        }
-                    }
-                )
-            }
-        },
-        text = {
-            LazyColumn(
-                modifier = Modifier.heightIn(max = 400.dp)
-            ) {
-                items(
-                    count = filtered.size,
-                    key = { filtered[it].packageName }
-                ) { index ->
-                    val app = filtered[index]
-                    AppListRow(
-                        appInfo = app,
-                        onClick = {
-                            onAdd(app.packageName)
-                        }
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
-        }
+        modifier = modifier,
     )
-}
-
-// ---------------------------------------------------------------------------
-// App row inside the add-to-shelf dialog
-// ---------------------------------------------------------------------------
-
-@Composable
-private fun AppListRow(
-    appInfo: AppInfo,
-    onClick: () -> Unit
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(vertical = 8.dp, horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        if (appInfo.icon != null) {
-            Image(
-                painter = rememberDrawablePainter(drawable = appInfo.icon),
-                contentDescription = appInfo.label,
-                modifier = Modifier.size(40.dp)
-            )
-        }
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = appInfo.label,
-            style = MaterialTheme.typography.bodyLarge,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
 }
 
 @Composable
