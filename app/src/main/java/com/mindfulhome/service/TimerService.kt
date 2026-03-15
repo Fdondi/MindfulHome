@@ -260,6 +260,24 @@ class TimerService : Service() {
         initialPackageName: String,
         allowedPackages: Set<String>,
     ) {
+        // Suspend any running timer session so it can be resumed later.
+        val state = _timerState.value
+        val pkg = _currentPackage.value
+        if (state is TimerState.Counting && pkg.isNotEmpty()) {
+            val now = System.currentTimeMillis()
+            val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
+                ?: (now - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
+            SettingsManager.saveLastSession(
+                context = this,
+                packageName = pkg,
+                totalDurationMs = state.totalMs,
+                startedAtMs = startedAtMs,
+                suspendedAtMs = now,
+            )
+            logWithSession("Timer suspended for Quick Launch: $pkg")
+        }
+
+        timerJob?.cancel()
         resetNudgesForNewTimer()
         clearQuickLaunchExitCandidate()
         Log.d(
@@ -272,7 +290,7 @@ class TimerService : Service() {
         )
         SettingsManager.startQuickLaunchSession(this, normalizedAllowed)
         SettingsManager.setTimerRunning(this, false)
-        SettingsManager.clearLastSession(this)
+
         _sessionStartedAtMs.value = 0L
         _currentPackage.value = initialPackageName
         _timerState.value = TimerState.Idle

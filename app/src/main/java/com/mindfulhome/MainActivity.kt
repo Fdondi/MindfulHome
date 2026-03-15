@@ -104,6 +104,7 @@ class MainActivity : ComponentActivity() {
 
                 val startDestination = when {
                     !onboardingDone -> "onboarding"
+                    SettingsManager.isQuickLaunchSessionActive(this@MainActivity) -> "home"
                     shouldShowTimer -> "timer"
                     else -> "home"
                 }
@@ -390,6 +391,12 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         Log.d("MainActivity", "onResume: wentToBackground=$wentToBackground navController=${navController != null}")
 
+        val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this)
+
+        if (quickLaunchSessionActive && shouldShowTimer) {
+            shouldShowTimer = false
+        }
+
         if (wentToBackground) {
             wentToBackground = false
 
@@ -400,7 +407,15 @@ class MainActivity : ComponentActivity() {
 
             Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
 
-            if (awayMs < quickReturnMs && timerWasRunning) {
+            if (quickLaunchSessionActive) {
+                Log.d("MainActivity", "onResume: quick launch session active, navigating to home")
+                shouldShowTimer = false
+                lifecycleScope.launch {
+                    navController?.navigate("home") {
+                        popUpTo("root") { inclusive = true }
+                    }
+                }
+            } else if (awayMs < quickReturnMs && timerWasRunning) {
                 shouldShowTimer = false
                 SessionLogger.log(
                     ensureSessionHandle(),

@@ -37,7 +37,7 @@ class LiteRtLmManager(private val context: Context) {
 
             val config = EngineConfig(
                 modelPath = modelFile.absolutePath,
-                backend = Backend.CPU,
+                backend = Backend.CPU(),
                 cacheDir = context.cacheDir.path
             )
 
