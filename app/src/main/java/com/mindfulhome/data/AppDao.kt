@@ -19,8 +19,8 @@ interface AppKarmaDao {
     @Query("SELECT * FROM app_karma WHERE isHidden = 1")
     fun getHiddenApps(): Flow<List<AppKarma>>
 
-    @Query("SELECT * FROM app_karma WHERE isHidden = 1 AND karmaScore < 0 AND isOptedOut = 0")
-    suspend fun getHiddenAppsForRecovery(): List<AppKarma>
+    @Query("SELECT * FROM app_karma WHERE karmaScore < 0 AND isOptedOut = 0")
+    suspend fun getUnderwaterAppsForRecovery(): List<AppKarma>
 
     @Query("SELECT * FROM app_karma WHERE isHidden = 0")
     fun getVisibleApps(): Flow<List<AppKarma>>

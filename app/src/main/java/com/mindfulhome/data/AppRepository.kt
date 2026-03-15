@@ -84,8 +84,8 @@ class AppRepository(private val database: AppDatabase) {
     }
 
     suspend fun dailyKarmaRecovery(hideThreshold: Int) {
-        val hiddenApps = karmaDao.getHiddenAppsForRecovery()
-        hiddenApps.forEach { appKarma ->
+        val underwaterApps = karmaDao.getUnderwaterAppsForRecovery()
+        underwaterApps.forEach { appKarma ->
             val recovered = (appKarma.karmaScore + 1).coerceAtMost(0)
             upsertWithDerivedHidden(appKarma.copy(karmaScore = recovered), hideThreshold)
         }

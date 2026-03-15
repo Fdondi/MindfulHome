@@ -73,6 +73,7 @@ object SettingsManager {
 
     // Karma hide threshold (number of bad-karma points before the app is hidden)
     private const val HIDE_THRESHOLD_KEY = "karma_hide_threshold"
+    private const val LAST_KARMA_RECOVERY_EPOCH_DAY_KEY = "last_karma_recovery_epoch_day"
     const val DEFAULT_HIDE_THRESHOLD = 2
     const val MIN_HIDE_THRESHOLD = 0
     const val MAX_HIDE_THRESHOLD = 10
@@ -475,6 +476,15 @@ object SettingsManager {
     fun setHideThreshold(context: Context, threshold: Int) {
         prefs(context).edit {
             putInt(HIDE_THRESHOLD_KEY, threshold.coerceIn(MIN_HIDE_THRESHOLD, MAX_HIDE_THRESHOLD))
+        }
+    }
+
+    fun getLastKarmaRecoveryEpochDay(context: Context): Long =
+        prefs(context).getLong(LAST_KARMA_RECOVERY_EPOCH_DAY_KEY, -1L)
+
+    fun setLastKarmaRecoveryEpochDay(context: Context, epochDay: Long) {
+        prefs(context).edit {
+            putLong(LAST_KARMA_RECOVERY_EPOCH_DAY_KEY, epochDay)
         }
     }
 

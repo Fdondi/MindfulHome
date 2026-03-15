@@ -90,6 +90,9 @@ class MainActivity : ComponentActivity() {
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(this, repository)
+        lifecycleScope.launch {
+            karmaManager.runDailyRecoveryIfDue()
+        }
 
         // Handle intent on cold launch (onNewIntent is only called for warm launches)
         handleIncomingIntent(intent)

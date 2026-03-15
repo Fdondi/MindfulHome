@@ -102,6 +102,9 @@ class TimerService : Service() {
         val app = application as MindfulHomeApp
         repository = AppRepository(app.database)
         karmaManager = KarmaManager(this, repository)
+        serviceScope.launch {
+            karmaManager.runDailyRecoveryIfDue()
+        }
         overlayManager = OverlayNudgeManager(this)
         overlayManager.onDismissed = { onOverlayDismissed() }
         overlayManager.onNotificationRequested = { onOverlayNotificationRequested() }
@@ -487,6 +490,7 @@ class TimerService : Service() {
         nudgeJob = serviceScope.launch {
             var overrunMs = 0L
             var bubbleCount = 0
+            var predatoryPenaltyPending = false
             var lastUserActivityAtMs: Long? = UsageTracker.getLastUserActivityTimestampMs(
                 context = this@TimerService,
                 lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
@@ -617,9 +621,30 @@ class TimerService : Service() {
                                     "pkg=$packageName"
                             )
                             stageElapsedMs = max(0L, stageElapsedMs - bubbleIntervalMs)
+
+                            if (predatoryPenaltyPending) {
+                                karmaManager.onNudgeIgnored(packageName)
+                                predatoryPenaltyPending = false
+                                logWithSession(
+                                    "Karma -1: predatory bird was ignored until the next bird ($appLabel)"
+                                )
+                                logSessionEvent("Predatory bird penalty applied at nudge #$nextBubbleIndex")
+                            }
+
                             bubbleCount++
                             _nudgeCount.value = bubbleCount
-                            karmaManager.onNudgeIgnored(packageName)
+                            val isPredatoryBird =
+                                bubbleCount % PREDATORY_BIRD_EVERY_N_BIRDS == 0
+                            if (isPredatoryBird) {
+                                predatoryPenaltyPending = true
+                                logWithSession(
+                                    "Predatory bird #$bubbleCount is hunting. " +
+                                        "Close before the next bird to avoid karma -1."
+                                )
+                                logSessionEvent(
+                                    "Predatory bird shown at nudge #$bubbleCount; penalty pending"
+                                )
+                            }
 
                             val canOverlayNow = overlayManager.canDrawOverlay()
                             Log.d(
@@ -627,14 +652,17 @@ class TimerService : Service() {
                                 "Bubble trigger dispatch: canOverlay=$canOverlayNow count=$bubbleCount"
                             )
                             if (canOverlayNow) {
-                                overlayManager.showBubble(nudgeCount = bubbleCount)
+                                overlayManager.showBubble(
+                                    nudgeCount = bubbleCount,
+                                    isPredatory = isPredatoryBird,
+                                )
                                 overlayManager.updateConversationMessage("", bubbleCount)
                             } else {
                                 logSessionEvent("Bubble fallback notification suppressed (single notification mode)")
                             }
 
                             logWithSession(
-                                "Bubble nudge #$bubbleCount shown for $appLabel " +
+                                "${if (isPredatoryBird) "Predatory" else "Small"} bird nudge #$bubbleCount shown for $appLabel " +
                                     "(overrun ${overrunMs / 1000}s)"
                             )
                         }
@@ -1308,6 +1336,7 @@ class TimerService : Service() {
         private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
         private const val USER_AWAY_SIGNAL_POLL_MS = 5_000L
         private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
+        private const val PREDATORY_BIRD_EVERY_N_BIRDS = 10
         private const val DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT =
             "Quick Launch active - monitoring app switches"
         private val QUICK_LAUNCH_UTILITY_PACKAGES_EXACT = setOf(

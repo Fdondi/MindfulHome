@@ -3,6 +3,7 @@ package com.mindfulhome.model
 import android.content.Context
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.settings.SettingsManager
+import java.util.concurrent.TimeUnit
 
 class KarmaManager(private val context: Context, private val repository: AppRepository) {
 
@@ -64,5 +65,22 @@ class KarmaManager(private val context: Context, private val repository: AppRepo
 
     suspend fun dailyRecovery() {
         repository.dailyKarmaRecovery(hideThreshold())
+    }
+
+    suspend fun runDailyRecoveryIfDue(nowMs: Long = System.currentTimeMillis()) {
+        val todayEpochDay = TimeUnit.MILLISECONDS.toDays(nowMs)
+        val lastRecoveryEpochDay = SettingsManager.getLastKarmaRecoveryEpochDay(context)
+
+        if (lastRecoveryEpochDay < 0L) {
+            SettingsManager.setLastKarmaRecoveryEpochDay(context, todayEpochDay)
+            return
+        }
+        if (todayEpochDay <= lastRecoveryEpochDay) return
+
+        val missedDays = (todayEpochDay - lastRecoveryEpochDay).coerceAtMost(30L)
+        repeat(missedDays.toInt()) {
+            dailyRecovery()
+        }
+        SettingsManager.setLastKarmaRecoveryEpochDay(context, todayEpochDay)
     }
 }

@@ -72,8 +72,8 @@ class OverlayNudgeManager(private val context: Context) {
         handler.post { dismissQuickLaunchFrameInternal() }
     }
 
-    fun showBubble(nudgeCount: Int) {
-        handler.post { showBubbleInternal(nudgeCount) }
+    fun showBubble(nudgeCount: Int, isPredatory: Boolean = false) {
+        handler.post { showBubbleInternal(nudgeCount, isPredatory) }
     }
 
     fun setDeadlineState(softDeadlineAtMs: Long?, hardDeadlineAtMs: Long?) {
@@ -453,7 +453,7 @@ class OverlayNudgeManager(private val context: Context) {
     // ── Flying birds ────────────────────────────────────────────────
 
     @Suppress("ClickableViewAccessibility")
-    private fun showBubbleInternal(nudgeCount: Int) {
+    private fun showBubbleInternal(nudgeCount: Int, isPredatory: Boolean) {
         Log.d(
             TAG,
             "showBubbleInternal requested nudgeCount=$nudgeCount existing=${bubbleEntries.size}"
@@ -470,12 +470,12 @@ class OverlayNudgeManager(private val context: Context) {
             ).toInt()
         }
 
-        val birdType = randomBirdType()
+        val birdType = if (isPredatory) BirdType.PREDATORY else randomSmallBirdType()
         val badgeText = badgeTextForType(birdType, System.currentTimeMillis())
 
-        val birdSize = dp(56)
-        val badgeWidth = dp(56)
-        val badgeHeight = dp(18)
+        val birdSize = dp(if (isPredatory) 82 else 56)
+        val badgeWidth = dp(if (isPredatory) 84 else 56)
+        val badgeHeight = dp(if (isPredatory) 24 else 18)
         val containerWidth = birdSize + badgeWidth / 2
         val containerHeight = birdSize + badgeHeight / 2
 
@@ -485,7 +485,14 @@ class OverlayNudgeManager(private val context: Context) {
             setImageResource(birdDrawableResIdForType(birdType))
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             elevation = dp(6).toFloat()
-            setPadding(dp(6), dp(6), dp(6), dp(6))
+            val birdPadding = dp(if (birdType == BirdType.PREDATORY) 4 else 6)
+            setPadding(birdPadding, birdPadding, birdPadding, birdPadding)
+            if (birdType == BirdType.PREDATORY) {
+                // Let the custom predatory vector drive the form.
+                rotation = -18f
+                scaleX = 1.08f
+                scaleY = 1.08f
+            }
         }
         applyBirdTint(bird, birdType)
 
@@ -497,7 +504,7 @@ class OverlayNudgeManager(private val context: Context) {
         val badge = TextView(context).apply {
             text = badgeText
             setTextColor(Color.parseColor("#FF0F172A"))
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 9f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, if (birdType == BirdType.PREDATORY) 10f else 9f)
             gravity = Gravity.CENTER
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -507,6 +514,9 @@ class OverlayNudgeManager(private val context: Context) {
             }
             setPadding(dp(4), 0, dp(4), 0)
             elevation = dp(7).toFloat()
+            if (birdType == BirdType.PREDATORY) {
+                typeface = Typeface.DEFAULT_BOLD
+            }
         }
         applyBadgeStyle(badge, birdType)
         val badgeParams = FrameLayout.LayoutParams(badgeWidth, badgeHeight).apply {
@@ -700,11 +710,12 @@ class OverlayNudgeManager(private val context: Context) {
             BirdType.GREEN_NOW -> R.drawable.ic_nudge_bird
             BirdType.PURPLE_SOFT -> R.drawable.ic_nudge_bird_alt1
             BirdType.RED_HARD -> R.drawable.ic_nudge_bird_alt2
+            BirdType.PREDATORY -> R.drawable.ic_nudge_bird_predatory
         }
     }
 
-    private fun randomBirdType(): BirdType {
-        val types = BirdType.values()
+    private fun randomSmallBirdType(): BirdType {
+        val types = arrayOf(BirdType.GREEN_NOW, BirdType.PURPLE_SOFT, BirdType.RED_HARD)
         return types[Random.nextInt(types.size)]
     }
 
@@ -741,15 +752,18 @@ class OverlayNudgeManager(private val context: Context) {
                 val sign = if (diffMs >= 0L) "-" else "+"
                 "$sign${absMinutes}m"
             }
+            BirdType.PREDATORY -> "-1 KARMA"
         }
     }
 
     private fun applyBirdTint(
         bird: ImageView,
-        @Suppress("UNUSED_PARAMETER") type: BirdType,
+        type: BirdType,
     ) {
         bird.clearColorFilter()
-        bird.background = null
+        if (type != BirdType.PREDATORY) {
+            bird.background = null
+        }
     }
 
     private fun applyBadgeStyle(badge: TextView, type: BirdType) {
@@ -757,11 +771,14 @@ class OverlayNudgeManager(private val context: Context) {
             BirdType.GREEN_NOW -> Color.parseColor("#DCFCE7") to Color.parseColor("#22C55E")
             BirdType.PURPLE_SOFT -> Color.parseColor("#F3E8FF") to Color.parseColor("#A855F7")
             BirdType.RED_HARD -> Color.parseColor("#FEE2E2") to Color.parseColor("#EF4444")
+            BirdType.PREDATORY -> Color.parseColor("#FCA5A5") to Color.parseColor("#B91C1C")
         }
-        badge.setTextColor(Color.parseColor("#FF0F172A"))
+        badge.setTextColor(
+            if (type == BirdType.PREDATORY) Color.WHITE else Color.parseColor("#FF0F172A")
+        )
         val bg = (badge.background as? GradientDrawable) ?: return
         bg.setColor(bgColor)
-        bg.setStroke(dp(1), strokeColor)
+        bg.setStroke(if (type == BirdType.PREDATORY) dp(2) else dp(1), strokeColor)
     }
 
     private fun withAlpha(color: Int, alphaFraction: Float): Int {
@@ -856,6 +873,7 @@ class OverlayNudgeManager(private val context: Context) {
         GREEN_NOW,
         PURPLE_SOFT,
         RED_HARD,
+        PREDATORY,
     }
 
     companion object {
