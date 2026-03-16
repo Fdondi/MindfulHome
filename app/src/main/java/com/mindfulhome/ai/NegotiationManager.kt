@@ -41,6 +41,9 @@ class NegotiationManager(
     private val backendAuth: BackendAuthHelper? = null,
     private val backendModel: String = "gemini-2.5-flash",
 ) {
+    private data class SearchCandidate(val label: String, val packageName: String)
+    private data class SearchSelection(val index: Int, val candidate: SearchCandidate)
+
     private var currentType: NegotiationType? = null
     private var exchangeCount = 0
     private var currentAppPackage: String = ""
@@ -57,6 +60,8 @@ class NegotiationManager(
     private var gatekeeperTools: GatekeeperTools? = null
     private var nudgeTools: NudgeTools? = null
     private var generalChatTools: GeneralChatTools? = null
+    private var searchableApps: List<SearchCandidate> = emptyList()
+    private var lastSearchResults: List<SearchCandidate> = emptyList()
 
     // ── Gatekeeper ───────────────────────────────────────────────────
 
@@ -171,11 +176,19 @@ class NegotiationManager(
         currentAppPackage = ""
         currentType = NegotiationType.GENERAL
         exchangeCount = 0
+        lastSearchResults = emptyList()
 
         val hiddenApps = try {
             repository.hiddenApps().first()
         } catch (e: Exception) {
             Log.e(TAG, "Error loading hidden apps", e)
+            emptyList()
+        }
+        searchableApps = try {
+            PackageManagerHelper.getInstalledApps(appContext)
+                .map { SearchCandidate(label = it.label, packageName = it.packageName) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading installed apps for search", e)
             emptyList()
         }
         val hiddenAppsBriefing = if (hiddenApps.isEmpty()) {
@@ -204,6 +217,12 @@ class NegotiationManager(
         if (lmManager.modelReady) {
             try {
                 val tools = GeneralChatTools()
+                tools.setSearchResolver { query ->
+                    searchInstalledApps(query).map { it.label to it.packageName }
+                }
+                tools.setSearchObserver { query, _ ->
+                    lastSearchResults = searchInstalledApps(query)
+                }
                 generalChatTools = tools
                 val conversation = lmManager.createConversation(
                     systemPrompt,
@@ -222,6 +241,17 @@ class NegotiationManager(
     // ── Reply (multi-turn) ───────────────────────────────────────────
 
     suspend fun reply(userMessage: String): NegotiationResult = withContext(Dispatchers.IO) {
+        if (currentType == NegotiationType.GENERAL) {
+            val selection = parseSearchSelection(userMessage)
+            if (selection != null) {
+                val chosen = selection.candidate
+                return@withContext NegotiationResult(
+                    responseText = "Opening option ${selection.index + 1}: ${chosen.label}.",
+                    launchedPackage = chosen.packageName,
+                )
+            }
+        }
+
         // ── Backend path ─────────────────────────────────────────────
         if (usingBackend && backendAuth != null) {
             try {
@@ -312,7 +342,7 @@ class NegotiationManager(
             }
             NegotiationType.GENERAL, null -> NegotiationResult(
                 "I'm running without an AI backend right now, so I can't launch apps from here. " +
-                    "Press back and use the search button on the home screen to find any app.",
+                    "Tell me the app name and I can search installed packages for you.",
             )
         }
     }
@@ -332,6 +362,8 @@ class NegotiationManager(
         gatekeeperTools = null
         nudgeTools = null
         generalChatTools = null
+        searchableApps = emptyList()
+        lastSearchResults = emptyList()
         gatekeeperMinRounds = 0
         gatekeeperMaxRounds = 0
         usingBackend = false
@@ -399,6 +431,15 @@ class NegotiationManager(
                         launchedPackage = pkg,
                     )
                 }
+                "searchApps" -> {
+                    val query = (fc.args["query"] as? JsonPrimitive)?.content ?: ""
+                    val matches = searchInstalledApps(query)
+                    lastSearchResults = matches
+                    val summary = formatSearchSummary(query, matches)
+                    return NegotiationResult(
+                        responseText = if (text.isBlank()) summary else "$text\n\n$summary",
+                    )
+                }
             }
         }
 
@@ -419,6 +460,71 @@ class NegotiationManager(
         role = "model",
         parts = listOf(BackendClient.BackendPart(text)),
     )
+
+    private fun searchInstalledApps(query: String, limit: Int = 6): List<SearchCandidate> {
+        val normalized = query.trim().lowercase()
+        if (normalized.isBlank()) return emptyList()
+        return searchableApps
+            .asSequence()
+            .filter { candidate ->
+                val label = candidate.label.lowercase()
+                val pkg = candidate.packageName.lowercase()
+                label.contains(normalized) || pkg.contains(normalized)
+            }
+            .sortedBy { it.label.lowercase() }
+            .take(limit)
+            .toList()
+    }
+
+    private fun formatSearchSummary(query: String, matches: List<SearchCandidate>): String {
+        if (matches.isEmpty()) {
+            return "I couldn't find installed apps matching \"$query\"."
+        }
+        return buildString {
+            append("I found these installed matches:\n")
+            matches.forEachIndexed { index, match ->
+                append("${index + 1}) ${match.label} (${match.packageName})\n")
+            }
+            append("Reply with the number, like 1 or 2.")
+        }.trimEnd()
+    }
+
+    private fun parseSearchSelection(userMessage: String): SearchSelection? {
+        if (lastSearchResults.isEmpty()) return null
+        val normalized = userMessage.lowercase()
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        if (normalized.isBlank()) return null
+
+        // Accept direct numeric choices: "2", "option 2", "the 2nd", etc.
+        val number = Regex("\\b(\\d{1,2})\\b")
+            .find(normalized)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+        val indexFromNumber = number?.minus(1)
+        if (indexFromNumber != null && indexFromNumber in lastSearchResults.indices) {
+            return SearchSelection(indexFromNumber, lastSearchResults[indexFromNumber])
+        }
+
+        val ordinalMap = listOf(
+            "first" to 0,
+            "second" to 1,
+            "third" to 2,
+            "fourth" to 3,
+            "fifth" to 4,
+            "sixth" to 5,
+        )
+        val ordinalIndex = ordinalMap.firstOrNull { (word, _) ->
+            normalized.contains(word)
+        }?.second
+        if (ordinalIndex != null && ordinalIndex in lastSearchResults.indices) {
+            return SearchSelection(ordinalIndex, lastSearchResults[ordinalIndex])
+        }
+
+        return null
+    }
 
     private fun applyGatekeeperRoundPolicy(result: NegotiationResult): NegotiationResult {
         if (currentType != NegotiationType.GATEKEEPER) return result

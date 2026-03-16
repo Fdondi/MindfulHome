@@ -61,9 +61,23 @@ class GeneralChatTools : ToolSet {
 
     var launchedPackage: String = ""
         private set
+    var lastSearchSummary: String = ""
+        private set
+
+    private var searchResolver: (String) -> List<Pair<String, String>> = { emptyList() }
+    private var searchObserver: (String, List<Pair<String, String>>) -> Unit = { _, _ -> }
 
     fun reset() {
         launchedPackage = ""
+        lastSearchSummary = ""
+    }
+
+    fun setSearchResolver(resolver: (String) -> List<Pair<String, String>>) {
+        searchResolver = resolver
+    }
+
+    fun setSearchObserver(observer: (String, List<Pair<String, String>>) -> Unit) {
+        searchObserver = observer
     }
 
     @Tool(description = "Launch an app on the user's phone. Use the exact package name from the hidden apps briefing, or a well-known Android package name.")
@@ -72,5 +86,29 @@ class GeneralChatTools : ToolSet {
     ): Map<String, Any> {
         launchedPackage = packageName
         return mapOf("status" to "launching", "package" to packageName)
+    }
+
+    @Tool(description = "Search installed apps by name and return matching app labels with package names. Use this when launchApp fails or package is uncertain.")
+    fun searchApps(
+        @ToolParam(description = "App name or keyword to search for, e.g. instagram, maps, spotify") query: String
+    ): Map<String, Any> {
+        val matches = searchResolver(query.trim())
+        searchObserver(query, matches)
+        lastSearchSummary = if (matches.isEmpty()) {
+            "No matching installed apps found for '$query'."
+        } else {
+            buildString {
+                append("I found these installed matches:\n")
+                matches.forEachIndexed { index, (label, pkg) ->
+                    append("${index + 1}) $label ($pkg)\n")
+                }
+                append("Reply with the number, like 1 or 2.")
+            }.trimEnd()
+        }
+        return mapOf(
+            "status" to "results",
+            "count" to matches.size,
+            "matches" to lastSearchSummary,
+        )
     }
 }

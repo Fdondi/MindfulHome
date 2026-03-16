@@ -310,37 +310,41 @@ fun SettingsScreen(
                                     .padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(
-                                    text = "${formatMinutesOfDay(interval.startMinutes)} - " +
-                                        formatMinutesOfDay(interval.endMinutes),
-                                    style = MaterialTheme.typography.bodyMedium,
+                                Row(
                                     modifier = Modifier.weight(1f),
-                                )
-                                TextButton(onClick = {
-                                    showTimePicker(
-                                        context = context,
-                                        initialMinutes = interval.startMinutes,
-                                    ) { pickedStart ->
-                                        val updated = focusTimeIntervals.toMutableList()
-                                        updated[index] = interval.copy(startMinutes = pickedStart)
-                                        focusTimeIntervals = updated
-                                        SettingsManager.setFocusTimeIntervals(context, updated)
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    TextButton(onClick = {
+                                        showTimePicker(
+                                            context = context,
+                                            initialMinutes = interval.startMinutes,
+                                        ) { pickedStart ->
+                                            val updated = focusTimeIntervals.toMutableList()
+                                            updated[index] = interval.copy(startMinutes = pickedStart)
+                                            focusTimeIntervals = updated
+                                            SettingsManager.setFocusTimeIntervals(context, updated)
+                                        }
+                                    }) {
+                                        Text(formatMinutesOfDay(interval.startMinutes))
                                     }
-                                }) {
-                                    Text("Start")
-                                }
-                                TextButton(onClick = {
-                                    showTimePicker(
-                                        context = context,
-                                        initialMinutes = interval.endMinutes,
-                                    ) { pickedEnd ->
-                                        val updated = focusTimeIntervals.toMutableList()
-                                        updated[index] = interval.copy(endMinutes = pickedEnd)
-                                        focusTimeIntervals = updated
-                                        SettingsManager.setFocusTimeIntervals(context, updated)
+                                    Text(
+                                        text = " - ",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    TextButton(onClick = {
+                                        showTimePicker(
+                                            context = context,
+                                            initialMinutes = interval.endMinutes,
+                                        ) { pickedEnd ->
+                                            val updated = focusTimeIntervals.toMutableList()
+                                            updated[index] = interval.copy(endMinutes = pickedEnd)
+                                            focusTimeIntervals = updated
+                                            SettingsManager.setFocusTimeIntervals(context, updated)
+                                        }
+                                    }) {
+                                        Text(formatMinutesOfDay(interval.endMinutes))
                                     }
-                                }) {
-                                    Text("End")
                                 }
                                 TextButton(onClick = {
                                     val updated = focusTimeIntervals.toMutableList()

@@ -2,6 +2,7 @@ package com.mindfulhome.ui.negotiation
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,16 +24,22 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stars
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,9 +82,14 @@ data class ChatMessage(
 fun NegotiationScreen(
     packageName: String,
     unlockReason: String = "",
+    durationMinutes: Int,
     sessionHandle: SessionLogger.SessionHandle?,
     repository: AppRepository,
     karmaManager: KarmaManager,
+    onTimerClick: () -> Unit = {},
+    onOpenLogs: () -> Unit = {},
+    onOpenKarma: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onAppGranted: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -101,31 +113,45 @@ fun NegotiationScreen(
     var isWaitingForAi by remember { mutableStateOf(false) }
     var accessGranted by remember { mutableStateOf(false) }
     var launchTarget by remember { mutableStateOf("") }
-    var modelLabel by remember { mutableStateOf("") }
+    var conversationNonce by remember { mutableStateOf(0) }
 
     val lmManager = remember { LiteRtLmManager(context) }
     val useBackend = remember { SettingsManager.getAIMode(context) == SettingsManager.AI_MODE_BACKEND }
     val selectedModel = remember { SettingsManager.getBackendModel(context) }
-    val backendAuth = remember {
-        if (useBackend) {
-            BackendAuthHelper(
-                signIn = {
-                    val result = AuthManager.signIn(context)
-                    result?.idToken
-                },
-                getAppToken = { ApiKeyManager.getAppToken(context) },
-                saveAppToken = { token, expiresAtMs ->
-                    ApiKeyManager.saveAppToken(context, token, expiresAtMs)
-                },
-                clearAppToken = { ApiKeyManager.clearAppToken(context) },
-                getGoogleIdToken = { ApiKeyManager.getGoogleIdToken(context) },
-            )
-        } else {
-            null
-        }
+    var sessionUseBackend by remember { mutableStateOf(useBackend) }
+    var sessionSelectedModel by remember { mutableStateOf(selectedModel) }
+    var showModelPicker by remember { mutableStateOf(false) }
+    var pickerUseBackend by remember { mutableStateOf(sessionUseBackend) }
+    var pickerSelectedModel by remember { mutableStateOf(sessionSelectedModel) }
+    var modelLabel by remember {
+        mutableStateOf(
+            if (sessionUseBackend) "$sessionSelectedModel (checking auth...)" else "On-device (LiteRT-LM)"
+        )
     }
-    val negotiationManager = remember {
-        NegotiationManager(lmManager, repository, karmaManager, backendAuth, selectedModel)
+    val backendAuth = remember {
+        BackendAuthHelper(
+            signIn = {
+                val result = AuthManager.signIn(context)
+                result?.idToken
+            },
+            getAppToken = { ApiKeyManager.getAppToken(context) },
+            saveAppToken = { token, expiresAtMs ->
+                ApiKeyManager.saveAppToken(context, token, expiresAtMs)
+            },
+            clearAppToken = { ApiKeyManager.clearAppToken(context) },
+            getGoogleIdToken = { ApiKeyManager.getGoogleIdToken(context) },
+        )
+    }
+    var negotiationManager by remember {
+        mutableStateOf(
+            NegotiationManager(
+                lmManager,
+                repository,
+                karmaManager,
+                if (sessionUseBackend) backendAuth else null,
+                sessionSelectedModel,
+            )
+        )
     }
 
     fun addMessage(text: String, isFromUser: Boolean) {
@@ -135,10 +161,17 @@ fun NegotiationScreen(
     }
 
     // Initialize AI and start conversation
-    LaunchedEffect(packageName) {
+    LaunchedEffect(packageName, conversationNonce) {
         scope.launch {
+            messages.clear()
+            userInput = ""
+            isWaitingForAi = false
+            accessGranted = false
+            launchTarget = ""
+
             // Auto sign-in + token exchange if backend mode is active and no app token
-            if (useBackend && backendAuth != null && !backendAuth.hasToken) {
+            var remoteAuthFailed = false
+            if (sessionUseBackend && !backendAuth.hasToken) {
                 try {
                     val signInResult = AuthManager.signIn(context)
                     if (signInResult != null) {
@@ -148,6 +181,7 @@ fun NegotiationScreen(
                         // Immediately exchange Google token for our own app token
                         val exchanged = backendAuth.exchangeGoogleToken(signInResult.idToken)
                         if (!exchanged) {
+                            remoteAuthFailed = true
                             Toast.makeText(
                                 context,
                                 "Backend authentication failed. Using on-device model.",
@@ -155,6 +189,7 @@ fun NegotiationScreen(
                             ).show()
                         }
                     } else {
+                        remoteAuthFailed = true
                         Toast.makeText(
                             context,
                             "Google Sign-In failed. Using on-device model.",
@@ -162,20 +197,39 @@ fun NegotiationScreen(
                         ).show()
                     }
                 } catch (_: NoCredentialException) {
+                    remoteAuthFailed = true
                     Toast.makeText(
                         context,
                         "No Google account available. Using on-device model.",
                         Toast.LENGTH_LONG
                     ).show()
+                } catch (_: Exception) {
+                    remoteAuthFailed = true
+                    Toast.makeText(
+                        context,
+                        "Remote auth failed. Using on-device model.",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
+            }
+            if (remoteAuthFailed) {
+                sessionUseBackend = false
+                negotiationManager.endConversation()
+                negotiationManager = NegotiationManager(
+                    lmManager = lmManager,
+                    repository = repository,
+                    karmaManager = karmaManager,
+                    backendAuth = null,
+                    backendModel = sessionSelectedModel,
+                )
             }
 
             // Determine which model will actually be used
-            val usingRemote = useBackend && backendAuth != null && backendAuth.hasToken
+            val usingRemote = sessionUseBackend && backendAuth.hasToken
             val signedInEmail = if (usingRemote) ApiKeyManager.getSignedInEmail(context) else null
             modelLabel = if (usingRemote) {
                 val emailSuffix = if (signedInEmail != null) " · $signedInEmail" else ""
-                "$selectedModel$emailSuffix"
+                "$sessionSelectedModel$emailSuffix"
             } else {
                 "On-device (LiteRT-LM)"
             }
@@ -246,10 +300,29 @@ fun NegotiationScreen(
     // Launch the app from general chat (launchApp tool)
     LaunchedEffect(launchTarget) {
         if (launchTarget.isNotEmpty()) {
-            PackageManagerHelper.launchApp(context, launchTarget)
-            negotiationManager.endConversation()
-            lmManager.shutdown()
-            onAppGranted()
+            val targetPackage = launchTarget
+            launchTarget = ""
+            val launched = PackageManagerHelper.launchApp(context, targetPackage)
+            if (launched) {
+                negotiationManager.endConversation()
+                lmManager.shutdown()
+                onAppGranted()
+            } else {
+                addMessage(
+                    "I couldn't launch $targetPackage. Let me search installed apps for a match.",
+                    isFromUser = false
+                )
+                isWaitingForAi = true
+                val result = negotiationManager.reply(
+                    "SYSTEM: launchApp failed for package '$targetPackage'. " +
+                        "Call searchApps to find installed matches and suggest one."
+                )
+                addMessage(result.responseText, isFromUser = false)
+                isWaitingForAi = false
+                if (result.launchedPackage.isNotEmpty()) {
+                    launchTarget = result.launchedPackage
+                }
+            }
         }
     }
 
@@ -261,6 +334,45 @@ fun NegotiationScreen(
             .navigationBarsPadding()
             .imePadding()
     ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "$durationMinutes min",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable(onClick = onTimerClick)
+            )
+
+            Spacer(modifier = Modifier.weight(1f))
+
+            IconButton(onClick = onOpenLogs) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Article,
+                    contentDescription = "Session logs",
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            IconButton(onClick = onOpenKarma) {
+                Icon(
+                    Icons.Default.Stars,
+                    contentDescription = "Karma",
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onBackground
+                )
+            }
+        }
+
         // Top bar with model indicator
         TopAppBar(
             title = {
@@ -269,13 +381,16 @@ fun NegotiationScreen(
                         text = if (packageName.isNotEmpty()) "Opening $appLabel" else "AI Assistant",
                         fontWeight = FontWeight.SemiBold
                     )
-                    if (modelLabel.isNotEmpty()) {
-                        Text(
-                            text = modelLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                    Text(
+                        text = modelLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.clickable {
+                            pickerUseBackend = sessionUseBackend
+                            pickerSelectedModel = sessionSelectedModel
+                            showModelPicker = true
+                        }
+                    )
                 }
             },
             navigationIcon = {
@@ -387,6 +502,86 @@ fun NegotiationScreen(
                 }
             }
         }
+    }
+
+    if (showModelPicker) {
+        AlertDialog(
+            onDismissRequest = { showModelPicker = false },
+            title = { Text("Model for this session") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = !pickerUseBackend,
+                            onClick = { pickerUseBackend = false }
+                        )
+                        Text(
+                            text = "On-device (LiteRT-LM)",
+                            modifier = Modifier.clickable { pickerUseBackend = false }
+                        )
+                    }
+
+                    SettingsManager.AVAILABLE_MODELS.forEach { option ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = pickerUseBackend && pickerSelectedModel == option.id,
+                                onClick = {
+                                    pickerUseBackend = true
+                                    pickerSelectedModel = option.id
+                                }
+                            )
+                            Text(
+                                text = option.label,
+                                modifier = Modifier.clickable {
+                                    pickerUseBackend = true
+                                    pickerSelectedModel = option.id
+                                }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showModelPicker = false
+                        val changed = pickerUseBackend != sessionUseBackend ||
+                            pickerSelectedModel != sessionSelectedModel
+                        if (!changed) return@TextButton
+
+                        negotiationManager.endConversation()
+                        sessionUseBackend = pickerUseBackend
+                        sessionSelectedModel = pickerSelectedModel
+                        modelLabel = if (sessionUseBackend) {
+                            "$sessionSelectedModel (checking auth...)"
+                        } else {
+                            "On-device (LiteRT-LM)"
+                        }
+                        negotiationManager = NegotiationManager(
+                            lmManager = lmManager,
+                            repository = repository,
+                            karmaManager = karmaManager,
+                            backendAuth = if (sessionUseBackend) backendAuth else null,
+                            backendModel = sessionSelectedModel,
+                        )
+                        conversationNonce += 1
+                    }
+                ) {
+                    Text("Apply")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showModelPicker = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

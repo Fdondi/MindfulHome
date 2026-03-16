@@ -290,9 +290,19 @@ class MainActivity : ComponentActivity() {
                         NegotiationScreen(
                             packageName = packageName,
                             unlockReason = reason,
+                            durationMinutes = lastDurationMinutes,
                             sessionHandle = sessionHandle,
                             repository = repository,
                             karmaManager = karmaManager,
+                            onTimerClick = {
+                                shouldShowTimer = true
+                                navCtrl.navigate("timer") {
+                                    popUpTo("root") { inclusive = true }
+                                }
+                            },
+                            onOpenLogs = { navCtrl.navigate("logs") },
+                            onOpenKarma = { navCtrl.navigate("karma") },
+                            onOpenSettings = { navCtrl.navigate("settings") },
                             onAppGranted = {
                                 navCtrl.popBackStack()
                             },
@@ -306,9 +316,19 @@ class MainActivity : ComponentActivity() {
                         NegotiationScreen(
                             packageName = "",
                             unlockReason = unlockReason,
+                            durationMinutes = lastDurationMinutes,
                             sessionHandle = sessionHandle,
                             repository = repository,
                             karmaManager = karmaManager,
+                            onTimerClick = {
+                                shouldShowTimer = true
+                                navCtrl.navigate("timer") {
+                                    popUpTo("root") { inclusive = true }
+                                }
+                            },
+                            onOpenLogs = { navCtrl.navigate("logs") },
+                            onOpenKarma = { navCtrl.navigate("karma") },
+                            onOpenSettings = { navCtrl.navigate("settings") },
                             onAppGranted = {
                                 if (shouldShowAssistantAfterUnlock()) {
                                     navCtrl.navigate("assistant") {
