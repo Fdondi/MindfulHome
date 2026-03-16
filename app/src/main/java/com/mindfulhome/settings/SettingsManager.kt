@@ -110,9 +110,9 @@ object SettingsManager {
 
     /** Fallback list used when the backend is unreachable. */
     val AVAILABLE_MODELS = listOf(
-        ModelOption("gemini-2.5-flash", "Gemini 2.5 Flash", "Fast, capable, best value (recommended)"),
-        ModelOption("gemini-2.5-flash-lite", "Gemini 2.5 Flash Lite", "Fastest, lowest cost"),
-        ModelOption("gemini-2.5-pro", "Gemini 2.5 Pro", "Most capable, thinking model, higher cost"),
+        ModelOption("gemini-2.5-flash-lite", "🍃 Gemini 2.5 Flash Lite", "Fastest, lowest cost"),
+        ModelOption("gemini-2.5-flash", "⭐ Gemini 2.5 Flash", "Fast and smart"),
+        ModelOption("gemini-2.5-pro", "💎 Gemini 2.5 Pro", "Smartest, with thinking, high cost"),
     )
 
     val DEFAULT_MODEL = AVAILABLE_MODELS.first().id
