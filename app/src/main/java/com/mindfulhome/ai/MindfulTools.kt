@@ -15,15 +15,40 @@ class GatekeeperTools : ToolSet {
 
     var accessGranted = false
         private set
+    var lastUsageHistorySummary: String = ""
+        private set
+
+    private var usageHistoryResolver: (Int) -> String = { "No usage history available." }
 
     fun reset() {
         accessGranted = false
+        lastUsageHistorySummary = ""
+    }
+
+    fun setUsageHistoryResolver(resolver: (Int) -> String) {
+        usageHistoryResolver = resolver
     }
 
     @Tool(description = "Open the hidden app for the user. Call this when you decide to let them use it.")
     fun grantAccess(): Map<String, Any> {
         accessGranted = true
         return mapOf("status" to "launched", "message" to "The app is now opening.")
+    }
+
+    @Tool(description = "Query the most recent app-use sessions before deciding whether to grant access.")
+    fun queryRecentUsageSessions(
+        @ToolParam(description = "How many recent sessions to fetch, from 1 to 20") limit: Int
+    ): Map<String, Any> {
+        val safeLimit = limit.coerceIn(1, 20)
+        val summary = usageHistoryResolver(safeLimit).ifBlank {
+            "No usage history available."
+        }
+        lastUsageHistorySummary = summary
+        return mapOf(
+            "status" to "ok",
+            "limit" to safeLimit,
+            "summary" to summary,
+        )
     }
 }
 

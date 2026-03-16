@@ -9,6 +9,7 @@ object PromptTemplates {
         One sentence replies only. Be casual and friendly.
 
         Ask why they need it and gently push for intentional use.
+        If you need more context, you may call queryRecentUsageSessions(limit) to inspect recent behavior before deciding.
         Follow the round-window policy provided in the user context.
     """.trimIndent()
 

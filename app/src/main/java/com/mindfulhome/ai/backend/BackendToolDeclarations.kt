@@ -21,6 +21,20 @@ object BackendToolDeclarations {
             function(
                 name = "grantAccess",
                 description = "Open the hidden app for the user. Call this when you decide to let them use it.",
+            ),
+            function(
+                name = "queryRecentUsageSessions",
+                description = "Query the recent app-use session history before deciding whether to grant access.",
+                parameters = buildJsonObject {
+                    put("type", "OBJECT")
+                    put("properties", buildJsonObject {
+                        put("limit", buildJsonObject {
+                            put("type", "INTEGER")
+                            put("description", "How many recent sessions to fetch, from 1 to 20")
+                        })
+                    })
+                    put("required", buildJsonArray { add(JsonPrimitive("limit")) })
+                }
             )
         )
     )

@@ -18,6 +18,9 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.int
 import kotlinx.serialization.json.jsonPrimitive
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.ceil
 import kotlin.math.ln
 
@@ -406,7 +409,7 @@ class NegotiationManager(
     /**
      * Parses backend function calls into a [NegotiationResult].
      */
-    private fun parseBackendResult(
+    private suspend fun parseBackendResult(
         text: String,
         functionCalls: List<BackendClient.FunctionCall>,
     ): NegotiationResult {
@@ -436,6 +439,13 @@ class NegotiationManager(
                     val matches = searchInstalledApps(query)
                     lastSearchResults = matches
                     val summary = formatSearchSummary(query, matches)
+                    return NegotiationResult(
+                        responseText = if (text.isBlank()) summary else "$text\n\n$summary",
+                    )
+                }
+                "queryRecentUsageSessions" -> {
+                    val limit = fc.args["limit"]?.jsonPrimitive?.int ?: 5
+                    val summary = buildUsageHistorySummary(currentAppPackage, limit)
                     return NegotiationResult(
                         responseText = if (text.isBlank()) summary else "$text\n\n$summary",
                     )
@@ -524,6 +534,43 @@ class NegotiationManager(
         }
 
         return null
+    }
+
+    private suspend fun buildUsageHistorySummary(packageName: String, limit: Int): String {
+        if (packageName.isBlank()) {
+            return "I don't have a target app context yet, so I can't query usage history."
+        }
+
+        val safeLimit = limit.coerceIn(1, 20)
+        val sessions = repository.getRecentSessions(packageName).take(safeLimit)
+        if (sessions.isEmpty()) {
+            return "No previous usage sessions were found for this app."
+        }
+
+        val formatter = SimpleDateFormat("MM-dd HH:mm", Locale.US)
+        return buildString {
+            append("Most recent ")
+            append(sessions.size)
+            append(" usage sessions:\n")
+            sessions.forEachIndexed { index, session ->
+                val started = formatter.format(Date(session.startTimestamp))
+                val ended = session.endTimestamp?.let { formatter.format(Date(it)) } ?: "ongoing"
+                val timerMinutes = msToMinutes(session.timerDurationMs)
+                val overrunMinutes = msToMinutes(session.overrunMs)
+                val outcome = when {
+                    session.endTimestamp == null -> "in progress"
+                    session.closedOnTime -> "closed on time"
+                    session.overrunMs > 0 -> "overran by ${overrunMinutes}m"
+                    else -> "ended"
+                }
+                append("${index + 1}) $started -> $ended, timer ${timerMinutes}m, $outcome, karma ${session.karmaChange}\n")
+            }
+        }.trimEnd()
+    }
+
+    private fun msToMinutes(ms: Long): Long {
+        if (ms <= 0L) return 0L
+        return (ms + 59_999L) / 60_000L
     }
 
     private fun applyGatekeeperRoundPolicy(result: NegotiationResult): NegotiationResult {
