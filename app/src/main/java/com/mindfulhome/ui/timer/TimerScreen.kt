@@ -170,7 +170,7 @@ fun TimerScreen(
     // Keep end-time labels current while user is picking a duration.
     LaunchedEffect(Unit) {
         while (true) {
-            delay(1000L)
+            delay(20_000L)
             nowMs = System.currentTimeMillis()
         }
     }

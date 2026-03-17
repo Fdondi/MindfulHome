@@ -28,6 +28,9 @@ import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.settings.SettingsManager
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,6 +48,7 @@ class TimerService : Service() {
     private var timerJob: Job? = null
     private var nudgeJob: Job? = null
     private var quickLaunchMonitorJob: Job? = null
+    private var quickLaunchGraceJob: Job? = null
     private var notificationInteractionTimeoutJob: Job? = null
     private var quickLaunchExitCandidatePackage: String? = null
     private var quickLaunchExitCandidateStartedAtMs: Long = 0L
@@ -235,8 +239,8 @@ class TimerService : Service() {
         timerJob = serviceScope.launch {
             var remainingMs = durationMs
             while (remainingMs > 0) {
-                delay(1000)
-                remainingMs -= 1000
+                delay(TIMER_TICK_MS)
+                remainingMs = (remainingMs - TIMER_TICK_MS).coerceAtLeast(0L)
                 _timerState.value = TimerState.Counting(remainingMs, durationMs)
                 updateTimerNotification(remainingMs)
             }
@@ -348,31 +352,46 @@ class TimerService : Service() {
                 "Quick Launch grace window started for package=$packageName"
             )
             refreshQuickLaunchMonitoringNotification()
+            scheduleQuickLaunchGraceCheck(expectedPackage = packageName)
             return
         }
-
-        val elapsedMs = now - quickLaunchExitCandidateStartedAtMs
-        if (elapsedMs < QUICK_LAUNCH_SWITCH_GRACE_MS) {
-            return
-        }
-
-        val appLabel = getAppLabel(packageName)
-        Log.d(TAG, "non-quick app detected: $packageName")
-        logWithSession(
-            "Quick Launch exit detected: opened **$appLabel** — returning to timer"
-        )
-        clearQuickLaunchExitCandidate()
-        SettingsManager.clearQuickLaunchSession(this)
-        quickLaunchMonitorJob?.cancel()
-        overlayManager.dismissQuickLaunchFrame()
-        forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
     }
 
     private fun clearQuickLaunchExitCandidate() {
+        quickLaunchGraceJob?.cancel()
+        quickLaunchGraceJob = null
         quickLaunchExitCandidatePackage = null
         quickLaunchExitCandidateStartedAtMs = 0L
         quickLaunchExitCandidateLabel = null
         refreshQuickLaunchMonitoringNotification()
+    }
+
+    private fun scheduleQuickLaunchGraceCheck(expectedPackage: String) {
+        quickLaunchGraceJob?.cancel()
+        quickLaunchGraceJob = serviceScope.launch {
+            delay(QUICK_LAUNCH_SWITCH_GRACE_MS)
+            if (!SettingsManager.isQuickLaunchSessionActive(this@TimerService)) return@launch
+            if (quickLaunchExitCandidatePackage != expectedPackage) return@launch
+
+            val currentForeground = UsageTracker.getForegroundApp(this@TimerService) ?: _currentPackage.value
+            val allowedPackages = SettingsManager.getQuickLaunchPackages(this@TimerService) + packageName
+            if (currentForeground.isBlank()) return@launch
+            if (currentForeground in allowedPackages || isSystemOrUtilityPackage(currentForeground)) {
+                clearQuickLaunchExitCandidate()
+                return@launch
+            }
+
+            val appLabel = getAppLabel(currentForeground)
+            Log.d(TAG, "non-quick app still active after grace: $currentForeground")
+            logWithSession(
+                "Quick Launch exit detected: opened **$appLabel** — returning to timer"
+            )
+            clearQuickLaunchExitCandidate()
+            SettingsManager.clearQuickLaunchSession(this@TimerService)
+            quickLaunchMonitorJob?.cancel()
+            overlayManager.dismissQuickLaunchFrame()
+            forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
+        }
     }
 
     private fun isSystemOrUtilityPackage(packageName: String): Boolean {
@@ -424,7 +443,6 @@ class TimerService : Service() {
                     _currentPackage.value = foregroundPackage
                     maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
                 }
-                refreshQuickLaunchMonitoringNotification()
                 delay(QUICK_LAUNCH_MONITOR_POLL_MS)
             }
             Log.d(TAG, "quick-launch monitoring loop ended")
@@ -497,7 +515,6 @@ class TimerService : Service() {
                 includeForegroundTransitions = false,
             )
             var awaySignalUnavailableLogged = false
-            var lastAwaySignalPollAtMs = 0L
             val initialDelayMs = SettingsManager
                 .getNudgeInitialNotificationDelayMinutes(this@TimerService)
                 .coerceAtLeast(0) * 60_000L
@@ -518,32 +535,29 @@ class TimerService : Service() {
             var activeElapsedMs = 0L
 
             while (true) {
-                delay(1_000L)
+                delay(NUDGE_LOOP_TICK_MS)
                 val now = System.currentTimeMillis()
-                if (now - lastAwaySignalPollAtMs >= USER_AWAY_SIGNAL_POLL_MS) {
-                    val detectedActivityAtMs = UsageTracker.getLastUserActivityTimestampMs(
-                        context = this@TimerService,
-                        lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
-                        includeForegroundTransitions = false,
-                    )
-                    if (detectedActivityAtMs != null) {
-                        val current = lastUserActivityAtMs
-                        lastUserActivityAtMs = if (current == null) {
-                            detectedActivityAtMs
-                        } else {
-                            max(current, detectedActivityAtMs)
-                        }
+                val detectedActivityAtMs = UsageTracker.getLastUserActivityTimestampMs(
+                    context = this@TimerService,
+                    lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
+                    includeForegroundTransitions = false,
+                )
+                if (detectedActivityAtMs != null) {
+                    val current = lastUserActivityAtMs
+                    lastUserActivityAtMs = if (current == null) {
+                        detectedActivityAtMs
+                    } else {
+                        max(current, detectedActivityAtMs)
                     }
-                    val tapActivityAtMs = lastAwayOverlayTapAtMs
-                    if (tapActivityAtMs > 0L) {
-                        val current = lastUserActivityAtMs
-                        lastUserActivityAtMs = if (current == null) {
-                            tapActivityAtMs
-                        } else {
-                            max(current, tapActivityAtMs)
-                        }
+                }
+                val tapActivityAtMs = lastAwayOverlayTapAtMs
+                if (tapActivityAtMs > 0L) {
+                    val current = lastUserActivityAtMs
+                    lastUserActivityAtMs = if (current == null) {
+                        tapActivityAtMs
+                    } else {
+                        max(current, tapActivityAtMs)
                     }
-                    lastAwaySignalPollAtMs = now
                 }
                 val lastActivityAtMs = lastUserActivityAtMs
                 if (lastActivityAtMs == null) {
@@ -598,8 +612,8 @@ class TimerService : Service() {
                 if (now < nudgePauseUntilMs) {
                     continue
                 }
-                activeElapsedMs += 1_000L
-                stageElapsedMs += 1_000L
+                activeElapsedMs += NUDGE_LOOP_TICK_MS
+                stageElapsedMs += NUDGE_LOOP_TICK_MS
                 overrunMs = activeElapsedMs
                 _timerState.value = TimerState.Expired(overrunMs)
 
@@ -1224,8 +1238,7 @@ class TimerService : Service() {
             return
         }
 
-        val now = System.currentTimeMillis()
-        val contentText = buildQuickLaunchMonitoringStatusText(now)
+        val contentText = buildQuickLaunchMonitoringStatusText()
         if (contentText == lastQuickLaunchNotificationText) return
         lastQuickLaunchNotificationText = contentText
 
@@ -1240,7 +1253,7 @@ class TimerService : Service() {
         notificationManager.notify(QUICK_LAUNCH_NOTIFICATION_ID, notification)
     }
 
-    private fun buildQuickLaunchMonitoringStatusText(nowMs: Long): String {
+    private fun buildQuickLaunchMonitoringStatusText(): String {
         val candidatePackage = quickLaunchExitCandidatePackage
         val candidateStartedAt = quickLaunchExitCandidateStartedAtMs
         if (candidatePackage.isNullOrBlank() || candidateStartedAt <= 0L) {
@@ -1248,16 +1261,12 @@ class TimerService : Service() {
         }
 
         val candidateLabel = quickLaunchExitCandidateLabel ?: getAppLabel(candidatePackage)
-        val elapsedMs = (nowMs - candidateStartedAt).coerceAtLeast(0L)
-        val remainingMs = (QUICK_LAUNCH_SWITCH_GRACE_MS - elapsedMs).coerceAtLeast(0L)
-        return "Non-Quick Launch app: $candidateLabel. Grace ${formatGraceCountdown(remainingMs)}"
+        val detectedAt = formatQuickLaunchDetectionTime(candidateStartedAt)
+        return "Detected $candidateLabel at $detectedAt. Will check again in 1m."
     }
 
-    private fun formatGraceCountdown(ms: Long): String {
-        val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
-        val minutes = totalSeconds / 60L
-        val seconds = totalSeconds % 60L
-        return "${minutes}:${seconds.toString().padStart(2, '0')}"
+    private fun formatQuickLaunchDetectionTime(timestampMs: Long): String {
+        return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(timestampMs))
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -1331,10 +1340,11 @@ class TimerService : Service() {
         private const val TIMER_NOTIFICATION_ID = 1001
         private const val NUDGE_NOTIFICATION_ID = 1002
         private const val QUICK_LAUNCH_NOTIFICATION_ID = 1003
-        private const val QUICK_LAUNCH_MONITOR_POLL_MS = 1500L
+        private const val TIMER_TICK_MS = 20_000L
+        private const val NUDGE_LOOP_TICK_MS = 20_000L
+        private const val QUICK_LAUNCH_MONITOR_POLL_MS = 20_000L
         private const val QUICK_LAUNCH_SWITCH_GRACE_MS = 60_000L
         private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
-        private const val USER_AWAY_SIGNAL_POLL_MS = 5_000L
         private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
         private const val PREDATORY_BIRD_EVERY_N_BIRDS = 10
         private const val DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT =
