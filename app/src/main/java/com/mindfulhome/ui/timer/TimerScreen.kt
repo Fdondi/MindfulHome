@@ -33,6 +33,7 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
@@ -69,12 +70,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.AppVersion
-import com.mindfulhome.data.AppRepository
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.service.UsageTracker
-import com.mindfulhome.ui.common.AddAppsDialog
-import com.mindfulhome.ui.common.AppShelf
-import com.mindfulhome.ui.common.AppShelfEntry
 import com.mindfulhome.util.PackageManagerHelper
 import java.text.DateFormat
 import java.util.Date
@@ -95,20 +92,17 @@ private const val MOST_USED_ROW_HEIGHT_DP = 44
 @Composable
 fun TimerScreen(
     onTimerSet: (minutes: Int, reason: String, hardDeadlineMinutes: Int?) -> Unit,
+    onBackToDefault: (() -> Unit)? = null,
     savedAppLabel: String? = null,
     savedMinutes: Int = 0,
     onResumeSession: (() -> Unit)? = null,
-    repository: AppRepository? = null,
-    onShelfAppLaunch: ((
-        minutes: Int,
-        reason: String,
-        packageName: String,
-        quickLaunchPackages: Set<String>,
-    ) -> Unit)? = null,
+    initialMinutes: Int? = null,
+    initialReason: String? = null,
+    prefillToken: Long = 0L,
+    onPrefillApplied: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
     val appVersion = AppVersion.versionName
     val startButtonBringIntoViewRequester = remember { BringIntoViewRequester() }
     val imeBottomPx = WindowInsets.ime.getBottom(density)
@@ -188,11 +182,7 @@ fun TimerScreen(
         }
     }
 
-    // Shelf state
-    val shelfItems by repository?.shelfApps()?.collectAsState(initial = emptyList())
-        ?: remember { mutableStateOf(emptyList()) }
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
-    var showAddDialog by remember { mutableStateOf(false) }
     var hasUsagePermission by remember { mutableStateOf(false) }
     var mostUsedAppsToday by remember { mutableStateOf<List<UsageTracker.DailyAppUsage>>(emptyList()) }
 
@@ -206,14 +196,20 @@ fun TimerScreen(
         }
     }
 
-    val shelfApps = remember(shelfItems, allApps) {
-        shelfItems.mapNotNull { shelf ->
-            allApps.find { it.packageName == shelf.packageName }
+    LaunchedEffect(prefillToken) {
+        if (prefillToken <= 0L) return@LaunchedEffect
+        initialReason?.let { reason = it }
+        val minutes = initialMinutes?.coerceIn(1, MAX_MINUTES)
+        if (minutes != null) {
+            val targetIndex = minutes - 1
+            val viewportHeightPx =
+                listState.layoutInfo.viewportEndOffset - listState.layoutInfo.viewportStartOffset
+            val itemHeightPx = with(density) { ITEM_HEIGHT_DP.dp.roundToPx() }
+            val centerOffset = -((viewportHeightPx - itemHeightPx) / 2)
+            listState.scrollToItem(targetIndex, centerOffset)
         }
+        onPrefillApplied()
     }
-
-    val hasShelf = repository != null && onShelfAppLaunch != null
-    var quickLaunchExpanded by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -225,17 +221,37 @@ fun TimerScreen(
                 .fillMaxSize()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
-                .padding(bottom = if (hasShelf) 20.dp else 0.dp)
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                text = "v$appVersion",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Start,
-            )
+            if (onBackToDefault != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    IconButton(onClick = onBackToDefault) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Text(
+                        text = "v$appVersion",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                Text(
+                    text = "v$appVersion",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Start,
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -533,83 +549,7 @@ fun TimerScreen(
                 hasUsagePermission = hasUsagePermission
             )
         }
-
-        if (hasShelf) {
-            QuickLaunchDock(
-                shelfApps = shelfApps,
-                expanded = quickLaunchExpanded,
-                onExpandedChange = { quickLaunchExpanded = it },
-                onAppClick = { appInfo ->
-                    onShelfAppLaunch.invoke(
-                        selectedMinutes,
-                        reason.trim(),
-                        appInfo.packageName,
-                        shelfApps.map { it.packageName }.toSet(),
-                    )
-                },
-                onRemoveApp = { packageName ->
-                    scope.launch { repository.removeFromShelf(packageName) }
-                },
-                onAddClick = { showAddDialog = true },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-            )
-        }
     }
-
-    if (showAddDialog && hasShelf) {
-        AddAppsDialog(
-            title = "Add to Quick Launch",
-            apps = allApps,
-            excludedPackages = shelfItems.map { it.packageName }.toSet(),
-            onAdd = { packageName ->
-                scope.launch { repository .addToShelf(packageName) }
-            },
-            onDismiss = { showAddDialog = false }
-        )
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Quick launch shelf
-// ---------------------------------------------------------------------------
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun QuickLaunchDock(
-    shelfApps: List<AppInfo>,
-    expanded: Boolean,
-    onExpandedChange: (Boolean) -> Unit,
-    onAppClick: (AppInfo) -> Unit,
-    onRemoveApp: (String) -> Unit,
-    onAddClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val entries = remember(shelfApps, onAppClick, onRemoveApp) {
-        shelfApps.map { app ->
-            AppShelfEntry(
-                key = app.packageName,
-                label = app.label,
-                icon = app.icon,
-                onClick = { onAppClick(app) },
-                onLongClick = { onRemoveApp(app.packageName) },
-            )
-        }
-    }
-
-    AppShelf(
-        entries = entries,
-        expanded = expanded,
-        onExpandedChange = onExpandedChange,
-        collapsedRows = 0,
-        showBodyWhenCollapsed = false,
-        onAddClick = onAddClick,
-        addContentDescription = "Add app to quick launch",
-        contentDescriptionExpand = "Expand quick launch",
-        contentDescriptionCollapse = "Collapse quick launch",
-        modifier = modifier,
-    )
 }
 
 @Composable

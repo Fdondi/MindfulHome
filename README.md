@@ -7,6 +7,7 @@ A mindful Android home launcher that nags, never blocks.
 MindfulHome helps you use your phone more intentionally through soft nudges, not hard blocks. No app is ever force-closed or hard-blocked. Instead:
 
 - **Timer-first**: Set how long you want to use your phone each time you unlock it
+- **Default page first**: Land on a customizable default page with widgets and QuickLaunch, then jump to timer when needed
 - **Karma system**: Apps earn negative karma when you overrun your timer; positive karma recovers when you stick to it
 - **Graduated hiding**: Apps with sustained poor karma disappear from the home screen
 - **AI gatekeeper**: Hidden apps can only be accessed by talking to an on-device AI that gently pushes back, but always ultimately relents
@@ -28,6 +29,30 @@ Open the project in Android Studio. It will sync Gradle automatically. Use Run/D
 
 **Prerequisites:** Android Studio with SDK 35 and JDK 17.
 **Build performance:** Gradle configuration cache is enabled by default in `gradle.properties`.
+
+### Modules
+
+- `:app` - MindfulHome launcher
+
+## Todo Companion integration
+
+- Todo Companion is integrated directly inside MindfulHome's default page as a built-in widget card.
+- A task supports: intent text, expected duration, optional deadline, and priority (`P1` to `P4`, default `P2`).
+- Ordering is shared between app list and widget:
+  - deadline tasks first, sorted by `(duration * priority) / timeToDeadline`
+  - non-deadline tasks next, sorted by priority descending
+- Start action integration:
+  - if MindfulHome is installed, `Start` opens `MainActivity` with timer prefill extras
+  - if not installed, Todo Companion shows a clear fallback message and does not fake success
+
+## New default page
+
+- After onboarding, MindfulHome starts on a default page route.
+- The default page includes:
+  - hosted widgets (plus Add/Remove controls),
+  - QuickLaunch apps,
+  - a bottom `something else?` button that opens the timer without prefill.
+- QuickLaunch pull-tab on the timer page has been removed.
 
 ### AI Model (Optional)
 

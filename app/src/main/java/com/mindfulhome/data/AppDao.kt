@@ -154,6 +154,22 @@ interface ShelfDao {
     suspend fun compactSlotsAfter(removedSlot: Int)
 }
 
+@Dao
+interface TodoDao {
+
+    @Query("SELECT * FROM todo_items WHERE isCompleted = 0")
+    fun getOpenTodos(): Flow<List<TodoItem>>
+
+    @Query("SELECT * FROM todo_items WHERE id = :id LIMIT 1")
+    suspend fun getById(id: Long): TodoItem?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: TodoItem): Long
+
+    @Query("UPDATE todo_items SET isCompleted = :completed, updatedAtMs = :updatedAtMs WHERE id = :id")
+    suspend fun setCompleted(id: Long, completed: Boolean, updatedAtMs: Long = System.currentTimeMillis())
+}
+
 data class SessionLogWithCount(
     val id: Long,
     val startedAtMs: Long,

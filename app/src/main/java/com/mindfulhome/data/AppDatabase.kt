@@ -16,10 +16,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         HomeLayoutItem::class,
         AppIntent::class,
         ShelfItem::class,
+        TodoItem::class,
         SessionLog::class,
         SessionLogEvent::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -30,6 +31,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun homeLayoutDao(): HomeLayoutDao
     abstract fun appIntentDao(): AppIntentDao
     abstract fun shelfDao(): ShelfDao
+    abstract fun todoDao(): TodoDao
     abstract fun sessionLogDao(): SessionLogDao
 
     companion object {
@@ -135,6 +137,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS todo_items (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        intentText TEXT NOT NULL,
+                        expectedDurationMinutes INTEGER,
+                        deadlineEpochMs INTEGER,
+                        priority INTEGER NOT NULL,
+                        isCompleted INTEGER NOT NULL,
+                        updatedAtMs INTEGER NOT NULL
+                    )"""
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -144,7 +162,8 @@ abstract class AppDatabase : RoomDatabase() {
                 )
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
-                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8
+                        MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
+                        MIGRATION_8_9
                     )
                     .build().also { INSTANCE = it }
             }

@@ -1,6 +1,8 @@
 package com.mindfulhome.data
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import kotlin.math.max
 
 class AppRepository(private val database: AppDatabase) {
     private companion object {
@@ -12,6 +14,7 @@ class AppRepository(private val database: AppDatabase) {
     private val layoutDao = database.homeLayoutDao()
     private val intentDao = database.appIntentDao()
     private val shelfDao = database.shelfDao()
+    private val todoDao = database.todoDao()
 
     // Karma
     fun allKarma(): Flow<List<AppKarma>> = karmaDao.getAllKarma()
@@ -201,5 +204,60 @@ class AppRepository(private val database: AppDatabase) {
         if (remainingInSlot == 0) {
             shelfDao.compactSlotsAfter(item.slotPosition)
         }
+    }
+
+    // Todo widget (integrated)
+    fun sortedOpenTodos(): Flow<List<TodoItem>> = todoDao.getOpenTodos().map { todos ->
+        val nowMs = System.currentTimeMillis()
+        val withDeadline = todos.filter { it.deadlineEpochMs != null }
+        val withoutDeadline = todos.filter { it.deadlineEpochMs == null }
+        val sortedWithDeadline = withDeadline.sortedWith(
+            compareByDescending<TodoItem> { todoUrgencyScore(it, nowMs) }
+                .thenBy { it.deadlineEpochMs ?: Long.MAX_VALUE }
+                .thenByDescending { it.priority }
+                .thenByDescending { it.updatedAtMs }
+        )
+        val sortedWithoutDeadline = withoutDeadline.sortedWith(
+            compareByDescending<TodoItem> { it.priority }
+                .thenByDescending { it.updatedAtMs }
+        )
+        sortedWithDeadline + sortedWithoutDeadline
+    }
+
+    suspend fun upsertTodo(
+        id: Long?,
+        intentText: String,
+        expectedDurationMinutes: Int?,
+        deadlineEpochMs: Long?,
+        priority: Int,
+    ): Result<Long> {
+        if (intentText.isBlank()) return Result.failure(IllegalArgumentException("Intent is required"))
+        if (deadlineEpochMs != null && (expectedDurationMinutes == null || expectedDurationMinutes <= 0)) {
+            return Result.failure(IllegalArgumentException("Duration is required when deadline is set"))
+        }
+        if (priority !in 1..4) return Result.failure(IllegalArgumentException("Priority must be 1..4"))
+
+        val previous = id?.let { todoDao.getById(it) }
+        val row = TodoItem(
+            id = id ?: 0,
+            intentText = intentText.trim(),
+            expectedDurationMinutes = expectedDurationMinutes,
+            deadlineEpochMs = deadlineEpochMs,
+            priority = priority,
+            isCompleted = previous?.isCompleted ?: false,
+            updatedAtMs = System.currentTimeMillis(),
+        )
+        return Result.success(todoDao.upsert(row))
+    }
+
+    suspend fun setTodoCompleted(id: Long, completed: Boolean) {
+        todoDao.setCompleted(id, completed, System.currentTimeMillis())
+    }
+
+    private fun todoUrgencyScore(todo: TodoItem, nowMs: Long): Double {
+        val deadline = todo.deadlineEpochMs ?: return 0.0
+        val duration = todo.expectedDurationMinutes ?: 0
+        val timeToDeadline = max(deadline - nowMs, 60_000L)
+        return (duration.toDouble() * todo.priority.toDouble()) / timeToDeadline.toDouble()
     }
 }
