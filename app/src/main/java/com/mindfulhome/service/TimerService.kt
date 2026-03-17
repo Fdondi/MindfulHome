@@ -54,6 +54,7 @@ class TimerService : Service() {
     private var quickLaunchExitCandidateStartedAtMs: Long = 0L
     private var quickLaunchExitCandidateLabel: String? = null
     private var lastQuickLaunchNotificationText: String? = null
+    private var quickLaunchFrameSuppressedForSensitiveApp: Boolean = false
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
     private lateinit var overlayManager: OverlayNudgeManager
@@ -140,7 +141,9 @@ class TimerService : Service() {
                     QUICK_LAUNCH_NOTIFICATION_ID,
                     buildQuickLaunchMonitoringNotification(),
                 )
-                overlayManager.showQuickLaunchFrame()
+                val currentForeground = UsageTracker.getForegroundApp(this)
+                    ?: _currentPackage.value
+                updateQuickLaunchFrameVisibility(currentForeground)
                 startQuickLaunchMonitoringLoop()
             }
             return START_STICKY
@@ -318,7 +321,8 @@ class TimerService : Service() {
             buildQuickLaunchMonitoringNotification(),
         )
         refreshQuickLaunchMonitoringNotification()
-        overlayManager.showQuickLaunchFrame()
+        quickLaunchFrameSuppressedForSensitiveApp = false
+        updateQuickLaunchFrameVisibility(initialPackageName)
         startQuickLaunchMonitoringLoop()
     }
 
@@ -429,18 +433,52 @@ class TimerService : Service() {
         }
     }
 
+    private fun updateQuickLaunchFrameVisibility(foregroundPackage: String) {
+        if (!SettingsManager.isQuickLaunchSessionActive(this)) {
+            overlayManager.dismissQuickLaunchFrame()
+            quickLaunchFrameSuppressedForSensitiveApp = false
+            return
+        }
+
+        if (isQuickLaunchFrameRestrictedPackage(foregroundPackage)) {
+            overlayManager.dismissQuickLaunchFrame()
+            if (!quickLaunchFrameSuppressedForSensitiveApp) {
+                logSessionEvent(
+                    "Quick Launch frame suppressed for sensitive app: ${foregroundPackage.ifBlank { "<none>" }}"
+                )
+            }
+            quickLaunchFrameSuppressedForSensitiveApp = true
+            return
+        }
+
+        overlayManager.showQuickLaunchFrame()
+        if (quickLaunchFrameSuppressedForSensitiveApp) {
+            logSessionEvent("Quick Launch frame restored after leaving sensitive app")
+        }
+        quickLaunchFrameSuppressedForSensitiveApp = false
+    }
+
+    private fun isQuickLaunchFrameRestrictedPackage(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        val normalized = packageName.lowercase()
+        return normalized in QUICK_LAUNCH_FRAME_RESTRICTED_PACKAGES_EXACT ||
+            QUICK_LAUNCH_FRAME_RESTRICTED_PACKAGE_PREFIXES.any { normalized.startsWith(it) }
+    }
+
     private fun startQuickLaunchMonitoringLoop() {
         quickLaunchMonitorJob?.cancel()
         Log.d(TAG, "startQuickLaunchMonitoringLoop")
         logSessionEvent("Quick Launch monitor loop started")
         quickLaunchMonitorJob = serviceScope.launch {
             var lastSeenPackage = _currentPackage.value
+            updateQuickLaunchFrameVisibility(lastSeenPackage)
             while (SettingsManager.isQuickLaunchSessionActive(this@TimerService)) {
                 val foregroundPackage = UsageTracker.getForegroundApp(this@TimerService)
                 if (!foregroundPackage.isNullOrBlank() && foregroundPackage != lastSeenPackage) {
                     Log.d(TAG, "foreground changed: $lastSeenPackage -> $foregroundPackage")
                     lastSeenPackage = foregroundPackage
                     _currentPackage.value = foregroundPackage
+                    updateQuickLaunchFrameVisibility(foregroundPackage)
                     maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
                 }
                 delay(QUICK_LAUNCH_MONITOR_POLL_MS)
@@ -1388,6 +1426,12 @@ class TimerService : Service() {
             "files",
             "file manager",
             "file picker",
+        )
+        private val QUICK_LAUNCH_FRAME_RESTRICTED_PACKAGES_EXACT = setOf(
+            "com.samsung.knox.securefolder",
+        )
+        private val QUICK_LAUNCH_FRAME_RESTRICTED_PACKAGE_PREFIXES = setOf(
+            "com.samsung.knox.securefolder",
         )
 
         const val ACTION_START = "com.mindfulhome.ACTION_START_TIMER"

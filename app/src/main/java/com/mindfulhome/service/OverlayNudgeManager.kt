@@ -41,7 +41,7 @@ class OverlayNudgeManager(private val context: Context) {
 
     private val handler = Handler(Looper.getMainLooper())
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-    private var quickLaunchFrameView: View? = null
+    private val quickLaunchBorderViews = mutableListOf<View>()
     private var conversationBannerView: View? = null
     private var conversationBannerParams: WindowManager.LayoutParams? = null
     private var conversationBannerBodyView: TextView? = null
@@ -123,62 +123,71 @@ class OverlayNudgeManager(private val context: Context) {
     }
 
     private fun showQuickLaunchFrameInternal() {
-        if (quickLaunchFrameView != null) return
+        if (quickLaunchBorderViews.isNotEmpty()) return
         if (!canDrawOverlay()) return
 
-        val dp = { value: Int ->
-            TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, value.toFloat(),
-                context.resources.displayMetrics
-            ).toInt()
-        }
+        val borderThickness = dp(4)
+        val borderColor = Color.parseColor("#D0FF1A1A")
+        val layoutType = overlayLayoutType()
 
-        val frame = FrameLayout(context).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.TRANSPARENT)
-                setStroke(dp(2), Color.parseColor("#40FFFFFF"))
-                cornerRadius = dp(18).toFloat()
+        val edges = listOf(
+            // Top
+            Triple(
+                View(context).apply { setBackgroundColor(borderColor) },
+                WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    borderThickness,
+                    layoutType,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT,
+                ).apply {
+                    gravity = Gravity.TOP or Gravity.START
+                    x = 0
+                    y = 0
+                },
+                "top",
+            ),
+            // Bottom
+            Triple(
+                View(context).apply { setBackgroundColor(borderColor) },
+                WindowManager.LayoutParams(
+                    WindowManager.LayoutParams.MATCH_PARENT,
+                    borderThickness,
+                    layoutType,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                    PixelFormat.TRANSLUCENT,
+                ).apply {
+                    gravity = Gravity.BOTTOM or Gravity.START
+                    x = 0
+                    y = 0
+                },
+                "bottom",
+            ),
+        )
+
+        edges.forEach { (view, params, edgeName) ->
+            try {
+                windowManager.addView(view, params)
+                quickLaunchBorderViews.add(view)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to add quick-launch $edgeName border overlay", e)
             }
-        }
-
-        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else
-            @Suppress("DEPRECATION")
-            WindowManager.LayoutParams.TYPE_PHONE
-
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            layoutType,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
-        }
-
-        try {
-            windowManager.addView(frame, params)
-            quickLaunchFrameView = frame
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to add quick-launch frame overlay", e)
         }
     }
 
     private fun dismissQuickLaunchFrameInternal() {
-        quickLaunchFrameView?.let {
+        quickLaunchBorderViews.forEach { borderView ->
             try {
-                windowManager.removeView(it)
+                windowManager.removeView(borderView)
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to remove quick-launch frame overlay", e)
             }
         }
-        quickLaunchFrameView = null
+        quickLaunchBorderViews.clear()
     }
 
     private fun showConversationBannerInternal(previewLines: List<String>) {
