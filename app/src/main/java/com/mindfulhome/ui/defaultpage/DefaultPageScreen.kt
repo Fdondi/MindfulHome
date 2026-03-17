@@ -79,6 +79,7 @@ fun DefaultPageScreen(
     onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
     onOpenTimerPlain: () -> Unit,
     onStartTodo: (minutes: Int?, intent: String) -> Unit,
+    onScreenShown: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -93,6 +94,10 @@ fun DefaultPageScreen(
 
     LaunchedEffect(Unit) {
         installedApps = PackageManagerHelper.getInstalledApps(context)
+    }
+
+    LaunchedEffect(Unit) {
+        onScreenShown()
     }
 
     val quickLaunchApps = remember(installedApps, quickLaunchPackages) {
