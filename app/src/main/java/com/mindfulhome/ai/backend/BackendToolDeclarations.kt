@@ -75,20 +75,6 @@ object BackendToolDeclarations {
                     })
                     put("required", buildJsonArray { add(JsonPrimitive("packageName")) })
                 }
-            ),
-            function(
-                name = "searchApps",
-                description = "Search installed apps by label/name and return matching labels with package names. Use when launchApp fails or package is uncertain.",
-                parameters = buildJsonObject {
-                    put("type", "OBJECT")
-                    put("properties", buildJsonObject {
-                        put("query", buildJsonObject {
-                            put("type", "STRING")
-                            put("description", "App name keyword to search for, e.g. instagram, maps, spotify")
-                        })
-                    })
-                    put("required", buildJsonArray { add(JsonPrimitive("query")) })
-                }
             )
         )
     )

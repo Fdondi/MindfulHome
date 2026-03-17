@@ -1,6 +1,7 @@
 package com.mindfulhome.ui.negotiation
 
 import android.widget.Toast
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,10 +20,12 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -43,6 +46,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -57,19 +61,24 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.credentials.exceptions.NoCredentialException
+import com.google.accompanist.drawablepainter.rememberDrawablePainter
+import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.ai.LiteRtLmManager
 import com.mindfulhome.ai.NegotiationManager
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.ai.backend.ApiKeyManager
-import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendAuthHelper
 import com.mindfulhome.data.AppRepository
+import com.mindfulhome.data.AppIntent
 import com.mindfulhome.logging.SessionLogger
+import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.ui.search.SearchOverlay
 import com.mindfulhome.util.PackageManagerHelper
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ChatMessage(
     val text: String,
@@ -96,6 +105,8 @@ fun NegotiationScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val hiddenApps by repository.hiddenApps().collectAsState(initial = emptyList())
+    val allIntents by repository.allIntents().collectAsState(initial = emptyList())
 
     val appLabel = remember {
         if (packageName.isNotEmpty()) {
@@ -113,7 +124,16 @@ fun NegotiationScreen(
     var isWaitingForAi by remember { mutableStateOf(false) }
     var accessGranted by remember { mutableStateOf(false) }
     var launchTarget by remember { mutableStateOf("") }
+    var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    var showSearchOverlay by remember { mutableStateOf(false) }
+    var suggestedLaunchApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    var showLaunchSuggestions by remember { mutableStateOf(false) }
+    var lastLaunchRequestText by remember { mutableStateOf(unlockReason) }
     var conversationNonce by remember { mutableStateOf(0) }
+    val hiddenPackages = remember(hiddenApps) { hiddenApps.map { it.packageName }.toSet() }
+    val visibleApps = remember(allApps, hiddenPackages) {
+        allApps.filter { it.packageName !in hiddenPackages }
+    }
 
     val lmManager = remember { LiteRtLmManager(context) }
     val useBackend = remember { SettingsManager.getAIMode(context) == SettingsManager.AI_MODE_BACKEND }
@@ -130,10 +150,9 @@ fun NegotiationScreen(
     }
     val backendAuth = remember {
         BackendAuthHelper(
-            signIn = {
-                val result = AuthManager.signIn(context)
-                result?.idToken
-            },
+            // Keep timer/chat flow non-interactive: only use an existing token.
+            // Interactive Google sign-in is handled from Settings.
+            signIn = { null },
             getAppToken = { ApiKeyManager.getAppToken(context) },
             saveAppToken = { token, expiresAtMs ->
                 ApiKeyManager.saveAppToken(context, token, expiresAtMs)
@@ -160,122 +179,151 @@ fun NegotiationScreen(
         SessionLogger.log(sessionHandle, "$prefix: ${text.take(120)}")
     }
 
+    fun showQuickLaunchBar(queryText: String) {
+        val fallbackSuggestions = visibleApps.take(5)
+        suggestedLaunchApps = fallbackSuggestions
+        showLaunchSuggestions = true
+        scope.launch {
+            val ranked = rankLaunchSuggestions(
+                requestText = queryText.ifBlank { lastLaunchRequestText },
+                visibleApps = visibleApps,
+                allIntents = allIntents,
+            )
+            if (showLaunchSuggestions) {
+                suggestedLaunchApps = if (ranked.isNotEmpty()) ranked else fallbackSuggestions
+            }
+        }
+    }
+
+    fun extractLaunchQuery(rawText: String): String {
+        val trimmed = rawText.trim()
+        if (trimmed.isBlank()) return ""
+        val quoted = Regex("\"([^\"]+)\"|'([^']+)'").find(trimmed)
+        if (quoted != null) {
+            val capture = quoted.groupValues.drop(1).firstOrNull { it.isNotBlank() }
+            if (!capture.isNullOrBlank()) return capture.trim()
+        }
+        val lowered = trimmed.lowercase()
+        val markers = listOf("app name is", "app is", "open", "launch")
+        for (marker in markers) {
+            val idx = lowered.lastIndexOf(marker)
+            if (idx >= 0) {
+                val candidate = trimmed.substring(idx + marker.length).trim()
+                if (candidate.isNotBlank()) return candidate
+            }
+        }
+        return trimmed
+    }
+
+    fun normalizeLookup(value: String): String {
+        return value.lowercase().replace(Regex("[^a-z0-9]"), "")
+    }
+
+    fun findExactMatchPackage(queryText: String): String? {
+        val normalizedQuery = normalizeLookup(queryText)
+        if (normalizedQuery.isBlank()) return null
+        return visibleApps.firstOrNull { app ->
+            val normalizedLabel = normalizeLookup(app.label)
+            val normalizedPackage = normalizeLookup(app.packageName)
+            val normalizedShortPackage = normalizeLookup(app.packageName.substringAfterLast('.'))
+            normalizedLabel == normalizedQuery ||
+                normalizedPackage == normalizedQuery ||
+                normalizedShortPackage == normalizedQuery
+        }?.packageName
+    }
+
+    LaunchedEffect(Unit) {
+        allApps = PackageManagerHelper.getInstalledApps(context)
+    }
+
     // Initialize AI and start conversation
     LaunchedEffect(packageName, conversationNonce) {
-        scope.launch {
-            messages.clear()
-            userInput = ""
+        messages.clear()
+        userInput = ""
+        isWaitingForAi = false
+        accessGranted = false
+        launchTarget = ""
+        showSearchOverlay = false
+        showLaunchSuggestions = false
+        suggestedLaunchApps = emptyList()
+        lastLaunchRequestText = extractLaunchQuery(unlockReason)
+
+        // Do not trigger interactive sign-in in timer/chat flow.
+        // If no backend token is already present, fall back to on-device for this session.
+        var remoteAuthFailed = false
+        if (sessionUseBackend && !backendAuth.hasToken) {
+            remoteAuthFailed = true
+        }
+        if (remoteAuthFailed) {
+            sessionUseBackend = false
+            negotiationManager.endConversation()
+            negotiationManager = NegotiationManager(
+                lmManager = lmManager,
+                repository = repository,
+                karmaManager = karmaManager,
+                backendAuth = null,
+                backendModel = sessionSelectedModel,
+            )
+        }
+
+        // Determine which model will actually be used
+        val usingRemote = sessionUseBackend && backendAuth.hasToken
+        val signedInEmail = if (usingRemote) ApiKeyManager.getSignedInEmail(context) else null
+        modelLabel = if (usingRemote) {
+            val emailSuffix = if (signedInEmail != null) " · $signedInEmail" else ""
+            "$sessionSelectedModel$emailSuffix"
+        } else {
+            "On-device (LiteRT-LM)"
+        }
+
+        // Only initialize on-device model if we actually need it
+        if (!usingRemote) {
+            lmManager.initialize()
+        }
+
+        if (packageName.isNotEmpty()) {
+            // Gatekeeper flow
+            SessionLogger.log(sessionHandle, "AI negotiation started for **$appLabel** via $modelLabel")
+            isWaitingForAi = true
+            val result = negotiationManager.startGatekeeperNegotiation(
+                packageName = packageName,
+                appName = appLabel,
+                focusModeActive = focusModeActive,
+            )
+            addMessage(result.responseText, isFromUser = false)
             isWaitingForAi = false
-            accessGranted = false
-            launchTarget = ""
-
-            // Auto sign-in + token exchange if backend mode is active and no app token
-            var remoteAuthFailed = false
-            if (sessionUseBackend && !backendAuth.hasToken) {
-                try {
-                    val signInResult = AuthManager.signIn(context)
-                    if (signInResult != null) {
-                        if (signInResult.email != null) {
-                            ApiKeyManager.saveSignedInEmail(context, signInResult.email)
-                        }
-                        // Immediately exchange Google token for our own app token
-                        val exchanged = backendAuth.exchangeGoogleToken(signInResult.idToken)
-                        if (!exchanged) {
-                            remoteAuthFailed = true
-                            Toast.makeText(
-                                context,
-                                "Backend authentication failed. Using on-device model.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    } else {
-                        remoteAuthFailed = true
-                        Toast.makeText(
-                            context,
-                            "Google Sign-In failed. Using on-device model.",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                } catch (_: NoCredentialException) {
-                    remoteAuthFailed = true
-                    Toast.makeText(
-                        context,
-                        "No Google account available. Using on-device model.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } catch (_: Exception) {
-                    remoteAuthFailed = true
-                    Toast.makeText(
-                        context,
-                        "Remote auth failed. Using on-device model.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+            if (result.accessGranted) {
+                accessGranted = true
             }
-            if (remoteAuthFailed) {
-                sessionUseBackend = false
-                negotiationManager.endConversation()
-                negotiationManager = NegotiationManager(
-                    lmManager = lmManager,
-                    repository = repository,
-                    karmaManager = karmaManager,
-                    backendAuth = null,
-                    backendModel = sessionSelectedModel,
-                )
-            }
-
-            // Determine which model will actually be used
-            val usingRemote = sessionUseBackend && backendAuth.hasToken
-            val signedInEmail = if (usingRemote) ApiKeyManager.getSignedInEmail(context) else null
-            modelLabel = if (usingRemote) {
-                val emailSuffix = if (signedInEmail != null) " · $signedInEmail" else ""
-                "$sessionSelectedModel$emailSuffix"
-            } else {
-                "On-device (LiteRT-LM)"
-            }
-
-            // Only initialize on-device model if we actually need it
-            if (!usingRemote) {
-                lmManager.initialize()
-            }
-
-            if (packageName.isNotEmpty()) {
-                // Gatekeeper flow
-                SessionLogger.log(sessionHandle, "AI negotiation started for **$appLabel** via $modelLabel")
+        } else {
+            // General chat
+            SessionLogger.log(sessionHandle, "AI assistant opened via $modelLabel")
+            if (unlockReason.isNotEmpty()) {
+                // Reason provided at timer screen — skip the generic greeting
+                // and feed it as the first user message so the AI responds directly
+                addMessage(unlockReason, isFromUser = true)
+                negotiationManager.startGeneralChat(context)
                 isWaitingForAi = true
-                val result = negotiationManager.startGatekeeperNegotiation(
-                    packageName = packageName,
-                    appName = appLabel,
-                    focusModeActive = focusModeActive,
-                )
+                val result = negotiationManager.reply(unlockReason)
                 addMessage(result.responseText, isFromUser = false)
                 isWaitingForAi = false
-                if (result.accessGranted) {
-                    accessGranted = true
-                }
-            } else {
-                // General chat
-                SessionLogger.log(sessionHandle, "AI assistant opened via $modelLabel")
-                if (unlockReason.isNotEmpty()) {
-                    // Reason provided at timer screen — skip the generic greeting
-                    // and feed it as the first user message so the AI responds directly
-                    addMessage(unlockReason, isFromUser = true)
-                    negotiationManager.startGeneralChat(context)
-                    isWaitingForAi = true
-                    val result = negotiationManager.reply(unlockReason)
-                    addMessage(result.responseText, isFromUser = false)
-                    isWaitingForAi = false
-                    if (result.launchedPackage.isNotEmpty()) {
+                if (result.launchedPackage.isNotEmpty()) {
+                    val exactPackage = findExactMatchPackage(lastLaunchRequestText)
+                    if (exactPackage != null && exactPackage == result.launchedPackage) {
                         val label = PackageManagerHelper.getAppLabel(
                             context, result.launchedPackage
                         )
                         SessionLogger.log(sessionHandle, "Launched **$label**")
                         launchTarget = result.launchedPackage
+                    } else {
+                        showQuickLaunchBar(lastLaunchRequestText)
                     }
                 } else {
-                    addMessage(PromptTemplates.GENERAL_CHAT_GREETING, isFromUser = false)
-                    negotiationManager.startGeneralChat(context)
+                    showQuickLaunchBar(lastLaunchRequestText)
                 }
+            } else {
+                addMessage(PromptTemplates.GENERAL_CHAT_GREETING, isFromUser = false)
+                negotiationManager.startGeneralChat(context)
             }
         }
     }
@@ -304,26 +352,17 @@ fun NegotiationScreen(
             launchTarget = ""
             val launched = PackageManagerHelper.launchApp(context, targetPackage)
             if (launched) {
+                    showLaunchSuggestions = false
+                    suggestedLaunchApps = emptyList()
                 negotiationManager.endConversation()
                 lmManager.shutdown()
                 onAppGranted()
             } else {
-                addMessage(
-                    "I couldn't launch $targetPackage. Let me search installed apps for a match.",
-                    isFromUser = false
-                )
-                isWaitingForAi = true
-                val result = negotiationManager.reply(
-                    "SYSTEM: launchApp failed for package '$targetPackage'. " +
-                        "Call searchApps to find installed matches and suggest one."
-                )
-                addMessage(result.responseText, isFromUser = false)
-                isWaitingForAi = false
-                if (result.launchedPackage.isNotEmpty()) {
-                    launchTarget = result.launchedPackage
-                }
+                showQuickLaunchBar(lastLaunchRequestText.ifBlank {
+                    PackageManagerHelper.getAppLabel(context, targetPackage)
+                })
             }
-        }
+            }
     }
 
     Column(
@@ -422,6 +461,20 @@ fun NegotiationScreen(
                     ChatBubble(ChatMessage("", isFromUser = false, isLoading = true))
                 }
             }
+
+            if (showLaunchSuggestions) {
+                item {
+                    LaunchSuggestionsBubble(
+                        apps = suggestedLaunchApps,
+                        onAppClick = { app ->
+                            showLaunchSuggestions = false
+                            suggestedLaunchApps = emptyList()
+                            launchTarget = app.packageName
+                        },
+                        onSearchClick = { showSearchOverlay = true },
+                    )
+                }
+            }
         }
 
         // Input bar
@@ -456,6 +509,9 @@ fun NegotiationScreen(
                         if (userInput.isNotBlank() && !isWaitingForAi) {
                             val input = userInput.trim()
                             userInput = ""
+                            showLaunchSuggestions = false
+                            suggestedLaunchApps = emptyList()
+                            lastLaunchRequestText = extractLaunchQuery(input)
                             addMessage(input, isFromUser = true)
 
                             scope.launch {
@@ -469,11 +525,18 @@ fun NegotiationScreen(
                                     accessGranted = true
                                 }
                                 if (result.launchedPackage.isNotEmpty()) {
-                                    val label = PackageManagerHelper.getAppLabel(
-                                        context, result.launchedPackage
-                                    )
-                                    SessionLogger.log(sessionHandle, "Launched **$label**")
-                                    launchTarget = result.launchedPackage
+                                    val exactPackage = findExactMatchPackage(lastLaunchRequestText)
+                                    if (exactPackage != null && exactPackage == result.launchedPackage) {
+                                        val label = PackageManagerHelper.getAppLabel(
+                                            context, result.launchedPackage
+                                        )
+                                        SessionLogger.log(sessionHandle, "Launched **$label**")
+                                        launchTarget = result.launchedPackage
+                                    } else if (packageName.isEmpty()) {
+                                        showQuickLaunchBar(lastLaunchRequestText)
+                                    }
+                                } else if (packageName.isEmpty()) {
+                                    showQuickLaunchBar(lastLaunchRequestText)
                                 }
                             }
                         }
@@ -503,6 +566,18 @@ fun NegotiationScreen(
             }
         }
     }
+
+    SearchOverlay(
+        apps = visibleApps,
+        visible = showSearchOverlay,
+        onAppClick = { app ->
+            showSearchOverlay = false
+            showLaunchSuggestions = false
+            suggestedLaunchApps = emptyList()
+            launchTarget = app.packageName
+        },
+        onDismiss = { showSearchOverlay = false },
+    )
 
     if (showModelPicker) {
         AlertDialog(
@@ -585,6 +660,25 @@ fun NegotiationScreen(
     }
 }
 
+private suspend fun rankLaunchSuggestions(
+    requestText: String,
+    visibleApps: List<AppInfo>,
+    allIntents: List<AppIntent>,
+): List<AppInfo> = withContext(Dispatchers.Default) {
+    if (visibleApps.isEmpty()) return@withContext emptyList()
+    if (requestText.isBlank()) return@withContext visibleApps.take(5)
+    val intentsByPkg = allIntents.groupBy { it.packageName }
+    val appTexts = visibleApps.map { app ->
+        val pastIntents = intentsByPkg[app.packageName]
+            ?.joinToString(" ") { it.intentText } ?: ""
+        app.packageName to "${app.label} $pastIntents".trim()
+    }
+    val ranked = EmbeddingManager.rankApps(requestText, appTexts)
+    ranked.take(5).mapNotNull { (pkg, _) ->
+        visibleApps.find { it.packageName == pkg }
+    }
+}
+
 @Composable
 private fun ChatBubble(message: ChatMessage) {
     val alignment = if (message.isFromUser) Alignment.End else Alignment.Start
@@ -640,6 +734,93 @@ private fun ChatBubble(message: ChatMessage) {
                     fontSize = 15.sp,
                     lineHeight = 20.sp
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LaunchSuggestionsBubble(
+    apps: List<AppInfo>,
+    onAppClick: (AppInfo) -> Unit,
+    onSearchClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.Start,
+    ) {
+        Box(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .clip(
+                    RoundedCornerShape(
+                        topStart = 16.dp,
+                        topEnd = 16.dp,
+                        bottomStart = 4.dp,
+                        bottomEnd = 16.dp,
+                    ),
+                )
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Could not launch that package. Try one of these:",
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    fontSize = 14.sp,
+                )
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(apps, key = { it.packageName }) { app ->
+                        Column(
+                            modifier = Modifier
+                                .width(64.dp)
+                                .clickable { onAppClick(app) },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            if (app.icon != null) {
+                                Image(
+                                    painter = rememberDrawablePainter(drawable = app.icon),
+                                    contentDescription = app.label,
+                                    modifier = Modifier.size(44.dp),
+                                )
+                            }
+                            Text(
+                                text = app.label,
+                                maxLines = 1,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .width(64.dp)
+                                .clickable(onClick = onSearchClick),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = "Search apps",
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                )
+                            }
+                            Text(
+                                text = "Search",
+                                maxLines = 1,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

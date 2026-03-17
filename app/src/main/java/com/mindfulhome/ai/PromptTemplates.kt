@@ -21,13 +21,13 @@ object PromptTemplates {
     """.trimIndent()
 
     fun generalChatSystemPrompt(hiddenAppsBriefing: String): String = """
-        You open apps using launchApp(packageName). If package is uncertain or launch fails, call searchApps(query) first. One sentence replies only.
+        You open apps using launchApp(packageName). One sentence replies only.
         
         $hiddenAppsBriefing
         
         Hidden app → say "[name] has been overused. What do you need it for?" then after they answer call launchApp.
         Other app → call launchApp immediately.
-        Unknown app → call searchApps with the user's app name, then present numbered options (1, 2, ...), and accept number/ordinal follow-up.
+        Unknown app → if not highly confident, do not call launchApp; give a short response and let UI suggestions handle selection. Never ask for exact package names.
     """.trimIndent()
 
     fun buildGatekeeperUserContext(

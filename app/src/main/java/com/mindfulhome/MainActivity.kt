@@ -9,15 +9,20 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.credentials.exceptions.NoCredentialException
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.mindfulhome.ai.backend.ApiKeyManager
+import com.mindfulhome.ai.backend.AuthManager
+import com.mindfulhome.ai.backend.BackendAuthHelper
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
@@ -58,6 +63,8 @@ class MainActivity : ComponentActivity() {
     private var pendingPrefillToken by mutableStateOf(0L)
     private var permissionDialogShowing = false
     private var sessionHandle: SessionLogger.SessionHandle? = null
+    private var backendAuthPreflightInProgress = false
+    private var backendAuthPreflightLastAttemptMs = 0L
 
     companion object {
         const val EXTRA_FORCE_TIMER = "force_timer"
@@ -115,10 +122,12 @@ class MainActivity : ComponentActivity() {
                 navController = navCtrl
                 val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this@MainActivity)
 
+                val timerIsRunning = TimerService.timerState.value is TimerState.Counting
                 val startDestination = when {
                     !onboardingDone -> "onboarding"
                     shouldShowTimer -> "timer"
                     quickLaunchSessionActive -> postTimerTargetRoute()
+                    timerIsRunning -> postTimerTargetRoute()
                     else -> "default"
                 }
 
@@ -177,9 +186,7 @@ class MainActivity : ComponentActivity() {
                                 )
                                 Log.d("MainActivity", "TimerService.start called, navigating to home")
                                 val targetRoute = postTimerTargetRoute()
-                                navCtrl.navigate(targetRoute) {
-                                    popUpTo("timer") { inclusive = true }
-                                }
+                                navCtrl.navigate(targetRoute)
                                 Log.d("MainActivity", "Navigation to $targetRoute completed")
                             },
                             onBackToDefault = {
@@ -219,9 +226,7 @@ class MainActivity : ComponentActivity() {
                                         session.packageName,
                                         handle,
                                     )
-                                    navCtrl.navigate(postTimerTargetRoute()) {
-                                        popUpTo("timer") { inclusive = true }
-                                    }
+                                    navCtrl.navigate(postTimerTargetRoute())
                                     val launchIntent = packageManager
                                         .getLaunchIntentForPackage(session.packageName)
                                     if (launchIntent != null) {
@@ -255,6 +260,9 @@ class MainActivity : ComponentActivity() {
                                 navCtrl.navigate("timer") {
                                     popUpTo("default") { inclusive = false }
                                 }
+                            },
+                            onScreenShown = {
+                                maybePreflightBackendAuth()
                             },
                         )
                     }
@@ -499,7 +507,6 @@ class MainActivity : ComponentActivity() {
             val timerWasRunning = TimerService.timerState.value !is TimerState.Idle
             val quickReturnMs =
                 SettingsManager.getQuickReturnMinutes(this) * 60_000L
-
             Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
 
             if (quickLaunchSessionActive) {
@@ -714,5 +721,68 @@ class MainActivity : ComponentActivity() {
 
     private fun shouldShowAssistantAfterUnlock(): Boolean {
         return SettingsManager.isFocusTimeActiveNow(this)
+    }
+
+    private fun maybePreflightBackendAuth() {
+        if (backendAuthPreflightInProgress) return
+        if (SettingsManager.getAIMode(this) != SettingsManager.AI_MODE_BACKEND) return
+        if (ApiKeyManager.getAppToken(this) != null) return
+
+        val now = System.currentTimeMillis()
+        if (now - backendAuthPreflightLastAttemptMs < 15_000L) return
+        backendAuthPreflightLastAttemptMs = now
+        backendAuthPreflightInProgress = true
+
+        lifecycleScope.launch {
+            try {
+                val backendAuth = BackendAuthHelper(
+                    signIn = {
+                        val result = AuthManager.signIn(this@MainActivity)
+                        result?.idToken
+                    },
+                    getAppToken = { ApiKeyManager.getAppToken(this@MainActivity) },
+                    saveAppToken = { token, expiresAtMs ->
+                        ApiKeyManager.saveAppToken(this@MainActivity, token, expiresAtMs)
+                    },
+                    clearAppToken = { ApiKeyManager.clearAppToken(this@MainActivity) },
+                    getGoogleIdToken = { ApiKeyManager.getGoogleIdToken(this@MainActivity) },
+                )
+
+                val signInResult = AuthManager.signIn(this@MainActivity)
+                if (signInResult != null) {
+                    if (signInResult.email != null) {
+                        ApiKeyManager.saveSignedInEmail(this@MainActivity, signInResult.email)
+                    }
+                    val exchanged = backendAuth.exchangeGoogleToken(signInResult.idToken)
+                    if (!exchanged) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Backend authentication failed. Open Settings to retry sign-in.",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Google Sign-In failed. Open Settings to retry sign-in.",
+                        Toast.LENGTH_LONG,
+                    ).show()
+                }
+            } catch (_: NoCredentialException) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "No Google account available. Add one in Android settings.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            } catch (_: Exception) {
+                Toast.makeText(
+                    this@MainActivity,
+                    "Remote auth failed. Open Settings to retry sign-in.",
+                    Toast.LENGTH_LONG,
+                ).show()
+            } finally {
+                backendAuthPreflightInProgress = false
+            }
+        }
     }
 }
