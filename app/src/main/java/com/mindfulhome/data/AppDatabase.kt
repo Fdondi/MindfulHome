@@ -19,8 +19,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TodoItem::class,
         SessionLog::class,
         SessionLogEvent::class,
+        QuickLaunchItem::class,
     ],
-    version = 9,
+    version = 10,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -33,6 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun shelfDao(): ShelfDao
     abstract fun todoDao(): TodoDao
     abstract fun sessionLogDao(): SessionLogDao
+    abstract fun quickLaunchDao(): QuickLaunchDao
 
     companion object {
         @Volatile
@@ -153,6 +155,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS quick_launch_items (
+                        packageName TEXT NOT NULL PRIMARY KEY,
+                        position INTEGER NOT NULL DEFAULT 0
+                    )"""
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -163,7 +176,7 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-                        MIGRATION_8_9
+                        MIGRATION_8_9, MIGRATION_9_10
                     )
                     .build().also { INSTANCE = it }
             }

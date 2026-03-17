@@ -15,6 +15,7 @@ class AppRepository(private val database: AppDatabase) {
     private val intentDao = database.appIntentDao()
     private val shelfDao = database.shelfDao()
     private val todoDao = database.todoDao()
+    private val quickLaunchDao = database.quickLaunchDao()
 
     // Karma
     fun allKarma(): Flow<List<AppKarma>> = karmaDao.getAllKarma()
@@ -204,6 +205,18 @@ class AppRepository(private val database: AppDatabase) {
         if (remainingInSlot == 0) {
             shelfDao.compactSlotsAfter(item.slotPosition)
         }
+    }
+
+    // QuickLaunch (default page only — separate from the home-screen favorites shelf)
+    fun quickLaunchApps(): Flow<List<QuickLaunchItem>> = quickLaunchDao.getAll()
+
+    suspend fun addToQuickLaunch(packageName: String) {
+        val nextPosition = quickLaunchDao.maxPosition() + 1
+        quickLaunchDao.insert(QuickLaunchItem(packageName = packageName, position = nextPosition))
+    }
+
+    suspend fun removeFromQuickLaunch(packageName: String) {
+        quickLaunchDao.remove(packageName)
     }
 
     // Todo widget (integrated)

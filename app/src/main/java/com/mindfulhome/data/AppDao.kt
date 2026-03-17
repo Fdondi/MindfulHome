@@ -170,6 +170,22 @@ interface TodoDao {
     suspend fun setCompleted(id: Long, completed: Boolean, updatedAtMs: Long = System.currentTimeMillis())
 }
 
+@Dao
+interface QuickLaunchDao {
+
+    @Query("SELECT * FROM quick_launch_items ORDER BY position")
+    fun getAll(): Flow<List<QuickLaunchItem>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(item: QuickLaunchItem)
+
+    @Query("DELETE FROM quick_launch_items WHERE packageName = :packageName")
+    suspend fun remove(packageName: String)
+
+    @Query("SELECT COALESCE(MAX(position), -1) FROM quick_launch_items")
+    suspend fun maxPosition(): Int
+}
+
 data class SessionLogWithCount(
     val id: Long,
     val startedAtMs: Long,
