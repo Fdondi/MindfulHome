@@ -194,6 +194,7 @@ class MainActivity : ComponentActivity() {
                                 shouldShowTimer = false
                                 navCtrl.navigate("default") {
                                     popUpTo("timer") { inclusive = true }
+                                    launchSingleTop = true
                                 }
                             },
                             savedAppLabel = savedAppLabel,
