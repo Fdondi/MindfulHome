@@ -120,15 +120,17 @@ class MainActivity : ComponentActivity() {
             MindfulHomeTheme {
                 val navCtrl = rememberNavController()
                 navController = navCtrl
-                val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this@MainActivity)
-
-                val timerIsRunning = TimerService.timerState.value is TimerState.Counting
-                val startDestination = when {
-                    !onboardingDone -> "onboarding"
-                    shouldShowTimer -> "timer"
-                    quickLaunchSessionActive -> postTimerTargetRoute()
-                    timerIsRunning -> postTimerTargetRoute()
-                    else -> "default"
+                val startDestination = remember {
+                    val quickLaunchSessionActive =
+                        SettingsManager.isQuickLaunchSessionActive(this@MainActivity)
+                    val timerIsRunning = TimerService.timerState.value is TimerState.Counting
+                    when {
+                        !onboardingDone -> "onboarding"
+                        shouldShowTimer -> "timer"
+                        quickLaunchSessionActive -> postTimerTargetRoute()
+                        timerIsRunning -> postTimerTargetRoute()
+                        else -> "default"
+                    }
                 }
 
                 NavHost(navController = navCtrl, startDestination = startDestination, route = "root") {
