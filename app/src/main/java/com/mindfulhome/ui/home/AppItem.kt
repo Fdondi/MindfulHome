@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -24,6 +25,7 @@ fun AppItem(
     appInfo: AppInfo,
     onClick: () -> Unit = {},
     onLongClick: () -> Unit = {},
+    isDimmed: Boolean = false,
     gesturesEnabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
@@ -39,6 +41,7 @@ fun AppItem(
     Column(
         modifier = modifier
             .then(clickModifier)
+            .alpha(if (isDimmed) 0.45f else 1f)
             .padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

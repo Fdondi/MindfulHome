@@ -24,6 +24,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -50,6 +51,7 @@ data class AppShelfEntry(
     val label: String,
     val icon: Drawable?,
     val isHighlighted: Boolean = false,
+    val isDimmed: Boolean = false,
     val onClick: () -> Unit,
     val onLongClick: (() -> Unit)? = null,
     val onPositioned: ((topLeftX: Float, topLeftY: Float, width: Float, height: Float) -> Unit)? = null,
@@ -143,6 +145,7 @@ private fun ShelfEntryItem(entry: AppShelfEntry) {
                 },
                 shape = SHELF_TILE_HIGHLIGHT_SHAPE
             )
+            .alpha(if (entry.isDimmed) 0.45f else 1f)
             .padding(SHELF_TILE_PADDING),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {

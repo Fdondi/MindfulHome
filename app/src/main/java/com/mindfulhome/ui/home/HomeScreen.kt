@@ -118,41 +118,47 @@ fun HomeScreen(
     var showAddDialog by remember { mutableStateOf(false) }
 
     // DB flows
-    val hiddenApps by repository.hiddenApps().collectAsState(initial = emptyList())
+    val karmaEntries by repository.allKarma().collectAsState(initial = emptyList())
     val layoutItems by repository.homeLayout().collectAsState(initial = emptyList())
     val shelfItems by repository.shelfApps().collectAsState(initial = emptyList())
     val allIntents by repository.allIntents().collectAsState(initial = emptyList())
 
     // Derived state
-    val hiddenPackages = remember(hiddenApps) { hiddenApps.map { it.packageName }.toSet() }
-    val visibleApps = remember(allApps, hiddenPackages) {
-        allApps.filter { it.packageName !in hiddenPackages }
+    val karmaByPackage = remember(karmaEntries) {
+        karmaEntries.associateBy { it.packageName }
+    }
+    val negativeKarmaPackages = remember(karmaByPackage) {
+        karmaByPackage.values
+            .asSequence()
+            .filter { it.karmaScore < 0 && !it.isOptedOut }
+            .map { it.packageName }
+            .toSet()
     }
 
     // Suggested apps: rank by cosine similarity when an unlock reason is provided
     var suggestedApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
-    LaunchedEffect(unlockReason, visibleApps, allIntents) {
-        suggestedApps = if (unlockReason.isBlank() || visibleApps.isEmpty()) {
+    LaunchedEffect(unlockReason, allApps, allIntents) {
+        suggestedApps = if (unlockReason.isBlank() || allApps.isEmpty()) {
             emptyList()
         } else {
             withContext(Dispatchers.Default) {
                 val intentsByPkg = allIntents.groupBy { it.packageName }
-                val appTexts = visibleApps.map { app ->
+                val appTexts = allApps.map { app ->
                     val pastIntents = intentsByPkg[app.packageName]
                         ?.joinToString(" ") { it.intentText } ?: ""
                     app.packageName to "${app.label} $pastIntents".trim()
                 }
                 val ranked = EmbeddingManager.rankApps(unlockReason, appTexts)
                 ranked.take(5).mapNotNull { (pkg, _) ->
-                    visibleApps.find { it.packageName == pkg }
+                    allApps.find { it.packageName == pkg }
                 }
             }
         }
     }
 
     // Grid items: rebuild from DB data, but only when not dragging
-    val baseGridItems = remember(visibleApps, layoutItems) {
-        buildGridItems(visibleApps, layoutItems)
+    val baseGridItems = remember(allApps, layoutItems) {
+        buildGridItems(allApps, layoutItems)
     }
 
     val gridItems = remember { mutableStateListOf<HomeGridItem>() }
@@ -191,6 +197,18 @@ fun HomeScreen(
                 EmbeddingManager.invalidateCache()
             }
             PackageManagerHelper.launchApp(context, appInfo.packageName)
+        }
+    }
+
+    fun hasNegativeKarma(packageName: String): Boolean {
+        return packageName in negativeKarmaPackages
+    }
+
+    fun handleAppTap(appInfo: AppInfo) {
+        if (hasNegativeKarma(appInfo.packageName)) {
+            onRequestAi(appInfo.packageName)
+        } else {
+            launchApp(appInfo)
         }
     }
 
@@ -272,7 +290,8 @@ fun HomeScreen(
                         ) { index ->
                             AppItem(
                                 appInfo = suggestedApps[index],
-                                onClick = { launchApp(suggestedApps[index]) },
+                                onClick = { handleAppTap(suggestedApps[index]) },
+                                isDimmed = hasNegativeKarma(suggestedApps[index].packageName),
                             )
                         }
                     }
@@ -306,8 +325,10 @@ fun HomeScreen(
                         isHoverTarget = isHoverTarget,
                         isLongHover = isHoverTarget && dragDropState.isLongHover,
                         onTap = {
-                            if (item is HomeGridItem.AppEntry) launchApp(item.appInfo)
+                            if (item is HomeGridItem.AppEntry) handleAppTap(item.appInfo)
                         },
+                        isDimmed = item is HomeGridItem.AppEntry &&
+                            hasNegativeKarma(item.appInfo.packageName),
                         onDragStarted = { localOffset, itemTopLeft ->
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             dragDropState.startDrag(item, itemTopLeft, localOffset)
@@ -329,9 +350,10 @@ fun HomeScreen(
                 isDragOver = dragDropState.hoverTarget is DropTarget.Dock ||
                     dragDropState.hoverTarget is DropTarget.OnFavoriteSlot,
                 hoveredSlot = (dragDropState.hoverTarget as? DropTarget.OnFavoriteSlot)?.slot,
-                onAppClick = { launchApp(it) },
+                onAppClick = { handleAppTap(it) },
                 onOpenFolder = { openFolderSlot = it },
                 onRemove = { removeFromFavorites(it.packageName) },
+                isAppDimmed = { app -> hasNegativeKarma(app.packageName) },
                 onAddClick = { showAddDialog = true },
                 onRegisterBounds = { topLeft, size ->
                     dragDropState.dockBounds =
@@ -347,16 +369,20 @@ fun HomeScreen(
 
         // Drag overlay
         if (dragDropState.isDragging) {
-            DragItemOverlay(dragDropState = dragDropState)
+            DragItemOverlay(
+                dragDropState = dragDropState,
+                isAppDimmed = { app -> hasNegativeKarma(app.packageName) },
+            )
         }
 
         // Search overlay
         SearchOverlay(
-            apps = visibleApps,
+            apps = allApps,
+            dimmedPackages = negativeKarmaPackages,
             visible = showSearch,
             onAppClick = { app ->
                 showSearch = false
-                launchApp(app)
+                handleAppTap(app)
             },
             onDismiss = { showSearch = false },
             onAddToDock = { app -> addToFavorites(app.packageName) }
@@ -365,7 +391,7 @@ fun HomeScreen(
         if (showAddDialog) {
             AddAppsDialog(
                 title = "Add to Favorites",
-                apps = visibleApps,
+                apps = allApps,
                 excludedPackages = favoritePackages,
                 onAdd = { packageName -> addToFavorites(packageName) },
                 onDismiss = { showAddDialog = false },
@@ -382,13 +408,17 @@ fun HomeScreen(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     folder.apps.forEach { app ->
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .graphicsLayer {
+                                    alpha = if (hasNegativeKarma(app.packageName)) 0.45f else 1f
+                                },
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             TextButton(
                                 onClick = {
                                     openFolderSlot = null
-                                    launchApp(app)
+                                    handleAppTap(app)
                                 },
                                 modifier = Modifier.weight(1f)
                             ) {
@@ -513,6 +543,7 @@ private fun DraggableGridCell(
     isHoverTarget: Boolean,
     isLongHover: Boolean,
     onTap: () -> Unit,
+    isDimmed: Boolean,
     onDragStarted: (localOffset: Offset, itemTopLeft: Offset) -> Unit,
     onDragDelta: (Offset) -> Unit,
     onDragEnded: () -> Unit,
@@ -557,7 +588,11 @@ private fun DraggableGridCell(
             .clickable { onTap() }
     ) {
         if (item is HomeGridItem.AppEntry) {
-            AppItem(appInfo = item.appInfo, gesturesEnabled = false)
+            AppItem(
+                appInfo = item.appInfo,
+                isDimmed = isDimmed,
+                gesturesEnabled = false
+            )
         }
     }
 }
@@ -567,7 +602,10 @@ private fun DraggableGridCell(
 // ---------------------------------------------------------------------------
 
 @Composable
-private fun DragItemOverlay(dragDropState: DragDropState) {
+private fun DragItemOverlay(
+    dragDropState: DragDropState,
+    isAppDimmed: (AppInfo) -> Boolean
+) {
     val item = dragDropState.draggedItem ?: return
 
     Box(
@@ -586,7 +624,11 @@ private fun DragItemOverlay(dragDropState: DragDropState) {
             }
     ) {
         if (item is HomeGridItem.AppEntry) {
-            AppItem(appInfo = item.appInfo, gesturesEnabled = false)
+            AppItem(
+                appInfo = item.appInfo,
+                isDimmed = isAppDimmed(item.appInfo),
+                gesturesEnabled = false
+            )
         }
     }
 }
@@ -604,6 +646,7 @@ private fun FavoriteDock(
     onAppClick: (AppInfo) -> Unit,
     onOpenFolder: (FavoriteSlot) -> Unit,
     onRemove: (AppInfo) -> Unit,
+    isAppDimmed: (AppInfo) -> Boolean,
     onAddClick: () -> Unit,
     onRegisterBounds: (Offset, Size) -> Unit,
     onRegisterSlotBounds: (Int, Offset, Size) -> Unit,
@@ -615,7 +658,15 @@ private fun FavoriteDock(
     } else {
         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     }
-    val entries = remember(slots, hoveredSlot, onAppClick, onOpenFolder, onRemove, onRegisterSlotBounds) {
+    val entries = remember(
+        slots,
+        hoveredSlot,
+        onAppClick,
+        onOpenFolder,
+        onRemove,
+        isAppDimmed,
+        onRegisterSlotBounds
+    ) {
         slots.mapNotNull { slot ->
             val firstApp = slot.apps.firstOrNull() ?: return@mapNotNull null
             val isFolder = slot.apps.size > 1
@@ -624,6 +675,7 @@ private fun FavoriteDock(
                 label = if (isFolder) "Folder (${slot.apps.size})" else firstApp.label,
                 icon = firstApp.icon,
                 isHighlighted = hoveredSlot == slot.slotPosition,
+                isDimmed = isAppDimmed(firstApp),
                 onClick = {
                     if (isFolder) onOpenFolder(slot) else onAppClick(firstApp)
                 },

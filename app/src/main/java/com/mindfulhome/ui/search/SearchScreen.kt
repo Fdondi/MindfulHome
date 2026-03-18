@@ -36,6 +36,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -46,6 +47,7 @@ import com.mindfulhome.model.AppInfo
 @Composable
 fun SearchOverlay(
     apps: List<AppInfo>,
+    dimmedPackages: Set<String> = emptySet(),
     visible: Boolean,
     onAppClick: (AppInfo) -> Unit,
     onDismiss: () -> Unit,
@@ -112,9 +114,11 @@ fun SearchOverlay(
                     .navigationBarsPadding()
             ) {
                 items(filteredApps) { app ->
+                    val isDimmed = app.packageName in dimmedPackages
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .alpha(if (isDimmed) 0.45f else 1f)
                             .clickable { onAppClick(app) }
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -130,6 +134,11 @@ fun SearchOverlay(
                         Text(
                             text = app.label,
                             style = MaterialTheme.typography.bodyLarge,
+                            color = if (isDimmed) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = { onAddToDock(app) }) {
