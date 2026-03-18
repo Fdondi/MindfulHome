@@ -3,6 +3,9 @@ package com.mindfulhome.settings
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.mindfulhome.service.UsageTracker
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.Calendar
 
 /**
@@ -98,6 +101,7 @@ object SettingsManager {
     private const val LAST_DECLARED_MINUTES_KEY = "last_declared_minutes"
     private const val LAST_DECLARED_INTENT_KEY = "last_declared_intent"
     private const val LAST_DECLARED_AT_MS_KEY = "last_declared_at_ms"
+    private const val LAST_TIMER_USAGE_SNAPSHOT_KEY = "last_timer_usage_snapshot_json"
 
     // Permission prompt suppression (user explicitly skipped prompts)
     private const val SUPPRESS_NOTIFICATIONS_PROMPT_KEY = "suppress_notifications_prompt"
@@ -178,6 +182,15 @@ object SettingsManager {
         val minutes: Int,
         val intent: String,
         val declaredAtMs: Long,
+    )
+    data class LastTimerUsageApp(
+        val packageName: String,
+        val foregroundTimeMs: Long,
+        val longestSessionsMsDesc: List<Long>,
+    )
+    data class LastTimerUsageSnapshot(
+        val capturedAtMs: Long,
+        val topApps: List<LastTimerUsageApp>,
     )
     data class FocusInterval(
         val startMinutes: Int,
@@ -281,6 +294,78 @@ object SettingsManager {
             intent = intent,
             declaredAtMs = declaredAtMs,
         )
+    }
+
+    // ── Last timer usage snapshot ───────────────────────────────────
+
+    fun saveLastTimerUsageSnapshot(
+        context: Context,
+        capturedAtMs: Long,
+        topApps: List<UsageTracker.DailyAppUsage>,
+    ) {
+        if (capturedAtMs <= 0L || topApps.isEmpty()) {
+            clearLastTimerUsageSnapshot(context)
+            return
+        }
+
+        val appsJson = JSONArray()
+        topApps.forEach { usage ->
+            val chunksJson = JSONArray()
+            usage.timeChunksMsDesc.forEach { chunksJson.put(it) }
+            val appJson = JSONObject()
+                .put("packageName", usage.packageName)
+                .put("foregroundTimeMs", usage.foregroundTimeMs)
+                .put("longestSessionsMsDesc", chunksJson)
+            appsJson.put(appJson)
+        }
+
+        val payload = JSONObject()
+            .put("capturedAtMs", capturedAtMs)
+            .put("topApps", appsJson)
+            .toString()
+        prefs(context).edit { putString(LAST_TIMER_USAGE_SNAPSHOT_KEY, payload) }
+    }
+
+    fun getLastTimerUsageSnapshot(context: Context): LastTimerUsageSnapshot? {
+        val raw = prefs(context).getString(LAST_TIMER_USAGE_SNAPSHOT_KEY, null) ?: return null
+        return try {
+            val payload = JSONObject(raw)
+            val capturedAtMs = payload.optLong("capturedAtMs", 0L)
+            if (capturedAtMs <= 0L) return null
+            val appsJson = payload.optJSONArray("topApps") ?: JSONArray()
+            val apps = buildList {
+                for (i in 0 until appsJson.length()) {
+                    val appJson = appsJson.optJSONObject(i) ?: continue
+                    val packageName = appJson.optString("packageName", "").trim()
+                    val foregroundTimeMs = appJson.optLong("foregroundTimeMs", 0L)
+                    if (packageName.isBlank() || foregroundTimeMs <= 0L) continue
+                    val chunksJson = appJson.optJSONArray("longestSessionsMsDesc") ?: JSONArray()
+                    val chunks = buildList {
+                        for (j in 0 until chunksJson.length()) {
+                            val value = chunksJson.optLong(j, 0L)
+                            if (value > 0L) add(value)
+                        }
+                    }
+                    add(
+                        LastTimerUsageApp(
+                            packageName = packageName,
+                            foregroundTimeMs = foregroundTimeMs,
+                            longestSessionsMsDesc = chunks,
+                        )
+                    )
+                }
+            }
+            if (apps.isEmpty()) return null
+            LastTimerUsageSnapshot(capturedAtMs = capturedAtMs, topApps = apps)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    fun clearLastTimerUsageSnapshot(context: Context) {
+        prefs(context).edit {
+            remove(LAST_TIMER_USAGE_SNAPSHOT_KEY)
+        }
     }
 
     // ── Quick return window ─────────────────────────────────────────

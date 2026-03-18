@@ -37,6 +37,13 @@ data class NegotiationResult(
     val suggestedQuery: String = "",
 )
 
+data class GatekeeperUsageConfrontation(
+    val capturedAtMs: Long,
+    val rankInTopApps: Int,
+    val foregroundTimeMs: Long,
+    val longestSessionsMsDesc: List<Long>,
+)
+
 class NegotiationManager(
     private val lmManager: LiteRtLmManager,
     private val repository: AppRepository,
@@ -68,6 +75,7 @@ class NegotiationManager(
         packageName: String,
         appName: String,
         focusModeActive: Boolean,
+        usageConfrontation: GatekeeperUsageConfrontation? = null,
     ): NegotiationResult = withContext(Dispatchers.IO) {
         currentAppPackage = packageName
         currentType = NegotiationType.GATEKEEPER
@@ -82,6 +90,7 @@ class NegotiationManager(
         val focusRoundsBonus = if (focusModeActive) 1 else 0
         gatekeeperMinRounds = (baseMinRounds + focusRoundsBonus + riskBonus).coerceAtLeast(0)
         gatekeeperMaxRounds = (gatekeeperMinRounds * 2).coerceAtLeast(gatekeeperMinRounds)
+        val confrontationBrief = usageConfrontation?.let { buildConfrontationBrief(it) }
 
         val systemPrompt = PromptTemplates.gatekeeperSystemPrompt()
         val userContext = PromptTemplates.buildGatekeeperUserContext(
@@ -95,6 +104,7 @@ class NegotiationManager(
             focusModeActive = focusModeActive,
             appNote = appNote,
             requiresExtraConfirmation = extraRiskConfirmation,
+            confrontationBrief = confrontationBrief,
         )
 
         // Try backend first
@@ -119,7 +129,11 @@ class NegotiationManager(
 
         // Fallback: hardcoded responses (on-device LLM can't do tool calling)
         exchangeCount++
-        val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount - 1)
+        val text = PromptTemplates.fallbackGatekeeperResponse(
+            appName = appName,
+            exchangeCount = exchangeCount - 1,
+            confrontationBrief = confrontationBrief,
+        )
         val grant = exchangeCount >= gatekeeperMinRounds
         applyGatekeeperRoundPolicy(
             NegotiationResult(responseText = text, accessGranted = grant)
@@ -499,6 +513,32 @@ class NegotiationManager(
     private fun msToMinutes(ms: Long): Long {
         if (ms <= 0L) return 0L
         return (ms + 59_999L) / 60_000L
+    }
+
+    private fun buildConfrontationBrief(confrontation: GatekeeperUsageConfrontation): String {
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
+            .format(Date(confrontation.capturedAtMs))
+        val longestSessions = confrontation.longestSessionsMsDesc
+            .take(3)
+            .filter { it > 0L }
+            .map(::formatDurationCompact)
+            .ifEmpty { listOf(formatDurationCompact(confrontation.foregroundTimeMs)) }
+            .joinToString(", ")
+        return "At $timestamp (last timer snapshot), this app ranked #${confrontation.rankInTopApps} " +
+            "in top usage with total ${formatDurationCompact(confrontation.foregroundTimeMs)} foreground. " +
+            "Longest sessions: $longestSessions. " +
+            "Open with one explicit confrontation turn using this evidence before asking what they need."
+    }
+
+    private fun formatDurationCompact(durationMs: Long): String {
+        val totalMinutes = msToMinutes(durationMs)
+        val hours = totalMinutes / 60
+        val minutes = totalMinutes % 60
+        return when {
+            hours <= 0L -> "${minutes}m"
+            minutes == 0L -> "${hours}h"
+            else -> "${hours}h ${minutes}m"
+        }
     }
 
     private suspend fun applyLaunchRiskConfirmation(result: NegotiationResult): NegotiationResult {

@@ -149,7 +149,7 @@ class MainActivity : ComponentActivity() {
 
                     composable("timer") {
                         TimerScreen(
-                            onTimerSet = { durationMinutes, reason, hardDeadlineMinutes ->
+                            onTimerSet = { durationMinutes, reason, hardDeadlineMinutes, mostUsedAppsToday, mostUsedAppsCapturedAtMs ->
                                 Log.d(
                                     "MainActivity",
                                     "onTimerSet: duration=$durationMinutes reason='$reason' hardDeadlineMinutes=$hardDeadlineMinutes",
@@ -163,6 +163,15 @@ class MainActivity : ComponentActivity() {
                                     durationMinutes,
                                     reason,
                                 )
+                                if (!mostUsedAppsToday.isNullOrEmpty() && mostUsedAppsCapturedAtMs != null) {
+                                    SettingsManager.saveLastTimerUsageSnapshot(
+                                        context = this@MainActivity,
+                                        capturedAtMs = mostUsedAppsCapturedAtMs,
+                                        topApps = mostUsedAppsToday,
+                                    )
+                                } else {
+                                    SettingsManager.clearLastTimerUsageSnapshot(this@MainActivity)
+                                }
                                 val normalizedReason = reason.ifBlank { "_(not provided)_" }
                                 SessionLogger.log(
                                     handle,

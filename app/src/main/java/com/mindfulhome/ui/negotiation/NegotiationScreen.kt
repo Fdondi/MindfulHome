@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.ai.EmbeddingManager
+import com.mindfulhome.ai.GatekeeperUsageConfrontation
 import com.mindfulhome.ai.LiteRtLmManager
 import com.mindfulhome.ai.NegotiationManager
 import com.mindfulhome.ai.NegotiationResult
@@ -328,10 +329,31 @@ fun NegotiationScreen(
             // Gatekeeper flow
             SessionLogger.log(sessionHandle, "AI negotiation started for **$appLabel** via $modelLabel")
             isWaitingForAi = true
+            val usageConfrontation = SettingsManager
+                .getLastTimerUsageSnapshot(context)
+                ?.let { snapshot ->
+                    val rankedMatch = snapshot.topApps
+                        .withIndex()
+                        .firstOrNull { (_, app) -> app.packageName == packageName }
+                        ?: return@let null
+                    GatekeeperUsageConfrontation(
+                        capturedAtMs = snapshot.capturedAtMs,
+                        rankInTopApps = rankedMatch.index + 1,
+                        foregroundTimeMs = rankedMatch.value.foregroundTimeMs,
+                        longestSessionsMsDesc = rankedMatch.value.longestSessionsMsDesc,
+                    )
+                }
+            if (usageConfrontation != null) {
+                SessionLogger.log(
+                    sessionHandle,
+                    "Gatekeeper confrontation armed for **$appLabel** from last timer snapshot (rank #${usageConfrontation.rankInTopApps})",
+                )
+            }
             val result = negotiationManager.startGatekeeperNegotiation(
                 packageName = packageName,
                 appName = appLabel,
                 focusModeActive = focusModeActive,
+                usageConfrontation = usageConfrontation,
             )
             addMessage(result.responseText, isFromUser = false)
             isWaitingForAi = false

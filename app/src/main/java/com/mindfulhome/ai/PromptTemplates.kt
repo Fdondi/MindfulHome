@@ -10,6 +10,7 @@ object PromptTemplates {
 
         Ask why they need it and gently push for intentional use.
         If you need more context, you may call queryRecentUsageSessions(limit) to inspect recent behavior before deciding.
+        If the user context includes confrontation evidence, your first reply must confront them with that exact evidence first.
         Follow the round-window policy provided in the user context.
     """.trimIndent()
 
@@ -47,12 +48,16 @@ object PromptTemplates {
         focusModeActive: Boolean,
         appNote: String?,
         requiresExtraConfirmation: Boolean,
+        confrontationBrief: String? = null,
     ): String =
         "User wants to open $appName (karma $karmaScore, opened $totalOpens times, " +
             "overran $totalOverruns times, requested today $timesRequestedToday). " +
             appNote?.trim()?.takeIf { it.isNotBlank() }?.let { "App note: \"$it\". " }.orEmpty() +
             "Worrying note flag: $requiresExtraConfirmation. " +
             "Focus mode active: $focusModeActive. " +
+            confrontationBrief?.trim()?.takeIf { it.isNotBlank() }?.let {
+                "Confrontation evidence: $it "
+            }.orEmpty() +
             "Do NOT call grantAccess before round $minRoundsBeforeGrant. " +
             "Call grantAccess by round $maxRoundsBeforeGrant at the latest."
 
@@ -84,9 +89,16 @@ object PromptTemplates {
     ): String =
         "Timer expired $overrunMinutes min ago on $appName (karma $karmaScore). Nudge #${nudgeCount + 1}."
 
-    fun fallbackGatekeeperResponse(appName: String, exchangeCount: Int): String {
+    fun fallbackGatekeeperResponse(
+        appName: String,
+        exchangeCount: Int,
+        confrontationBrief: String? = null,
+    ): String {
         return when {
-            exchangeCount == 0 -> "Hey, you're about to open $appName. It's been a bit of a time sink lately. What do you need it for right now?"
+            exchangeCount == 0 && !confrontationBrief.isNullOrBlank() ->
+                "Before we open $appName: $confrontationBrief What's your concrete reason for opening it now?"
+            exchangeCount == 0 ->
+                "Hey, you're about to open $appName. It's been a bit of a time sink lately. What do you need it for right now?"
             exchangeCount == 1 -> "I hear you. Just want to make sure you're being intentional about it. Still want to go ahead?"
             else -> "Alright, go ahead. Just try to keep it mindful!"
         }

@@ -92,7 +92,13 @@ private const val MOST_USED_ROW_HEIGHT_DP = 44
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TimerScreen(
-    onTimerSet: (minutes: Int, reason: String, hardDeadlineMinutes: Int?) -> Unit,
+    onTimerSet: (
+        minutes: Int,
+        reason: String,
+        hardDeadlineMinutes: Int?,
+        mostUsedAppsToday: List<UsageTracker.DailyAppUsage>,
+        mostUsedAppsCapturedAtMs: Long?,
+    ) -> Unit,
     onBackToDefault: (() -> Unit)? = null,
     initialMinutes: Int? = null,
     initialReason: String? = null,
@@ -183,14 +189,17 @@ fun TimerScreen(
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var hasUsagePermission by remember { mutableStateOf(false) }
     var mostUsedAppsToday by remember { mutableStateOf<List<UsageTracker.DailyAppUsage>>(emptyList()) }
+    var mostUsedAppsCapturedAtMs by remember { mutableStateOf<Long?>(null) }
 
     LaunchedEffect(Unit) {
         allApps = PackageManagerHelper.getInstalledApps(context)
         hasUsagePermission = UsageTracker.hasUsageStatsPermission(context)
-        mostUsedAppsToday = if (hasUsagePermission) {
-            UsageTracker.getMostUsedAppsToday(context, MOST_USED_MAX_ITEMS)
+        if (hasUsagePermission) {
+            mostUsedAppsToday = UsageTracker.getMostUsedAppsToday(context, MOST_USED_MAX_ITEMS)
+            mostUsedAppsCapturedAtMs = System.currentTimeMillis()
         } else {
-            emptyList()
+            mostUsedAppsToday = emptyList()
+            mostUsedAppsCapturedAtMs = null
         }
     }
 
@@ -505,7 +514,13 @@ fun TimerScreen(
                     Log.d("TimerScreen", "Start clicked: selectedMinutes=$selectedMinutes reason='${reason.trim()}'")
                     Log.d("TimerScreen", "Calling onTimerSet")
                     val hardDeadlineMinutes = if (hardDeadlineEnabled) selectedHardDeadlineMinutes else null
-                    onTimerSet(selectedMinutes, reason.trim(), hardDeadlineMinutes)
+                    onTimerSet(
+                        selectedMinutes,
+                        reason.trim(),
+                        hardDeadlineMinutes,
+                        mostUsedAppsToday,
+                        mostUsedAppsCapturedAtMs,
+                    )
                     Log.d("TimerScreen", "onTimerSet returned")
                 },
                 modifier = Modifier
