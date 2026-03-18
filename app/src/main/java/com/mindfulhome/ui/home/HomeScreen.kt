@@ -29,13 +29,17 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stars
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -100,6 +104,7 @@ fun HomeScreen(
     karmaManager: KarmaManager,
     onRequestAi: (packageName: String) -> Unit,
     onTimerClick: () -> Unit = {},
+    onOpenDefault: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     onOpenKarma: () -> Unit = {}
@@ -240,6 +245,7 @@ fun HomeScreen(
             TopBar(
                 durationMinutes = durationMinutes,
                 onTimerClick = onTimerClick,
+                onHomeClick = onOpenDefault,
                 onSearchClick = { showSearch = true },
                 onLogsClick = onOpenLogs,
                 onKarmaClick = onOpenKarma,
@@ -416,6 +422,7 @@ fun HomeScreen(
 private fun TopBar(
     durationMinutes: Int,
     onTimerClick: () -> Unit,
+    onHomeClick: () -> Unit,
     onSearchClick: () -> Unit,
     onLogsClick: () -> Unit,
     onKarmaClick: () -> Unit,
@@ -428,13 +435,32 @@ private fun TopBar(
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "$durationMinutes min",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.clickable(onClick = onTimerClick)
-        )
+        OutlinedButton(onClick = onTimerClick) {
+            Icon(
+                Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back to timer",
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+            Icon(
+                Icons.Default.Timer,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = "$durationMinutes min",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        OutlinedButton(onClick = onHomeClick) {
+            Icon(
+                Icons.Default.Home,
+                contentDescription = "Home",
+                tint = MaterialTheme.colorScheme.onBackground
+            )
+        }
 
         Spacer(modifier = Modifier.weight(1f))
 

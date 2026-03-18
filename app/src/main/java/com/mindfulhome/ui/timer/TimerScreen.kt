@@ -34,6 +34,7 @@ import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Button
@@ -93,9 +94,6 @@ private const val MOST_USED_ROW_HEIGHT_DP = 44
 fun TimerScreen(
     onTimerSet: (minutes: Int, reason: String, hardDeadlineMinutes: Int?) -> Unit,
     onBackToDefault: (() -> Unit)? = null,
-    savedAppLabel: String? = null,
-    savedMinutes: Int = 0,
-    onResumeSession: (() -> Unit)? = null,
     initialMinutes: Int? = null,
     initialReason: String? = null,
     prefillToken: Long = 0L,
@@ -230,10 +228,16 @@ fun TimerScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    IconButton(onClick = onBackToDefault) {
+                    OutlinedButton(onClick = onBackToDefault) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Back",
+                            contentDescription = "Back to home",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(
+                            imageVector = Icons.Default.Home,
+                            contentDescription = null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -518,27 +522,6 @@ fun TimerScreen(
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold
                 )
-            }
-
-            if (savedAppLabel != null && onResumeSession != null && savedMinutes > 0) {
-                Spacer(modifier = Modifier.height(24.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        onResumeSession()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth(0.8f)
-                        .height(48.dp),
-                    shape = MaterialTheme.shapes.large
-                ) {
-                    Text(
-                        text = "Resume $savedAppLabel (${formatMinutes(savedMinutes)})",
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center
-                    )
-                }
             }
 
             Spacer(modifier = Modifier.height(20.dp))

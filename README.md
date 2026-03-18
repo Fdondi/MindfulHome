@@ -53,6 +53,7 @@ Open the project in Android Studio. It will sync Gradle automatically. Use Run/D
   - QuickLaunch apps,
   - a bottom `something else?` button that opens the timer without prefill.
 - QuickLaunch pull-tab on the timer page has been removed.
+- Navigation map: see `docs/navigation-map.md` for route/state transitions and unlock flow behavior.
 
 ### AI Model (Optional)
 

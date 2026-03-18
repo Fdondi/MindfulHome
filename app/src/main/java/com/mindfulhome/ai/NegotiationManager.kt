@@ -3,7 +3,6 @@ package com.mindfulhome.ai
 import android.content.Context
 import android.util.Log
 import com.google.ai.edge.litertlm.Conversation
-import com.google.ai.edge.litertlm.Message
 import com.mindfulhome.ai.backend.BackendAuthHelper
 import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.ai.backend.BackendHttpException
@@ -211,9 +210,6 @@ class NegotiationManager(
                 val conversation = lmManager.createConversation(
                     systemPrompt,
                     toolSets = listOf(tools),
-                    initialMessages = listOf(
-                        Message.model(PromptTemplates.GENERAL_CHAT_GREETING)
-                    ),
                 )
                 currentConversation = conversation
             } catch (e: Exception) {

@@ -148,17 +148,6 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable("timer") {
-                        val savedSession = SettingsManager.getLastSession(this@MainActivity)
-                        val savedAppLabel = savedSession?.let { session ->
-                            try {
-                                val appInfo = packageManager.getApplicationInfo(
-                                    session.packageName, 0
-                                )
-                                packageManager.getApplicationLabel(appInfo).toString()
-                            } catch (_: Exception) {
-                                null
-                            }
-                        }
                         TimerScreen(
                             onTimerSet = { durationMinutes, reason, hardDeadlineMinutes ->
                                 Log.d(
@@ -199,8 +188,6 @@ class MainActivity : ComponentActivity() {
                                     launchSingleTop = true
                                 }
                             },
-                            savedAppLabel = savedAppLabel,
-                            savedMinutes = savedSession?.remainingMinutes ?: 0,
                             initialMinutes = pendingPrefillMinutes,
                             initialReason = pendingPrefillReason,
                             prefillToken = pendingPrefillToken,
@@ -208,6 +195,28 @@ class MainActivity : ComponentActivity() {
                                 pendingPrefillMinutes = null
                                 pendingPrefillReason = null
                             },
+                        )
+                    }
+
+                    composable("default") {
+                        val savedSession = SettingsManager.getLastSession(this@MainActivity)
+                        val savedAppLabel = savedSession?.let { session ->
+                            try {
+                                val appInfo = packageManager.getApplicationInfo(
+                                    session.packageName, 0
+                                )
+                                packageManager.getApplicationLabel(appInfo).toString()
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                        DefaultPageScreen(
+                            repository = repository,
+                            onQuickLaunchApp = { packageName, quickLaunchPackages ->
+                                launchQuickStart(packageName, quickLaunchPackages)
+                            },
+                            resumeSessionLabel = savedAppLabel,
+                            resumeSessionMinutes = savedSession?.remainingMinutes ?: 0,
                             onResumeSession = savedSession?.let { session ->
                                 {
                                     shouldShowTimer = false
@@ -229,22 +238,12 @@ class MainActivity : ComponentActivity() {
                                         session.packageName,
                                         handle,
                                     )
-                                    navCtrl.navigate(postTimerTargetRoute())
                                     val launchIntent = packageManager
                                         .getLaunchIntentForPackage(session.packageName)
                                     if (launchIntent != null) {
                                         startActivity(launchIntent)
                                     }
                                 }
-                            },
-                        )
-                    }
-
-                    composable("default") {
-                        DefaultPageScreen(
-                            repository = repository,
-                            onQuickLaunchApp = { packageName, quickLaunchPackages ->
-                                launchQuickStart(packageName, quickLaunchPackages, navCtrl)
                             },
                             onOpenTimerPlain = {
                                 clearPendingPrefill()
@@ -254,6 +253,9 @@ class MainActivity : ComponentActivity() {
                                     popUpTo("default") { inclusive = false }
                                 }
                             },
+                            onOpenLogs = { navCtrl.navigate("logs") },
+                            onOpenKarma = { navCtrl.navigate("karma") },
+                            onOpenSettings = { navCtrl.navigate("settings") },
                             onStartTodo = { minutes, intentText ->
                                 pendingPrefillMinutes = minutes
                                 pendingPrefillReason = intentText
@@ -290,6 +292,12 @@ class MainActivity : ComponentActivity() {
                                     popUpTo("home") { inclusive = true }
                                 }
                             },
+                            onOpenDefault = {
+                                shouldShowTimer = false
+                                navCtrl.navigate("default") {
+                                    popUpTo("root") { inclusive = true }
+                                }
+                            },
                             onOpenSettings = {
                                 navCtrl.navigate("settings")
                             },
@@ -323,6 +331,12 @@ class MainActivity : ComponentActivity() {
                                     popUpTo("root") { inclusive = true }
                                 }
                             },
+                            onOpenDefault = {
+                                shouldShowTimer = false
+                                navCtrl.navigate("default") {
+                                    popUpTo("root") { inclusive = true }
+                                }
+                            },
                             onOpenLogs = { navCtrl.navigate("logs") },
                             onOpenKarma = { navCtrl.navigate("karma") },
                             onOpenSettings = { navCtrl.navigate("settings") },
@@ -346,6 +360,12 @@ class MainActivity : ComponentActivity() {
                             onTimerClick = {
                                 shouldShowTimer = true
                                 navCtrl.navigate("timer") {
+                                    popUpTo("root") { inclusive = true }
+                                }
+                            },
+                            onOpenDefault = {
+                                shouldShowTimer = false
+                                navCtrl.navigate("default") {
                                     popUpTo("root") { inclusive = true }
                                 }
                             },
@@ -456,7 +476,7 @@ class MainActivity : ComponentActivity() {
                 sessionHandle = SessionLogger.startSession("Session resumed from timer alert")
             }
             lifecycleScope.launch {
-                val destination = if (forceTimer) "timer" else postTimerTargetRoute()
+                val destination = if (forceTimer) "timer" else "default"
                 Log.d("MainActivity", "Navigating to $destination from handleIncomingIntent")
                 navController?.navigate(destination) {
                     popUpTo("root") { inclusive = true }
@@ -497,7 +517,6 @@ class MainActivity : ComponentActivity() {
         Log.d("MainActivity", "onResume: wentToBackground=$wentToBackground navController=${navController != null}")
 
         val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this)
-        val assistantRequired = false
 
         if (quickLaunchSessionActive && shouldShowTimer) {
             shouldShowTimer = false
@@ -523,11 +542,11 @@ class MainActivity : ComponentActivity() {
                 }
             } else if (awayMs < quickReturnMs && timerWasRunning) {
                 shouldShowTimer = false
+                val destination = postTimerTargetRoute()
                 SessionLogger.log(
                     ensureSessionHandle(),
-                    "Quick return (${awayMs / 1000}s) — back to app selection"
+                    "Quick return (${awayMs / 1000}s) — back to $destination"
                 )
-                val destination = "default"
                 lifecycleScope.launch {
                     navController?.navigate(destination) {
                         popUpTo("root") { inclusive = true }
@@ -688,7 +707,6 @@ class MainActivity : ComponentActivity() {
     private fun launchQuickStart(
         packageName: String,
         quickLaunchPackages: Set<String>,
-        navCtrl: NavHostController,
     ) {
         shouldShowTimer = false
         unlockReason = ""
@@ -709,9 +727,6 @@ class MainActivity : ComponentActivity() {
             allowedQuickLaunchPackages = quickLaunchPackages.toList(),
             sessionHandle = handle,
         )
-        navCtrl.navigate(postTimerTargetRoute()) {
-            popUpTo("default") { inclusive = false }
-        }
         val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
         if (launchIntent != null) {
             startActivity(launchIntent)

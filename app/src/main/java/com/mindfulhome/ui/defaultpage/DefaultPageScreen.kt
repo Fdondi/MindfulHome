@@ -33,6 +33,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Stars
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -82,7 +85,13 @@ private data class TodoEditorState(
 fun DefaultPageScreen(
     repository: AppRepository,
     onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
+    resumeSessionLabel: String? = null,
+    resumeSessionMinutes: Int = 0,
+    onResumeSession: (() -> Unit)? = null,
     onOpenTimerPlain: () -> Unit,
+    onOpenLogs: () -> Unit = {},
+    onOpenKarma: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onStartTodo: (minutes: Int?, intent: String) -> Unit,
     onScreenShown: () -> Unit = {},
 ) {
@@ -116,16 +125,41 @@ fun DefaultPageScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 14.dp)
-            .padding(top = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(
-            text = "v$appVersion",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        Row(
             modifier = Modifier.fillMaxWidth(),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "v$appVersion",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onOpenLogs) {
+                Icon(
+                    Icons.AutoMirrored.Filled.Article,
+                    contentDescription = "Session logs",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onOpenKarma) {
+                Icon(
+                    Icons.Default.Stars,
+                    contentDescription = "Karma",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onOpenSettings) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -190,6 +224,16 @@ fun DefaultPageScreen(
                         }
                     }
                 }
+            }
+        }
+
+        if (resumeSessionLabel != null && onResumeSession != null && resumeSessionMinutes > 0) {
+            OutlinedButton(
+                onClick = onResumeSession,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text("Resume $resumeSessionLabel (${formatMinutes(resumeSessionMinutes)})")
             }
         }
 
@@ -504,6 +548,14 @@ private fun next6pmEpochMs(nowMs: Long = System.currentTimeMillis()): Long {
         }
     }
     return cal.timeInMillis
+}
+
+private fun formatMinutes(minutes: Int): String {
+    return when {
+        minutes < 60 -> "${minutes}m"
+        minutes % 60 == 0 -> "${minutes / 60}h"
+        else -> "${minutes / 60}h ${minutes % 60}m"
+    }
 }
 
 private fun pickDateTime(
