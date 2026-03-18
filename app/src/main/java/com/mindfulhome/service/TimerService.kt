@@ -28,9 +28,6 @@ import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.settings.SettingsManager
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,7 +45,6 @@ class TimerService : Service() {
     private var timerJob: Job? = null
     private var nudgeJob: Job? = null
     private var quickLaunchMonitorJob: Job? = null
-    private var quickLaunchGraceJob: Job? = null
     private var notificationInteractionTimeoutJob: Job? = null
     private var quickLaunchExitCandidatePackage: String? = null
     private var quickLaunchExitCandidateStartedAtMs: Long = 0L
@@ -143,7 +139,7 @@ class TimerService : Service() {
                 )
                 val currentForeground = UsageTracker.getForegroundApp(this)
                     ?: _currentPackage.value
-                updateQuickLaunchFrameVisibility(currentForeground)
+                evaluateQuickLaunchExitProgress(currentForeground)
                 startQuickLaunchMonitoringLoop()
             }
             return START_STICKY
@@ -185,6 +181,7 @@ class TimerService : Service() {
                 }
                 _currentPackage.value = packageName
                 maybeForceTimerForQuickLaunchSwitch(packageName)
+                evaluateQuickLaunchExitProgress(packageName)
             }
             ACTION_EXTEND -> {
                 val extraMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
@@ -322,7 +319,7 @@ class TimerService : Service() {
         )
         refreshQuickLaunchMonitoringNotification()
         quickLaunchFrameSuppressedForSensitiveApp = false
-        updateQuickLaunchFrameVisibility(initialPackageName)
+        updateQuickLaunchFrameVisibility(initialPackageName, System.currentTimeMillis())
         startQuickLaunchMonitoringLoop()
     }
 
@@ -356,46 +353,15 @@ class TimerService : Service() {
                 "Quick Launch grace window started for package=$packageName"
             )
             refreshQuickLaunchMonitoringNotification()
-            scheduleQuickLaunchGraceCheck(expectedPackage = packageName)
             return
         }
     }
 
     private fun clearQuickLaunchExitCandidate() {
-        quickLaunchGraceJob?.cancel()
-        quickLaunchGraceJob = null
         quickLaunchExitCandidatePackage = null
         quickLaunchExitCandidateStartedAtMs = 0L
         quickLaunchExitCandidateLabel = null
         refreshQuickLaunchMonitoringNotification()
-    }
-
-    private fun scheduleQuickLaunchGraceCheck(expectedPackage: String) {
-        quickLaunchGraceJob?.cancel()
-        quickLaunchGraceJob = serviceScope.launch {
-            delay(QUICK_LAUNCH_SWITCH_GRACE_MS)
-            if (!SettingsManager.isQuickLaunchSessionActive(this@TimerService)) return@launch
-            if (quickLaunchExitCandidatePackage != expectedPackage) return@launch
-
-            val currentForeground = UsageTracker.getForegroundApp(this@TimerService) ?: _currentPackage.value
-            val allowedPackages = SettingsManager.getQuickLaunchPackages(this@TimerService) + packageName
-            if (currentForeground.isBlank()) return@launch
-            if (currentForeground in allowedPackages || isSystemOrUtilityPackage(currentForeground)) {
-                clearQuickLaunchExitCandidate()
-                return@launch
-            }
-
-            val appLabel = getAppLabel(currentForeground)
-            Log.d(TAG, "non-quick app still active after grace: $currentForeground")
-            logWithSession(
-                "Quick Launch exit detected: opened **$appLabel** — returning to timer"
-            )
-            clearQuickLaunchExitCandidate()
-            SettingsManager.clearQuickLaunchSession(this@TimerService)
-            quickLaunchMonitorJob?.cancel()
-            overlayManager.dismissQuickLaunchFrame()
-            forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
-        }
     }
 
     private fun isSystemOrUtilityPackage(packageName: String): Boolean {
@@ -433,7 +399,7 @@ class TimerService : Service() {
         }
     }
 
-    private fun updateQuickLaunchFrameVisibility(foregroundPackage: String) {
+    private fun updateQuickLaunchFrameVisibility(foregroundPackage: String, nowMs: Long) {
         if (!SettingsManager.isQuickLaunchSessionActive(this)) {
             overlayManager.dismissQuickLaunchFrame()
             quickLaunchFrameSuppressedForSensitiveApp = false
@@ -451,7 +417,14 @@ class TimerService : Service() {
             return
         }
 
-        overlayManager.showQuickLaunchFrame()
+        if (!shouldShowQuickLaunchFrameForPackage(foregroundPackage)) {
+            overlayManager.dismissQuickLaunchFrame()
+            quickLaunchFrameSuppressedForSensitiveApp = false
+            return
+        }
+
+        val level = quickLaunchFrameLevelForNow(nowMs)
+        overlayManager.showQuickLaunchFrame(level)
         if (quickLaunchFrameSuppressedForSensitiveApp) {
             logSessionEvent("Quick Launch frame restored after leaving sensitive app")
         }
@@ -465,22 +438,65 @@ class TimerService : Service() {
             QUICK_LAUNCH_FRAME_RESTRICTED_PACKAGE_PREFIXES.any { normalized.startsWith(it) }
     }
 
+    private fun shouldShowQuickLaunchFrameForPackage(packageName: String): Boolean {
+        if (packageName.isBlank()) return false
+        if (quickLaunchExitCandidatePackage != packageName || quickLaunchExitCandidateStartedAtMs <= 0L) {
+            return false
+        }
+        val allowedPackages = SettingsManager.getQuickLaunchPackages(this) + this.packageName
+        return packageName !in allowedPackages && !isSystemOrUtilityPackage(packageName)
+    }
+
+    private fun quickLaunchFrameLevelForNow(nowMs: Long): OverlayNudgeManager.QuickLaunchFrameLevel {
+        val startedAtMs = quickLaunchExitCandidateStartedAtMs
+        if (startedAtMs <= 0L) return OverlayNudgeManager.QuickLaunchFrameLevel.GREEN
+        val elapsedMs = (nowMs - startedAtMs).coerceAtLeast(0L)
+        return when {
+            elapsedMs < QUICK_LAUNCH_MONITOR_POLL_MS -> OverlayNudgeManager.QuickLaunchFrameLevel.GREEN
+            elapsedMs < QUICK_LAUNCH_MONITOR_POLL_MS * 2 -> OverlayNudgeManager.QuickLaunchFrameLevel.YELLOW
+            else -> OverlayNudgeManager.QuickLaunchFrameLevel.RED
+        }
+    }
+
+    private fun evaluateQuickLaunchExitProgress(foregroundPackage: String, nowMs: Long = System.currentTimeMillis()) {
+        if (!SettingsManager.isQuickLaunchSessionActive(this)) {
+            overlayManager.dismissQuickLaunchFrame()
+            return
+        }
+        updateQuickLaunchFrameVisibility(foregroundPackage, nowMs)
+        val candidatePackage = quickLaunchExitCandidatePackage ?: return
+        if (candidatePackage != foregroundPackage) return
+        val candidateStartedAt = quickLaunchExitCandidateStartedAtMs
+        if (candidateStartedAt <= 0L) return
+
+        val elapsedMs = (nowMs - candidateStartedAt).coerceAtLeast(0L)
+        if (elapsedMs < QUICK_LAUNCH_SWITCH_GRACE_MS) return
+
+        val appLabel = getAppLabel(foregroundPackage)
+        Log.d(TAG, "non-quick app still active after grace: $foregroundPackage")
+        logWithSession("Quick Launch exit detected: opened **$appLabel** — returning to timer")
+        clearQuickLaunchExitCandidate()
+        SettingsManager.clearQuickLaunchSession(this)
+        quickLaunchMonitorJob?.cancel()
+        overlayManager.dismissQuickLaunchFrame()
+        forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
+    }
+
     private fun startQuickLaunchMonitoringLoop() {
         quickLaunchMonitorJob?.cancel()
         Log.d(TAG, "startQuickLaunchMonitoringLoop")
         logSessionEvent("Quick Launch monitor loop started")
         quickLaunchMonitorJob = serviceScope.launch {
             var lastSeenPackage = _currentPackage.value
-            updateQuickLaunchFrameVisibility(lastSeenPackage)
             while (SettingsManager.isQuickLaunchSessionActive(this@TimerService)) {
-                val foregroundPackage = UsageTracker.getForegroundApp(this@TimerService)
-                if (!foregroundPackage.isNullOrBlank() && foregroundPackage != lastSeenPackage) {
+                val foregroundPackage = UsageTracker.getForegroundApp(this@TimerService) ?: lastSeenPackage
+                if (foregroundPackage.isNotBlank() && foregroundPackage != lastSeenPackage) {
                     Log.d(TAG, "foreground changed: $lastSeenPackage -> $foregroundPackage")
                     lastSeenPackage = foregroundPackage
                     _currentPackage.value = foregroundPackage
-                    updateQuickLaunchFrameVisibility(foregroundPackage)
                     maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
                 }
+                evaluateQuickLaunchExitProgress(foregroundPackage)
                 delay(QUICK_LAUNCH_MONITOR_POLL_MS)
             }
             Log.d(TAG, "quick-launch monitoring loop ended")
@@ -1299,12 +1315,14 @@ class TimerService : Service() {
         }
 
         val candidateLabel = quickLaunchExitCandidateLabel ?: getAppLabel(candidatePackage)
-        val detectedAt = formatQuickLaunchDetectionTime(candidateStartedAt)
-        return "Detected $candidateLabel at $detectedAt. Will check again in 1m."
-    }
-
-    private fun formatQuickLaunchDetectionTime(timestampMs: Long): String {
-        return SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(timestampMs))
+        val elapsedMs = (System.currentTimeMillis() - candidateStartedAt).coerceAtLeast(0L)
+        val phase = when {
+            elapsedMs < QUICK_LAUNCH_MONITOR_POLL_MS -> "green"
+            elapsedMs < QUICK_LAUNCH_MONITOR_POLL_MS * 2 -> "yellow"
+            else -> "red"
+        }
+        val remainingSeconds = ((QUICK_LAUNCH_SWITCH_GRACE_MS - elapsedMs).coerceAtLeast(0L) / 1_000L)
+        return "Detected $candidateLabel. Phase $phase, forcing home in ${remainingSeconds}s."
     }
 
     // ── Helpers ──────────────────────────────────────────────────────

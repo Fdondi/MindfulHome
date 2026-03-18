@@ -64,8 +64,8 @@ class OverlayNudgeManager(private val context: Context) {
 
     fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
 
-    fun showQuickLaunchFrame() {
-        handler.post { showQuickLaunchFrameInternal() }
+    fun showQuickLaunchFrame(level: QuickLaunchFrameLevel = QuickLaunchFrameLevel.RED) {
+        handler.post { showQuickLaunchFrameInternal(level) }
     }
 
     fun dismissQuickLaunchFrame() {
@@ -122,13 +122,16 @@ class OverlayNudgeManager(private val context: Context) {
         }
     }
 
-    private fun showQuickLaunchFrameInternal() {
-        if (quickLaunchBorderViews.isNotEmpty()) return
+    private fun showQuickLaunchFrameInternal(level: QuickLaunchFrameLevel) {
         if (!canDrawOverlay()) return
 
         val borderThickness = dp(4)
-        val borderColor = Color.parseColor("#D0FF1A1A")
+        val borderColor = quickLaunchFrameColor(level)
         val layoutType = overlayLayoutType()
+        if (quickLaunchBorderViews.isNotEmpty()) {
+            quickLaunchBorderViews.forEach { it.setBackgroundColor(borderColor) }
+            return
+        }
 
         val edges = listOf(
             // Top
@@ -883,6 +886,20 @@ class OverlayNudgeManager(private val context: Context) {
         PURPLE_SOFT,
         RED_HARD,
         PREDATORY,
+    }
+
+    enum class QuickLaunchFrameLevel {
+        GREEN,
+        YELLOW,
+        RED,
+    }
+
+    private fun quickLaunchFrameColor(level: QuickLaunchFrameLevel): Int {
+        return when (level) {
+            QuickLaunchFrameLevel.GREEN -> Color.parseColor("#D022C55E")
+            QuickLaunchFrameLevel.YELLOW -> Color.parseColor("#D0EAB308")
+            QuickLaunchFrameLevel.RED -> Color.parseColor("#D0EF4444")
+        }
     }
 
     companion object {
