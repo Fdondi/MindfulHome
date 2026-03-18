@@ -75,6 +75,20 @@ object BackendToolDeclarations {
                     })
                     put("required", buildJsonArray { add(JsonPrimitive("packageName")) })
                 }
+            ),
+            function(
+                name = "suggestApps",
+                description = "Request app suggestions when you are not confident about one exact package to launch.",
+                parameters = buildJsonObject {
+                    put("type", "OBJECT")
+                    put("properties", buildJsonObject {
+                        put("query", buildJsonObject {
+                            put("type", "STRING")
+                            put("description", "Search query to rank suggested apps, e.g. 'music', 'maps', 'work chat'")
+                        })
+                    })
+                    put("required", buildJsonArray { add(JsonPrimitive("query")) })
+                }
             )
         )
     )

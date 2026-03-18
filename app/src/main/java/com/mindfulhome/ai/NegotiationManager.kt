@@ -34,6 +34,7 @@ data class NegotiationResult(
     val accessGranted: Boolean = false,
     val extensionMinutes: Int = 0,
     val launchedPackage: String = "",
+    val suggestedQuery: String = "",
 )
 
 class NegotiationManager(
@@ -284,6 +285,7 @@ class NegotiationManager(
                     NegotiationType.GENERAL -> NegotiationResult(
                         responseText = response,
                         launchedPackage = generalChatTools?.launchedPackage ?: "",
+                        suggestedQuery = generalChatTools?.suggestedQuery ?: "",
                     )
                     null -> NegotiationResult(response)
                 }
@@ -396,6 +398,13 @@ class NegotiationManager(
                     return NegotiationResult(
                         responseText = text.ifBlank { "Launching the app." },
                         launchedPackage = pkg,
+                    )
+                }
+                "suggestApps" -> {
+                    val query = (fc.args["query"] as? JsonPrimitive)?.content.orEmpty().trim()
+                    return NegotiationResult(
+                        responseText = text.ifBlank { "Here are the closest app options." },
+                        suggestedQuery = query,
                     )
                 }
                 "queryRecentUsageSessions" -> {

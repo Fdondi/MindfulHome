@@ -68,6 +68,7 @@ import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.ai.LiteRtLmManager
 import com.mindfulhome.ai.NegotiationManager
+import com.mindfulhome.ai.NegotiationResult
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.BackendAuthHelper
@@ -236,6 +237,44 @@ fun NegotiationScreen(
         }?.packageName
     }
 
+    suspend fun resolveSuggestedAppsTool(result: NegotiationResult): NegotiationResult {
+        if (result.launchedPackage.isNotEmpty()) return result
+        val suggestedQuery = result.suggestedQuery.trim()
+        if (suggestedQuery.isBlank()) return result
+
+        val ranked = rankLaunchSuggestions(
+            requestText = suggestedQuery,
+            visibleApps = visibleApps,
+            allIntents = allIntents,
+        )
+        if (ranked.isEmpty()) return result
+
+        val candidates = ranked.take(5)
+        val toolResultMessage = buildString {
+            append("Tool result for suggestApps(query=\"")
+            append(suggestedQuery)
+            append("\"):\n")
+            candidates.forEachIndexed { index, app ->
+                append(index + 1)
+                append(". ")
+                append(app.label)
+                append(" (")
+                append(app.packageName)
+                append(")\n")
+            }
+            append("If one candidate clearly matches the user's intent, call launchApp(packageName) now. ")
+            append("If still uncertain, do not call launchApp; ask the user to pick one option.")
+        }
+
+        val followUp = negotiationManager.reply(toolResultMessage)
+        val responseText = followUp.responseText.ifBlank { result.responseText }
+        val queryForUi = followUp.suggestedQuery.ifBlank { suggestedQuery }
+        return followUp.copy(
+            responseText = responseText,
+            suggestedQuery = queryForUi,
+        )
+    }
+
     LaunchedEffect(Unit) {
         allApps = PackageManagerHelper.getInstalledApps(context)
     }
@@ -308,9 +347,13 @@ fun NegotiationScreen(
                 addMessage(unlockReason, isFromUser = true)
                 negotiationManager.startGeneralChat(context)
                 isWaitingForAi = true
-                val result = negotiationManager.reply(unlockReason)
+                val firstResult = negotiationManager.reply(unlockReason)
+                val result = resolveSuggestedAppsTool(firstResult)
                 addMessage(result.responseText, isFromUser = false)
                 isWaitingForAi = false
+                if (result.suggestedQuery.isNotBlank()) {
+                    lastLaunchRequestText = result.suggestedQuery
+                }
                 if (result.launchedPackage.isNotEmpty()) {
                     val exactPackage = findExactMatchPackage(lastLaunchRequestText)
                     if (exactPackage != null && exactPackage == result.launchedPackage) {
@@ -320,10 +363,14 @@ fun NegotiationScreen(
                         SessionLogger.log(sessionHandle, "Launched **$label**")
                         launchTarget = result.launchedPackage
                     } else {
-                        showQuickLaunchBar(lastLaunchRequestText)
+                        showQuickLaunchBar(
+                            result.suggestedQuery.ifBlank { lastLaunchRequestText }
+                        )
                     }
                 } else {
-                    showQuickLaunchBar(lastLaunchRequestText)
+                    showQuickLaunchBar(
+                        result.suggestedQuery.ifBlank { lastLaunchRequestText }
+                    )
                 }
             } else {
                 addMessage(PromptTemplates.GENERAL_CHAT_GREETING, isFromUser = false)
@@ -539,9 +586,13 @@ fun NegotiationScreen(
 
                             scope.launch {
                                 isWaitingForAi = true
-                                val result = negotiationManager.reply(input)
+                                val firstResult = negotiationManager.reply(input)
+                                val result = resolveSuggestedAppsTool(firstResult)
                                 addMessage(result.responseText, isFromUser = false)
                                 isWaitingForAi = false
+                                if (result.suggestedQuery.isNotBlank()) {
+                                    lastLaunchRequestText = result.suggestedQuery
+                                }
 
                                 if (result.accessGranted) {
                                     SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
@@ -556,10 +607,14 @@ fun NegotiationScreen(
                                         SessionLogger.log(sessionHandle, "Launched **$label**")
                                         launchTarget = result.launchedPackage
                                     } else if (packageName.isEmpty()) {
-                                        showQuickLaunchBar(lastLaunchRequestText)
+                                        showQuickLaunchBar(
+                                            result.suggestedQuery.ifBlank { lastLaunchRequestText }
+                                        )
                                     }
                                 } else if (packageName.isEmpty()) {
-                                    showQuickLaunchBar(lastLaunchRequestText)
+                                    showQuickLaunchBar(
+                                        result.suggestedQuery.ifBlank { lastLaunchRequestText }
+                                    )
                                 }
                             }
                         }
@@ -788,7 +843,7 @@ private fun LaunchSuggestionsBubble(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Could not launch that package. Try one of these:",
+                    text = "Pick an app to launch:",
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     fontSize = 14.sp,
                 )
