@@ -464,19 +464,20 @@ class MainActivity : ComponentActivity() {
         }
 
         if (fromUnlock || forceTimer) {
+            val forceDestination = "default"
             if (forceTimer) {
                 TimerService.stop(this)
             }
             // Clear wentToBackground so onResume doesn't also navigate
             wentToBackground = false
-            shouldShowTimer = forceTimer
+            shouldShowTimer = false
             if (fromUnlock) {
                 sessionHandle = SessionLogger.startSession("Phone unlocked")
             } else if (forceTimer) {
                 sessionHandle = SessionLogger.startSession("Session resumed from timer alert")
             }
             lifecycleScope.launch {
-                val destination = if (forceTimer) "timer" else "default"
+                val destination = if (forceTimer) forceDestination else "default"
                 Log.d("MainActivity", "Navigating to $destination from handleIncomingIntent")
                 navController?.navigate(destination) {
                     popUpTo("root") { inclusive = true }
