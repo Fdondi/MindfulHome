@@ -13,5 +13,6 @@ data class AppKarma(
     val closedOnTimeCount: Int = 0,
     val lastOpenedTimestamp: Long = 0,
     val isHidden: Boolean = false,
-    val isOptedOut: Boolean = false
+    val isOptedOut: Boolean = false,
+    val appNote: String? = null,
 )

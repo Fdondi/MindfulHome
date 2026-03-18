@@ -4,6 +4,7 @@ import android.graphics.drawable.Drawable
 import android.util.Log
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,19 +18,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -57,8 +59,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private enum class KarmaFilter { ALL, NEGATIVE, HIDDEN, OPTED_OUT }
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun KarmaScreen(
@@ -73,7 +73,10 @@ fun KarmaScreen(
     var appLabels by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var appIcons by remember { mutableStateOf<Map<String, Drawable?>>(emptyMap()) }
     var appsLoaded by remember { mutableStateOf(false) }
-    var filter by remember { mutableStateOf(KarmaFilter.ALL) }
+    var negativeExpanded by remember { mutableStateOf(true) }
+    var optedOutExpanded by remember { mutableStateOf(false) }
+    var positiveExpanded by remember { mutableStateOf(false) }
+    var zeroExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         val apps = PackageManagerHelper.getInstalledApps(context)
@@ -103,18 +106,30 @@ fun KarmaScreen(
         }
     }
 
-    val displayedApps = remember(allKarma, filter, appLabels) {
+    val trackedApps = remember(allKarma) {
         val valid = allKarma.filter { it.packageName.isNotBlank() }
-        val filtered = when (filter) {
-            KarmaFilter.ALL -> valid.filter { it.karmaScore != 0 || it.isHidden || it.isOptedOut }
-            KarmaFilter.NEGATIVE -> valid.filter { it.karmaScore < 0 }
-            KarmaFilter.HIDDEN -> valid.filter { it.isHidden }
-            KarmaFilter.OPTED_OUT -> valid.filter { it.isOptedOut }
-        }
-        filtered.sortedWith(
-            compareBy<AppKarma> { it.karmaScore }
-                .thenBy { appLabels[it.packageName] ?: it.packageName }
-        )
+        valid.sortedBy { it.packageName }
+    }
+
+    val negativeApps = remember(trackedApps, appLabels) {
+        trackedApps
+            .filter { !it.isOptedOut && it.karmaScore < 0 }
+            .sortedWith(compareBy<AppKarma> { it.karmaScore }.thenBy { appLabels[it.packageName] ?: it.packageName })
+    }
+    val optedOutApps = remember(trackedApps, appLabels) {
+        trackedApps
+            .filter { it.isOptedOut }
+            .sortedBy { appLabels[it.packageName] ?: it.packageName }
+    }
+    val positiveApps = remember(trackedApps, appLabels) {
+        trackedApps
+            .filter { !it.isOptedOut && it.karmaScore > 0 }
+            .sortedWith(compareByDescending<AppKarma> { it.karmaScore }.thenBy { appLabels[it.packageName] ?: it.packageName })
+    }
+    val zeroApps = remember(trackedApps, appLabels) {
+        trackedApps
+            .filter { !it.isOptedOut && it.karmaScore == 0 }
+            .sortedBy { appLabels[it.packageName] ?: it.packageName }
     }
 
     Column(
@@ -132,35 +147,7 @@ fun KarmaScreen(
             }
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            KarmaFilter.entries.forEach { f ->
-                FilterChip(
-                    selected = filter == f,
-                    onClick = { filter = f },
-                    label = {
-                        Text(
-                            when (f) {
-                                KarmaFilter.ALL -> "Active"
-                                KarmaFilter.NEGATIVE -> "Negative"
-                                KarmaFilter.HIDDEN -> "Hidden"
-                                KarmaFilter.OPTED_OUT -> "Opted out"
-                            },
-                            style = MaterialTheme.typography.labelSmall
-                        )
-                    },
-                    colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer
-                    )
-                )
-            }
-        }
-
-        if (displayedApps.isEmpty()) {
+        if (trackedApps.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -169,13 +156,13 @@ fun KarmaScreen(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "No apps to show.",
+                    text = "No tracked apps yet.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Karma is tracked as you use apps.\nApps with non-zero karma will appear here.",
+                    text = "Karma and notes appear here after the app has a metadata row.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -189,17 +176,64 @@ fun KarmaScreen(
             ) {
                 item { Spacer(modifier = Modifier.height(4.dp)) }
 
-                items(displayedApps, key = { it.packageName }) { karma ->
-                    KarmaCard(
-                        karma = karma,
-                        label = appLabels[karma.packageName] ?: karma.packageName,
-                        icon = appIcons[karma.packageName],
-                        onForgive = {
-                            scope.launch { karmaManager.forgiveApp(karma.packageName) }
+                item {
+                    KarmaSection(
+                        title = "Negative",
+                        apps = negativeApps,
+                        expanded = negativeExpanded,
+                        onToggle = { negativeExpanded = !negativeExpanded },
+                        appLabels = appLabels,
+                        appIcons = appIcons,
+                        onForgive = { packageName -> scope.launch { karmaManager.forgiveApp(packageName) } },
+                        onSaveNote = { packageName, note -> scope.launch { repository.updateAppNote(packageName, note) } },
+                        onToggleOptOut = { packageName, optedOut ->
+                            scope.launch { karmaManager.setOptedOut(packageName, optedOut) }
                         },
-                        onToggleOptOut = { optedOut ->
-                            scope.launch { karmaManager.setOptedOut(karma.packageName, optedOut) }
-                        }
+                    )
+                }
+                item {
+                    KarmaSection(
+                        title = "Opted out",
+                        apps = optedOutApps,
+                        expanded = optedOutExpanded,
+                        onToggle = { optedOutExpanded = !optedOutExpanded },
+                        appLabels = appLabels,
+                        appIcons = appIcons,
+                        onForgive = { packageName -> scope.launch { karmaManager.forgiveApp(packageName) } },
+                        onSaveNote = { packageName, note -> scope.launch { repository.updateAppNote(packageName, note) } },
+                        onToggleOptOut = { packageName, optedOut ->
+                            scope.launch { karmaManager.setOptedOut(packageName, optedOut) }
+                        },
+                    )
+                }
+                item {
+                    KarmaSection(
+                        title = "Positive",
+                        apps = positiveApps,
+                        expanded = positiveExpanded,
+                        onToggle = { positiveExpanded = !positiveExpanded },
+                        appLabels = appLabels,
+                        appIcons = appIcons,
+                        onForgive = { packageName -> scope.launch { karmaManager.forgiveApp(packageName) } },
+                        onSaveNote = { packageName, note -> scope.launch { repository.updateAppNote(packageName, note) } },
+                        onToggleOptOut = { packageName, optedOut ->
+                            scope.launch { karmaManager.setOptedOut(packageName, optedOut) }
+                        },
+                    )
+                }
+                item {
+                    KarmaSection(
+                        title = "Zero",
+                        apps = zeroApps,
+                        expanded = zeroExpanded,
+                        onToggle = { zeroExpanded = !zeroExpanded },
+                        appLabels = appLabels,
+                        appIcons = appIcons,
+                        onForgive = { packageName -> scope.launch { karmaManager.forgiveApp(packageName) } },
+                        onSaveNote = { packageName, note -> scope.launch { repository.updateAppNote(packageName, note) } },
+                        onToggleOptOut = { packageName, optedOut ->
+                            scope.launch { karmaManager.setOptedOut(packageName, optedOut) }
+                        },
                     )
                 }
 
@@ -210,13 +244,80 @@ fun KarmaScreen(
 }
 
 @Composable
+private fun KarmaSection(
+    title: String,
+    apps: List<AppKarma>,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    appLabels: Map<String, String>,
+    appIcons: Map<String, Drawable?>,
+    onForgive: (String) -> Unit,
+    onSaveNote: (String, String?) -> Unit,
+    onToggleOptOut: (String, Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onToggle),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "$title (${apps.size})",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Collapse $title" else "Expand $title",
+            )
+        }
+    }
+
+    if (!expanded) return
+    if (apps.isEmpty()) {
+        Text(
+            text = "No apps in this group.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+        )
+        return
+    }
+
+    apps.forEach { karma ->
+        KarmaCard(
+            karma = karma,
+            label = appLabels[karma.packageName] ?: karma.packageName,
+            icon = appIcons[karma.packageName],
+            onForgive = { onForgive(karma.packageName) },
+            onSaveNote = { note -> onSaveNote(karma.packageName, note) },
+            onToggleOptOut = { optedOut -> onToggleOptOut(karma.packageName, optedOut) },
+        )
+    }
+}
+
+@Composable
 private fun KarmaCard(
     karma: AppKarma,
     label: String,
     icon: Drawable?,
     onForgive: () -> Unit,
+    onSaveNote: (String?) -> Unit,
     onToggleOptOut: (Boolean) -> Unit
 ) {
+    var isEditingNote by remember(karma.packageName) { mutableStateOf(false) }
+    var noteDraft by remember(karma.packageName, karma.appNote) { mutableStateOf(karma.appNote.orEmpty()) }
+    val normalizedDraft = noteDraft.trim().ifBlank { null }
+    val noteChanged = normalizedDraft != karma.appNote
     val scoreColor = when {
         karma.isOptedOut -> MaterialTheme.colorScheme.onSurfaceVariant
         karma.karmaScore > 0 -> MaterialTheme.colorScheme.primary
@@ -251,68 +352,129 @@ private fun KarmaCard(
                 }
 
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            onClick = { isEditingNote = true },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 6.dp,
+                                vertical = 0.dp,
+                            ),
+                            modifier = Modifier.height(26.dp),
+                        ) {
+                            Text(
+                                text = "Edit note",
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    }
                     Text(
-                        text = label,
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = "${karma.totalOpens} opens · ${karma.totalOverruns} overruns",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (karma.isOptedOut) {
                             Text(
                                 text = "Opted out",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
-                        } else {
-                            Text(
-                                text = "Karma: ${karma.karmaScore}",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                color = scoreColor
-                            )
-                            if (karma.isHidden) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.VisibilityOff,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(14.dp),
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
-                                    Spacer(modifier = Modifier.width(2.dp))
-                                    Text(
-                                        text = "Hidden",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
+                        }
+                        if (karma.isHidden) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.VisibilityOff,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.error,
+                                )
+                                Spacer(modifier = Modifier.width(2.dp))
+                                Text(
+                                    text = "Hidden",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                )
                             }
                         }
                     }
                 }
 
-                Text(
-                    text = if (karma.isOptedOut) "--" else "${karma.karmaScore}",
-                    style = MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = scoreColor
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (karma.isOptedOut) "Karma: --" else "Karma: ${karma.karmaScore}",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = scoreColor,
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = "Opt out",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Switch(
+                            checked = karma.isOptedOut,
+                            onCheckedChange = { onToggleOptOut(it) },
+                        )
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            if (!karma.isOptedOut && karma.totalOpens > 0) {
-                Text(
-                    text = "${karma.totalOpens} opens · ${karma.closedOnTimeCount} on time · ${karma.totalOverruns} overruns",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+            if (isEditingNote) {
+                OutlinedTextField(
+                    value = noteDraft,
+                    onValueChange = { noteDraft = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("App note") },
+                    placeholder = { Text("Add context for future app-open decisions") },
+                    singleLine = false,
+                    maxLines = 3,
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(
+                        onClick = {
+                            noteDraft = karma.appNote.orEmpty()
+                            isEditingNote = false
+                        },
+                    ) {
+                        Text("Cancel")
+                    }
+                    TextButton(
+                        onClick = {
+                            onSaveNote(normalizedDraft)
+                            isEditingNote = false
+                        },
+                        enabled = noteChanged,
+                    ) {
+                        Text("Save note")
+                    }
+                }
+            } else {
+                if (!karma.appNote.isNullOrBlank()) {
+                    Text(
+                        text = "Note: ${karma.appNote}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             Row(
@@ -332,19 +494,6 @@ private fun KarmaCard(
                     }
                 } else {
                     Spacer(modifier = Modifier.width(1.dp))
-                }
-
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = "Opt out",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Switch(
-                        checked = karma.isOptedOut,
-                        onCheckedChange = { onToggleOptOut(it) }
-                    )
                 }
             }
         }

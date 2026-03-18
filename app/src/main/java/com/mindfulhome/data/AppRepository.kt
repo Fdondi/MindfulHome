@@ -87,6 +87,12 @@ class AppRepository(private val database: AppDatabase) {
         upsertWithDerivedHidden(updated)
     }
 
+    suspend fun updateAppNote(packageName: String, note: String?) {
+        val current = getKarma(packageName)
+        val normalized = note?.trim()?.takeIf { it.isNotBlank() }
+        upsertWithDerivedHidden(current.copy(appNote = normalized))
+    }
+
     suspend fun dailyKarmaRecovery(hideThreshold: Int) {
         val underwaterApps = karmaDao.getUnderwaterAppsForRecovery()
         underwaterApps.forEach { appKarma ->

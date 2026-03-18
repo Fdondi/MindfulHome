@@ -20,17 +20,21 @@ object PromptTemplates {
         Do not block them. You are just a friendly nudge.
     """.trimIndent()
 
-    fun generalChatSystemPrompt(hiddenAppsBriefing: String): String = """
-        You can either launch directly with launchApp(packageName) or request ranked choices with suggestApps(query). One sentence replies only.
-        
-        $hiddenAppsBriefing
-        
-        Hidden app → say "[name] has been overused. What do you need it for?" then after they answer call launchApp.
-        Other app with high confidence → call launchApp immediately.
-        Low confidence or ambiguous request → call suggestApps with a short search query.
-        After suggestApps, you will receive candidate apps in a follow-up tool result; then call launchApp if confident, otherwise ask the user to choose.
-        Never ask for exact package names.
-    """.trimIndent()
+    fun generalChatSystemPrompt(hiddenAppsBriefing: String, appNotesBriefing: String?): String = buildString {
+        appendLine("You can either launch directly with launchApp(packageName) or request ranked choices with suggestApps(query). One sentence replies only.")
+        appendLine()
+        appendLine(hiddenAppsBriefing)
+        if (!appNotesBriefing.isNullOrBlank()) {
+            appendLine(appNotesBriefing)
+        }
+        appendLine()
+        appendLine("Hidden app → say \"[name] has been overused. What do you need it for?\" then after they answer call launchApp.")
+        appendLine("Other app with high confidence → call launchApp immediately.")
+        appendLine("If a candidate app has a worrying note, ask one extra confirmation turn before launchApp.")
+        appendLine("Low confidence or ambiguous request → call suggestApps with a short search query.")
+        appendLine("After suggestApps, you will receive candidate apps in a follow-up tool result; then call launchApp if confident, otherwise ask the user to choose.")
+        append("Never ask for exact package names.")
+    }
 
     fun buildGatekeeperUserContext(
         appName: String,
@@ -41,12 +45,36 @@ object PromptTemplates {
         minRoundsBeforeGrant: Int,
         maxRoundsBeforeGrant: Int,
         focusModeActive: Boolean,
+        appNote: String?,
+        requiresExtraConfirmation: Boolean,
     ): String =
         "User wants to open $appName (karma $karmaScore, opened $totalOpens times, " +
             "overran $totalOverruns times, requested today $timesRequestedToday). " +
+            appNote?.trim()?.takeIf { it.isNotBlank() }?.let { "App note: \"$it\". " }.orEmpty() +
+            "Worrying note flag: $requiresExtraConfirmation. " +
             "Focus mode active: $focusModeActive. " +
             "Do NOT call grantAccess before round $minRoundsBeforeGrant. " +
             "Call grantAccess by round $maxRoundsBeforeGrant at the latest."
+
+    fun requiresExtraConfirmation(note: String?): Boolean {
+        val normalized = note?.trim()?.lowercase().orEmpty()
+        if (normalized.isBlank()) return false
+        val worryingKeywords = listOf(
+            "don't open", "do not open", "avoid", "relapse", "addict", "doomscroll", "doom scroll",
+            "waste", "time sink", "danger", "harm", "anxiety", "panic", "spiral", "trigger",
+            "toxic", "urgent only", "work only", "study only", "exam", "sleep", "bedtime",
+        )
+        return worryingKeywords.any { normalized.contains(it) }
+    }
+
+    fun riskConfirmationPrompt(appNote: String?): String {
+        val safeNote = appNote?.trim().orEmpty()
+        return if (safeNote.isBlank()) {
+            "One more quick check before I open it - do you still want to proceed?"
+        } else {
+            "Your note for this app says \"$safeNote\" - still want to open it?"
+        }
+    }
 
     fun buildNudgeContext(
         appName: String,

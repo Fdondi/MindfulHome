@@ -47,6 +47,7 @@ class NegotiationManager(
     private var currentType: NegotiationType? = null
     private var exchangeCount = 0
     private var currentAppPackage: String = ""
+    private val riskConfirmationAskedForPackages = mutableSetOf<String>()
     private var gatekeeperMinRounds = 0
     private var gatekeeperMaxRounds = 0
 
@@ -73,10 +74,13 @@ class NegotiationManager(
         exchangeCount = 0
 
         val karma = repository.getKarma(packageName)
+        val appNote = karma.appNote
+        val extraRiskConfirmation = PromptTemplates.requiresExtraConfirmation(appNote)
         val negativeKarma = (-karma.karmaScore).coerceAtLeast(0)
         val baseMinRounds = ceil(ln(1.0 + negativeKarma.toDouble())).toInt()
+        val riskBonus = if (extraRiskConfirmation) 1 else 0
         val focusRoundsBonus = if (focusModeActive) 1 else 0
-        gatekeeperMinRounds = (baseMinRounds + focusRoundsBonus).coerceAtLeast(0)
+        gatekeeperMinRounds = (baseMinRounds + focusRoundsBonus + riskBonus).coerceAtLeast(0)
         gatekeeperMaxRounds = (gatekeeperMinRounds * 2).coerceAtLeast(gatekeeperMinRounds)
 
         val systemPrompt = PromptTemplates.gatekeeperSystemPrompt()
@@ -89,6 +93,8 @@ class NegotiationManager(
             minRoundsBeforeGrant = gatekeeperMinRounds,
             maxRoundsBeforeGrant = gatekeeperMaxRounds,
             focusModeActive = focusModeActive,
+            appNote = appNote,
+            requiresExtraConfirmation = extraRiskConfirmation,
         )
 
         // Try backend first
@@ -186,11 +192,31 @@ class NegotiationManager(
         } else {
             "Currently hidden apps:\n" + hiddenApps.joinToString("\n") { karma ->
                 val label = PackageManagerHelper.getAppLabel(appContext, karma.packageName)
-                "- $label (${karma.packageName}), karma: ${karma.karmaScore}"
+                val noteSuffix = karma.appNote?.trim()?.takeIf { it.isNotBlank() }?.let {
+                    ", note: \"$it\""
+                }.orEmpty()
+                "- $label (${karma.packageName}), karma: ${karma.karmaScore}$noteSuffix"
             }
         }
+        val allKarma = try {
+            repository.allKarma().first()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading app notes", e)
+            emptyList()
+        }
+        val notesBriefing = allKarma
+            .asSequence()
+            .mapNotNull { karma ->
+                val note = karma.appNote?.trim()?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+                val label = PackageManagerHelper.getAppLabel(appContext, karma.packageName)
+                val needsConfirm = PromptTemplates.requiresExtraConfirmation(note)
+                "- $label (${karma.packageName}): \"$note\" (needs extra confirmation: $needsConfirm)"
+            }
+            .toList()
+            .takeIf { it.isNotEmpty() }
+            ?.let { notes -> "App notes:\n${notes.joinToString("\n")}" }
 
-        val systemPrompt = PromptTemplates.generalChatSystemPrompt(hiddenAppsBriefing)
+        val systemPrompt = PromptTemplates.generalChatSystemPrompt(hiddenAppsBriefing, notesBriefing)
 
         if (backendAuth != null && backendAuth.hasToken) {
             usingBackend = true
@@ -234,9 +260,10 @@ class NegotiationManager(
                 exchangeCount++
 
                 val text = response.result ?: ""
-                backendHistory.add(modelContent(text))
-
-                val result = parseBackendResult(text, response.function_calls)
+                val result = applyLaunchRiskConfirmation(
+                    parseBackendResult(text, response.function_calls)
+                )
+                backendHistory.add(modelContent(result.responseText))
                 return@withContext applyGatekeeperRoundPolicy(result)
             } catch (e: Exception) {
                 val httpEx = e as? BackendHttpException
@@ -269,7 +296,7 @@ class NegotiationManager(
                 val response = lmManager.sendMessage(conversation, userMessage)
                 exchangeCount++
 
-                val result = when (currentType) {
+                val parsed = when (currentType) {
                     NegotiationType.GATEKEEPER -> NegotiationResult(
                         responseText = response,
                         accessGranted = gatekeeperTools?.accessGranted == true,
@@ -289,6 +316,7 @@ class NegotiationManager(
                     )
                     null -> NegotiationResult(response)
                 }
+                val result = applyLaunchRiskConfirmation(parsed)
                 return@withContext applyGatekeeperRoundPolicy(result)
             } catch (e: Exception) {
                 Log.e(TAG, "Error in on-device reply", e)
@@ -338,6 +366,7 @@ class NegotiationManager(
         usingBackend = false
         backendHistory.clear()
         backendTools = null
+        riskConfirmationAskedForPackages.clear()
     }
 
     // ── Backend helpers ──────────────────────────────────────────────
@@ -470,6 +499,23 @@ class NegotiationManager(
     private fun msToMinutes(ms: Long): Long {
         if (ms <= 0L) return 0L
         return (ms + 59_999L) / 60_000L
+    }
+
+    private suspend fun applyLaunchRiskConfirmation(result: NegotiationResult): NegotiationResult {
+        if (currentType != NegotiationType.GENERAL) return result
+        val targetPackage = result.launchedPackage.trim()
+        if (targetPackage.isBlank()) return result
+
+        val note = repository.getKarma(targetPackage).appNote
+        val shouldDelayLaunch = PromptTemplates.requiresExtraConfirmation(note) &&
+            targetPackage !in riskConfirmationAskedForPackages
+        if (!shouldDelayLaunch) return result
+
+        riskConfirmationAskedForPackages.add(targetPackage)
+        return result.copy(
+            responseText = PromptTemplates.riskConfirmationPrompt(note),
+            launchedPackage = "",
+        )
     }
 
     private fun applyGatekeeperRoundPolicy(result: NegotiationResult): NegotiationResult {
