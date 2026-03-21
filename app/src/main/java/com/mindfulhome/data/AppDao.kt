@@ -184,6 +184,37 @@ interface QuickLaunchDao {
 
     @Query("SELECT COALESCE(MAX(position), -1) FROM quick_launch_items")
     suspend fun maxPosition(): Int
+
+    @Query("UPDATE quick_launch_items SET position = :position WHERE packageName = :packageName")
+    suspend fun updatePosition(packageName: String, position: Int)
+
+    @Query("UPDATE quick_launch_items SET folderId = :folderId WHERE packageName = :packageName")
+    suspend fun setFolder(packageName: String, folderId: Long?)
+
+    @Query("SELECT * FROM quick_launch_items WHERE folderId = :folderId ORDER BY position")
+    suspend fun getInFolderOnce(folderId: Long): List<QuickLaunchItem>
+
+    @Query("SELECT COUNT(*) FROM quick_launch_items WHERE folderId = :folderId")
+    suspend fun countInFolder(folderId: Long): Int
+}
+
+@Dao
+interface QuickLaunchFolderDao {
+
+    @Query("SELECT * FROM ql_folders ORDER BY position")
+    fun getAll(): Flow<List<QuickLaunchFolder>>
+
+    @Insert
+    suspend fun insert(folder: QuickLaunchFolder): Long
+
+    @Query("DELETE FROM ql_folders WHERE id = :folderId")
+    suspend fun delete(folderId: Long)
+
+    @Query("UPDATE ql_folders SET name = :name WHERE id = :id")
+    suspend fun rename(id: Long, name: String)
+
+    @Query("UPDATE ql_folders SET position = :position WHERE id = :id")
+    suspend fun updatePosition(id: Long, position: Int)
 }
 
 data class SessionLogWithCount(

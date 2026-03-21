@@ -8,4 +8,5 @@ data class QuickLaunchItem(
     @PrimaryKey
     val packageName: String,
     val position: Int = 0,
+    val folderId: Long? = null,
 )

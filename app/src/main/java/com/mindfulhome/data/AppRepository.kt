@@ -4,6 +4,11 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlin.math.max
 
+sealed class QuickLaunchGridKey {
+    data class App(val packageName: String) : QuickLaunchGridKey()
+    data class Folder(val folderId: Long) : QuickLaunchGridKey()
+}
+
 class AppRepository(private val database: AppDatabase) {
     private companion object {
         const val DEFAULT_HIDE_THRESHOLD = -2
@@ -16,6 +21,7 @@ class AppRepository(private val database: AppDatabase) {
     private val shelfDao = database.shelfDao()
     private val todoDao = database.todoDao()
     private val quickLaunchDao = database.quickLaunchDao()
+    private val qlFolderDao = database.quickLaunchFolderDao()
 
     // Karma
     fun allKarma(): Flow<List<AppKarma>> = karmaDao.getAllKarma()
@@ -215,6 +221,7 @@ class AppRepository(private val database: AppDatabase) {
 
     // QuickLaunch (default page only — separate from the home-screen favorites shelf)
     fun quickLaunchApps(): Flow<List<QuickLaunchItem>> = quickLaunchDao.getAll()
+    fun quickLaunchFolders(): Flow<List<QuickLaunchFolder>> = qlFolderDao.getAll()
 
     suspend fun addToQuickLaunch(packageName: String) {
         val nextPosition = quickLaunchDao.maxPosition() + 1
@@ -223,6 +230,61 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun removeFromQuickLaunch(packageName: String) {
         quickLaunchDao.remove(packageName)
+    }
+
+    /** Persist new grid order after drag-and-drop. Each key is either an app packageName or a folder id. */
+    suspend fun reorderQuickLaunch(orderedKeys: List<QuickLaunchGridKey>) {
+        orderedKeys.forEachIndexed { index, key ->
+            when (key) {
+                is QuickLaunchGridKey.App -> quickLaunchDao.updatePosition(key.packageName, index)
+                is QuickLaunchGridKey.Folder -> qlFolderDao.updatePosition(key.folderId, index)
+            }
+        }
+    }
+
+    /**
+     * Create a folder from two top-level apps. The folder is placed at [folderPosition]
+     * (the target app's current grid position).
+     */
+    suspend fun createQuickLaunchFolder(pkg1: String, pkg2: String, folderPosition: Int): Long {
+        val folderId = qlFolderDao.insert(QuickLaunchFolder(name = "Folder", position = folderPosition))
+        quickLaunchDao.setFolder(pkg1, folderId)
+        quickLaunchDao.updatePosition(pkg1, 0)
+        quickLaunchDao.setFolder(pkg2, folderId)
+        quickLaunchDao.updatePosition(pkg2, 1)
+        return folderId
+    }
+
+    /** Add an existing top-level app into a folder. */
+    suspend fun addAppToQuickLaunchFolder(packageName: String, folderId: Long) {
+        val count = quickLaunchDao.countInFolder(folderId)
+        quickLaunchDao.setFolder(packageName, folderId)
+        quickLaunchDao.updatePosition(packageName, count)
+    }
+
+    suspend fun renameQuickLaunchFolder(folderId: Long, name: String) {
+        qlFolderDao.rename(folderId, name)
+    }
+
+    /** Remove an app from a folder; deletes the folder if it becomes empty. */
+    suspend fun removeAppFromQuickLaunchFolder(packageName: String, folderId: Long) {
+        val nextPos = quickLaunchDao.maxPosition() + 1
+        quickLaunchDao.setFolder(packageName, null)
+        quickLaunchDao.updatePosition(packageName, nextPos)
+        if (quickLaunchDao.countInFolder(folderId) == 0) {
+            qlFolderDao.delete(folderId)
+        }
+    }
+
+    /** Delete a folder and move all its apps back to top-level. */
+    suspend fun deleteQuickLaunchFolder(folderId: Long) {
+        val apps = quickLaunchDao.getInFolderOnce(folderId)
+        apps.forEach { item ->
+            val nextPos = quickLaunchDao.maxPosition() + 1
+            quickLaunchDao.setFolder(item.packageName, null)
+            quickLaunchDao.updatePosition(item.packageName, nextPos)
+        }
+        qlFolderDao.delete(folderId)
     }
 
     // Todo widget (integrated)
