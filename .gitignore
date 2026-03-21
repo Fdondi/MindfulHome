@@ -36,5 +36,8 @@ google-services.json
 backend/
 .cursor/rules/
 
+.claude/
+CLAUDE.md
+
 .env*
 *.env
