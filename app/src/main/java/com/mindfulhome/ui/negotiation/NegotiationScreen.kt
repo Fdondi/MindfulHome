@@ -72,7 +72,9 @@ import com.mindfulhome.ai.NegotiationManager
 import com.mindfulhome.ai.NegotiationResult
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.ai.backend.ApiKeyManager
+import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendAuthHelper
+import androidx.credentials.exceptions.NoCredentialException
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.AppIntent
 import com.mindfulhome.logging.SessionLogger
@@ -156,9 +158,17 @@ fun NegotiationScreen(
     }
     val backendAuth = remember {
         BackendAuthHelper(
-            // Keep timer/chat flow non-interactive: only use an existing token.
-            // Interactive Google sign-in is handled from Settings.
-            signIn = { null },
+            signIn = {
+                try {
+                    val result = AuthManager.signIn(context)
+                    if (result?.email != null) {
+                        ApiKeyManager.saveSignedInEmail(context, result.email)
+                    }
+                    result?.idToken
+                } catch (e: NoCredentialException) {
+                    null
+                }
+            },
             getAppToken = { ApiKeyManager.getAppToken(context) },
             saveAppToken = { token, expiresAtMs ->
                 ApiKeyManager.saveAppToken(context, token, expiresAtMs)
@@ -292,22 +302,32 @@ fun NegotiationScreen(
         suggestedLaunchApps = emptyList()
         lastLaunchRequestText = extractLaunchQuery(unlockReason)
 
-        // Do not trigger interactive sign-in in timer/chat flow.
-        // If no backend token is already present, fall back to on-device for this session.
-        var remoteAuthFailed = false
+        // If remote is configured but no token is present, trigger sign-in now.
+        // AuthManager uses the Credential Manager bottom sheet — no navigation side effects.
         if (sessionUseBackend && !backendAuth.hasToken) {
-            remoteAuthFailed = true
-        }
-        if (remoteAuthFailed) {
-            sessionUseBackend = false
-            negotiationManager.endConversation()
-            negotiationManager = NegotiationManager(
-                lmManager = lmManager,
-                repository = repository,
-                karmaManager = karmaManager,
-                backendAuth = null,
-                backendModel = sessionSelectedModel,
-            )
+            modelLabel = sessionSelectedModel
+            try {
+                val result = AuthManager.signIn(context)
+                if (result != null) {
+                    if (result.email != null) {
+                        ApiKeyManager.saveSignedInEmail(context, result.email)
+                    }
+                    backendAuth.exchangeGoogleToken(result.idToken)
+                }
+            } catch (e: NoCredentialException) {
+                addMessage(
+                    "Sign-in failed: no Google account is available on this device.",
+                    isFromUser = false
+                )
+                return@LaunchedEffect
+            }
+            if (!backendAuth.hasToken) {
+                addMessage(
+                    "Sign-in was cancelled or failed. You can retry from Settings.",
+                    isFromUser = false
+                )
+                return@LaunchedEffect
+            }
         }
 
         // Determine which model will actually be used
