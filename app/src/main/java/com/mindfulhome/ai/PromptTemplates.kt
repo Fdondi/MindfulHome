@@ -21,10 +21,18 @@ object PromptTemplates {
         Do not block them. You are just a friendly nudge.
     """.trimIndent()
 
-    fun generalChatSystemPrompt(hiddenAppsBriefing: String, appNotesBriefing: String?): String = buildString {
+    fun generalChatSystemPrompt(
+        hiddenAppsBriefing: String,
+        appNotesBriefing: String?,
+        installedAppsBriefing: String? = null,
+    ): String = buildString {
         appendLine("You can either launch directly with launchApp(packageName) or request ranked choices with suggestApps(query). One sentence replies only.")
         appendLine()
         appendLine(hiddenAppsBriefing)
+        if (!installedAppsBriefing.isNullOrBlank()) {
+            appendLine()
+            appendLine(installedAppsBriefing)
+        }
         if (!appNotesBriefing.isNullOrBlank()) {
             appendLine(appNotesBriefing)
         }

@@ -1,5 +1,6 @@
 package com.mindfulhome.ui.negotiation
 
+import android.util.Log
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -81,15 +82,42 @@ import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.ui.search.SearchOverlay
 import com.mindfulhome.util.PackageManagerHelper
+import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 data class ChatMessage(
     val text: String,
     val isFromUser: Boolean,
-    val isLoading: Boolean = false
+    val isLoading: Boolean = false,
+    val loadingText: String = "Thinking...",
 )
+
+private fun normalizeLookup(value: String): String {
+    return value.lowercase().replace(Regex("[^a-z0-9]"), "")
+}
+
+private fun extractLaunchQuery(rawText: String): String {
+    val trimmed = rawText.trim()
+    if (trimmed.isBlank()) return ""
+    val quoted = Regex("\"([^\"]+)\"|'([^']+)'").find(trimmed)
+    if (quoted != null) {
+        val capture = quoted.groupValues.drop(1).firstOrNull { it.isNotBlank() }
+        if (!capture.isNullOrBlank()) return capture.trim()
+    }
+    val lowered = trimmed.lowercase()
+    val markers = listOf("app name is", "app is", "open", "launch")
+    for (marker in markers) {
+        val idx = lowered.lastIndexOf(marker)
+        if (idx >= 0) {
+            val candidate = trimmed.substring(idx + marker.length).trim()
+            if (candidate.isNotBlank()) return candidate
+        }
+    }
+    return trimmed
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -134,6 +162,7 @@ fun NegotiationScreen(
     var showSearchOverlay by remember { mutableStateOf(false) }
     var suggestedLaunchApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var showLaunchSuggestions by remember { mutableStateOf(false) }
+    var isLoadingApps by remember { mutableStateOf(false) }
     var lastLaunchRequestText by remember { mutableStateOf(unlockReason) }
     var conversationNonce by remember { mutableStateOf(0) }
     val hiddenPackages = remember(hiddenApps) { hiddenApps.map { it.packageName }.toSet() }
@@ -185,44 +214,44 @@ fun NegotiationScreen(
         SessionLogger.log(sessionHandle, "$prefix: ${text.take(120)}")
     }
 
-    fun showQuickLaunchBar(queryText: String) {
-        val fallbackSuggestions = visibleApps.take(5)
+    suspend fun showQuickLaunchBar(queryText: String) {
+        val apps = if (visibleApps.isEmpty()) {
+            Log.d("NegotiationScreen", "App list not ready — waiting before showing suggestions for '$queryText'")
+            SessionLogger.log(sessionHandle, "Loading app list...")
+            isLoadingApps = true
+            val loaded = snapshotFlow { allApps }.first { it.isNotEmpty() }
+            isLoadingApps = false
+            Log.d("NegotiationScreen", "App list ready (${loaded.size} apps) — showing suggestions for '$queryText'")
+            SessionLogger.log(sessionHandle, "App list ready — showing suggestions")
+            loaded.filter { it.packageName !in hiddenPackages }
+        } else {
+            visibleApps
+        }
+        // If the query unambiguously names an app, launch it directly.
+        val normalizedQuery = normalizeLookup(queryText)
+        if (normalizedQuery.isNotBlank()) {
+            val exact = apps.firstOrNull { app ->
+                normalizeLookup(app.label) == normalizedQuery ||
+                    normalizeLookup(app.packageName.substringAfterLast('.')) == normalizedQuery
+            }
+            if (exact != null) {
+                Log.d("NegotiationScreen", "Exact match '${exact.label}' for query '$queryText' — launching directly")
+                SessionLogger.log(sessionHandle, "Exact match: launching **${exact.label}** directly")
+                launchTarget = exact.packageName
+                return
+            }
+        }
+        val fallbackSuggestions = apps.take(5)
         suggestedLaunchApps = fallbackSuggestions
         showLaunchSuggestions = true
-        scope.launch {
-            val ranked = rankLaunchSuggestions(
-                requestText = queryText.ifBlank { lastLaunchRequestText },
-                visibleApps = visibleApps,
-                allIntents = allIntents,
-            )
-            if (showLaunchSuggestions) {
-                suggestedLaunchApps = if (ranked.isNotEmpty()) ranked else fallbackSuggestions
-            }
+        val ranked = rankLaunchSuggestions(
+            requestText = queryText.ifBlank { lastLaunchRequestText },
+            visibleApps = apps,
+            allIntents = allIntents,
+        )
+        if (showLaunchSuggestions) {
+            suggestedLaunchApps = if (ranked.isNotEmpty()) ranked else fallbackSuggestions
         }
-    }
-
-    fun extractLaunchQuery(rawText: String): String {
-        val trimmed = rawText.trim()
-        if (trimmed.isBlank()) return ""
-        val quoted = Regex("\"([^\"]+)\"|'([^']+)'").find(trimmed)
-        if (quoted != null) {
-            val capture = quoted.groupValues.drop(1).firstOrNull { it.isNotBlank() }
-            if (!capture.isNullOrBlank()) return capture.trim()
-        }
-        val lowered = trimmed.lowercase()
-        val markers = listOf("app name is", "app is", "open", "launch")
-        for (marker in markers) {
-            val idx = lowered.lastIndexOf(marker)
-            if (idx >= 0) {
-                val candidate = trimmed.substring(idx + marker.length).trim()
-                if (candidate.isNotBlank()) return candidate
-            }
-        }
-        return trimmed
-    }
-
-    fun normalizeLookup(value: String): String {
-        return value.lowercase().replace(Regex("[^a-z0-9]"), "")
     }
 
     fun findExactMatchPackage(queryText: String): String? {
@@ -290,6 +319,7 @@ fun NegotiationScreen(
         showSearchOverlay = false
         showLaunchSuggestions = false
         suggestedLaunchApps = emptyList()
+        isLoadingApps = false
         lastLaunchRequestText = extractLaunchQuery(unlockReason)
 
         // Do not trigger interactive sign-in in timer/chat flow.
@@ -367,7 +397,17 @@ fun NegotiationScreen(
                 // Reason provided at timer screen — skip the generic greeting
                 // and feed it as the first user message so the AI responds directly
                 addMessage(unlockReason, isFromUser = true)
-                negotiationManager.startGeneralChat(context)
+                val allVisible = if (visibleApps.isEmpty()) {
+                    snapshotFlow { allApps }.first { it.isNotEmpty() }
+                        .filter { it.packageName !in hiddenPackages }
+                } else visibleApps
+                val appsForPrompt = rankLaunchSuggestions(
+                    requestText = lastLaunchRequestText,
+                    visibleApps = allVisible,
+                    allIntents = allIntents,
+                    limit = 20,
+                ).map { it.label to it.packageName }
+                negotiationManager.startGeneralChat(context, appsForPrompt)
                 isWaitingForAi = true
                 val firstResult = negotiationManager.reply(unlockReason)
                 val result = resolveSuggestedAppsTool(firstResult)
@@ -377,18 +417,11 @@ fun NegotiationScreen(
                     lastLaunchRequestText = result.suggestedQuery
                 }
                 if (result.launchedPackage.isNotEmpty()) {
-                    val exactPackage = findExactMatchPackage(lastLaunchRequestText)
-                    if (exactPackage != null && exactPackage == result.launchedPackage) {
-                        val label = PackageManagerHelper.getAppLabel(
-                            context, result.launchedPackage
-                        )
-                        SessionLogger.log(sessionHandle, "Launched **$label**")
-                        launchTarget = result.launchedPackage
-                    } else {
-                        showQuickLaunchBar(
-                            result.suggestedQuery.ifBlank { lastLaunchRequestText }
-                        )
-                    }
+                    val label = PackageManagerHelper.getAppLabel(
+                        context, result.launchedPackage
+                    )
+                    SessionLogger.log(sessionHandle, "Launched **$label**")
+                    launchTarget = result.launchedPackage
                 } else {
                     showQuickLaunchBar(
                         result.suggestedQuery.ifBlank { lastLaunchRequestText }
@@ -396,7 +429,17 @@ fun NegotiationScreen(
                 }
             } else {
                 addMessage(PromptTemplates.GENERAL_CHAT_GREETING, isFromUser = false)
-                negotiationManager.startGeneralChat(context)
+                val allVisible = if (visibleApps.isEmpty()) {
+                    snapshotFlow { allApps }.first { it.isNotEmpty() }
+                        .filter { it.packageName !in hiddenPackages }
+                } else visibleApps
+                val appsForPrompt = rankLaunchSuggestions(
+                    requestText = lastLaunchRequestText,
+                    visibleApps = allVisible,
+                    allIntents = allIntents,
+                    limit = 20,
+                ).map { it.label to it.packageName }
+                negotiationManager.startGeneralChat(context, appsForPrompt)
             }
         }
     }
@@ -550,7 +593,13 @@ fun NegotiationScreen(
 
             if (isWaitingForAi) {
                 item {
-                    ChatBubble(ChatMessage("", isFromUser = false, isLoading = true))
+                    ChatBubble(ChatMessage("", isFromUser = false, isLoading = true, loadingText = "Thinking..."))
+                }
+            }
+
+            if (isLoadingApps) {
+                item {
+                    ChatBubble(ChatMessage("", isFromUser = false, isLoading = true, loadingText = "Loading..."))
                 }
             }
 
@@ -621,18 +670,11 @@ fun NegotiationScreen(
                                     accessGranted = true
                                 }
                                 if (result.launchedPackage.isNotEmpty()) {
-                                    val exactPackage = findExactMatchPackage(lastLaunchRequestText)
-                                    if (exactPackage != null && exactPackage == result.launchedPackage) {
-                                        val label = PackageManagerHelper.getAppLabel(
-                                            context, result.launchedPackage
-                                        )
-                                        SessionLogger.log(sessionHandle, "Launched **$label**")
-                                        launchTarget = result.launchedPackage
-                                    } else if (packageName.isEmpty()) {
-                                        showQuickLaunchBar(
-                                            result.suggestedQuery.ifBlank { lastLaunchRequestText }
-                                        )
-                                    }
+                                    val label = PackageManagerHelper.getAppLabel(
+                                        context, result.launchedPackage
+                                    )
+                                    SessionLogger.log(sessionHandle, "Launched **$label**")
+                                    launchTarget = result.launchedPackage
                                 } else if (packageName.isEmpty()) {
                                     showQuickLaunchBar(
                                         result.suggestedQuery.ifBlank { lastLaunchRequestText }
@@ -764,17 +806,21 @@ private suspend fun rankLaunchSuggestions(
     requestText: String,
     visibleApps: List<AppInfo>,
     allIntents: List<AppIntent>,
+    limit: Int = 5,
 ): List<AppInfo> = withContext(Dispatchers.Default) {
     if (visibleApps.isEmpty()) return@withContext emptyList()
-    if (requestText.isBlank()) return@withContext visibleApps.take(5)
+    if (requestText.isBlank()) return@withContext visibleApps.take(limit)
     val intentsByPkg = allIntents.groupBy { it.packageName }
     val appTexts = visibleApps.map { app ->
         val pastIntents = intentsByPkg[app.packageName]
             ?.joinToString(" ") { it.intentText } ?: ""
-        app.packageName to "${app.label} $pastIntents".trim()
+        val pkgWords = app.packageName.split('.')
+            .filter { it.length > 2 && it !in setOf("com", "org", "net", "android", "app") }
+            .joinToString(" ")
+        app.packageName to "${app.label} $pkgWords $pastIntents".trim()
     }
     val ranked = EmbeddingManager.rankApps(requestText, appTexts)
-    ranked.take(5).mapNotNull { (pkg, _) ->
+    ranked.take(limit).mapNotNull { (pkg, _) ->
         visibleApps.find { it.packageName == pkg }
     }
 }
@@ -822,7 +868,7 @@ private fun ChatBubble(message: ChatMessage) {
                         color = textColor
                     )
                     Text(
-                        text = "Thinking...",
+                        text = message.loadingText,
                         color = textColor,
                         fontSize = 14.sp
                     )
@@ -851,7 +897,7 @@ private fun LaunchSuggestionsBubble(
     ) {
         Box(
             modifier = Modifier
-                .widthIn(max = 320.dp)
+                .fillMaxWidth()
                 .clip(
                     RoundedCornerShape(
                         topStart = 16.dp,
@@ -870,28 +916,6 @@ private fun LaunchSuggestionsBubble(
                     fontSize = 14.sp,
                 )
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(apps, key = { it.packageName }) { app ->
-                        Column(
-                            modifier = Modifier
-                                .width(64.dp)
-                                .clickable { onAppClick(app) },
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            if (app.icon != null) {
-                                Image(
-                                    painter = rememberDrawablePainter(drawable = app.icon),
-                                    contentDescription = app.label,
-                                    modifier = Modifier.size(44.dp),
-                                )
-                            }
-                            Text(
-                                text = app.label,
-                                maxLines = 1,
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSecondaryContainer,
-                            )
-                        }
-                    }
                     item {
                         Column(
                             modifier = Modifier
@@ -914,6 +938,28 @@ private fun LaunchSuggestionsBubble(
                             }
                             Text(
                                 text = "Search",
+                                maxLines = 1,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
+                    }
+                    items(apps, key = { it.packageName }) { app ->
+                        Column(
+                            modifier = Modifier
+                                .width(64.dp)
+                                .clickable { onAppClick(app) },
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            if (app.icon != null) {
+                                Image(
+                                    painter = rememberDrawablePainter(drawable = app.icon),
+                                    contentDescription = app.label,
+                                    modifier = Modifier.size(44.dp),
+                                )
+                            }
+                            Text(
+                                text = app.label,
                                 maxLines = 1,
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,

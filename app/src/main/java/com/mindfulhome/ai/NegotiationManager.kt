@@ -190,7 +190,10 @@ class NegotiationManager(
      * Sets up the general chat conversation. Does NOT produce a response —
      * the greeting is hardcoded in the UI so it appears instantly.
      */
-    suspend fun startGeneralChat(appContext: Context): Unit = withContext(Dispatchers.IO) {
+    suspend fun startGeneralChat(
+        appContext: Context,
+        installedApps: List<Pair<String, String>> = emptyList(), // label to packageName
+    ): Unit = withContext(Dispatchers.IO) {
         currentAppPackage = ""
         currentType = NegotiationType.GENERAL
         exchangeCount = 0
@@ -230,7 +233,11 @@ class NegotiationManager(
             .takeIf { it.isNotEmpty() }
             ?.let { notes -> "App notes:\n${notes.joinToString("\n")}" }
 
-        val systemPrompt = PromptTemplates.generalChatSystemPrompt(hiddenAppsBriefing, notesBriefing)
+        val installedAppsBriefing = installedApps
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("\n") { (label, pkg) -> "- $label ($pkg)" }
+            ?.let { "Installed apps available to launch:\n$it" }
+        val systemPrompt = PromptTemplates.generalChatSystemPrompt(hiddenAppsBriefing, notesBriefing, installedAppsBriefing)
 
         if (backendAuth != null && backendAuth.hasToken) {
             usingBackend = true
