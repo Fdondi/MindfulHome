@@ -39,5 +39,7 @@ backend/
 .claude/
 CLAUDE.md
 
+open-worktree.bat
+
 .env*
 *.env
