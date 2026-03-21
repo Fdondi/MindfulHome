@@ -382,12 +382,8 @@ class MainActivity : ComponentActivity() {
                             onOpenKarma = { navCtrl.navigate("karma") },
                             onOpenSettings = { navCtrl.navigate("settings") },
                             onAppGranted = {
-                                if (shouldShowAssistantAfterUnlock()) {
-                                    navCtrl.navigate("assistant") {
-                                        popUpTo("assistant") { inclusive = true }
-                                    }
-                                } else {
-                                    navCtrl.popBackStack()
+                                navCtrl.navigate("home") {
+                                    popUpTo("root") { inclusive = true }
                                 }
                             },
                             onDismiss = {
@@ -536,7 +532,7 @@ class MainActivity : ComponentActivity() {
             wentToBackground = false
 
             val awayMs = System.currentTimeMillis() - backgroundTimestampMs
-            val timerWasRunning = TimerService.timerState.value !is TimerState.Idle
+            val timerWasRunning = TimerService.timerState.value is TimerState.Counting
             val quickReturnMs =
                 SettingsManager.getQuickReturnMinutes(this) * 60_000L
             Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
@@ -552,7 +548,7 @@ class MainActivity : ComponentActivity() {
                 }
             } else if (awayMs < quickReturnMs && timerWasRunning) {
                 shouldShowTimer = false
-                val destination = postTimerTargetRoute()
+                val destination = "home"
                 SessionLogger.log(
                     ensureSessionHandle(),
                     "Quick return (${awayMs / 1000}s) — back to $destination"

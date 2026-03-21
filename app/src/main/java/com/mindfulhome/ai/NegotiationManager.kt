@@ -58,6 +58,11 @@ class NegotiationManager(
     private var gatekeeperMinRounds = 0
     private var gatekeeperMaxRounds = 0
 
+    // Rate limiter: hard cap of 10 messages per 60 seconds
+    private val replyTimestamps = ArrayDeque<Long>()
+    private val rateLimitMessages = 10
+    private val rateLimitWindowMs = 60_000L
+
     // Backend state: stateless API needs full history on each call
     private var usingBackend = false
     private val backendHistory = mutableListOf<BackendClient.BackendContent>()
@@ -269,6 +274,20 @@ class NegotiationManager(
     // ── Reply (multi-turn) ───────────────────────────────────────────
 
     suspend fun reply(userMessage: String): NegotiationResult = withContext(Dispatchers.IO) {
+        // ── Rate limit ─────────────────────────────────────────────
+        val now = System.currentTimeMillis()
+        while (replyTimestamps.isNotEmpty() && now - replyTimestamps.first() > rateLimitWindowMs) {
+            replyTimestamps.removeFirst()
+        }
+        if (replyTimestamps.size >= rateLimitMessages) {
+            val waitSec = (rateLimitWindowMs - (now - replyTimestamps.first())) / 1000 + 1
+            Log.w(TAG, "Rate limit hit: $rateLimitMessages messages in ${rateLimitWindowMs / 1000}s window")
+            return@withContext NegotiationResult(
+                responseText = "Too many messages — please wait ${waitSec}s before trying again.",
+            )
+        }
+        replyTimestamps.addLast(now)
+
         // ── Backend path ─────────────────────────────────────────────
         if (usingBackend && backendAuth != null) {
             try {
