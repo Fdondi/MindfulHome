@@ -89,6 +89,20 @@ object BackendToolDeclarations {
                     })
                     put("required", buildJsonArray { add(JsonPrimitive("query")) })
                 }
+            ),
+            function(
+                name = "presentSuggestions",
+                description = "Show the ranked app options to the user instead of launching immediately.",
+                parameters = buildJsonObject {
+                    put("type", "OBJECT")
+                    put("properties", buildJsonObject {
+                        put("query", buildJsonObject {
+                            put("type", "STRING")
+                            put("description", "Optional label for the suggestion set being presented")
+                        })
+                    })
+                    put("required", buildJsonArray { add(JsonPrimitive("query")) })
+                }
             )
         )
     )

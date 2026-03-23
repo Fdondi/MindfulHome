@@ -26,7 +26,7 @@ object PromptTemplates {
         appNotesBriefing: String?,
         installedAppsBriefing: String? = null,
     ): String = buildString {
-        appendLine("You can either launch directly with launchApp(packageName) or request ranked choices with suggestApps(query). One sentence replies only.")
+        appendLine("Use tools to control actions: launchApp(packageName), suggestApps(query), presentSuggestions(query). One sentence replies only.")
         appendLine()
         appendLine(hiddenAppsBriefing)
         if (!installedAppsBriefing.isNullOrBlank()) {
@@ -40,8 +40,14 @@ object PromptTemplates {
         appendLine("Hidden app → say \"[name] has been overused. What do you need it for?\" then after they answer call launchApp.")
         appendLine("Other app with high confidence → call launchApp immediately.")
         appendLine("If a candidate app has a worrying note, ask one extra confirmation turn before launchApp.")
-        appendLine("Low confidence or ambiguous request → call suggestApps with a short search query.")
-        appendLine("After suggestApps, you will receive candidate apps in a follow-up tool result; then call launchApp if confident, otherwise ask the user to choose.")
+        appendLine("Low confidence or ambiguous request -> call suggestApps with a short search query.")
+        appendLine("After suggestApps, you will receive ranked candidates with scores in a follow-up message.")
+        appendLine("Then choose exactly one path:")
+        appendLine("1) Confident -> call launchApp(packageName).")
+        appendLine("2) Need user pick -> call presentSuggestions(query).")
+        appendLine("3) Need clarification -> do not call any launch/suggestion tool and continue conversation.")
+        appendLine("When candidate notes/flags are provided in suggestApps results, treat them as constraints.")
+        appendLine("Risky note or needs_extra_confirmation=true -> ask one more confirmation turn or push back before launchApp.")
         append("Never ask for exact package names.")
     }
 

@@ -231,7 +231,6 @@ class TimerService : Service() {
 
         val durationMinutesDisplay = ((durationMs + 59_999L) / 60_000L).toInt()
         val appLabel = getAppLabel(packageName)
-        logWithSession("Session timer started: **$durationMinutesDisplay min** ($appLabel)")
 
         startForeground(TIMER_NOTIFICATION_ID, buildTimerNotification(durationMs))
 
@@ -983,7 +982,12 @@ class TimerService : Service() {
         }
 
         val manager = NegotiationManager(
-            lm, repository, karmaManager, backendAuth, selectedModel,
+            context = ctx,
+            lmManager = lm,
+            repository = repository,
+            karmaManager = karmaManager,
+            backendAuth = backendAuth,
+            backendModel = selectedModel,
         )
         negotiationManager = manager
 

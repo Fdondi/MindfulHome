@@ -88,10 +88,13 @@ class GeneralChatTools : ToolSet {
         private set
     var suggestedQuery: String = ""
         private set
+    var showSuggestions: Boolean = false
+        private set
 
     fun reset() {
         launchedPackage = ""
         suggestedQuery = ""
+        showSuggestions = false
     }
 
     @Tool(description = "Launch an app on the user's phone. Use the exact package name from the hidden apps briefing, or a well-known Android package name.")
@@ -107,6 +110,16 @@ class GeneralChatTools : ToolSet {
         @ToolParam(description = "Search query to rank suggested apps, e.g. 'music', 'maps', 'work chat'") query: String
     ): Map<String, Any> {
         suggestedQuery = query.trim()
+        showSuggestions = false
         return mapOf("status" to "suggesting", "query" to suggestedQuery)
+    }
+
+    @Tool(description = "Show ranked app options to the user instead of launching immediately.")
+    fun presentSuggestions(
+        @ToolParam(description = "Optional query label for the ranked options being presented") query: String
+    ): Map<String, Any> {
+        suggestedQuery = query.trim()
+        showSuggestions = true
+        return mapOf("status" to "presenting", "query" to suggestedQuery)
     }
 }

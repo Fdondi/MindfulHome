@@ -374,6 +374,41 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            var developerLogsEnabled by remember {
+                mutableStateOf(SettingsManager.isDeveloperLogsEnabled(context))
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Developer Logs",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Medium,
+                            )
+                            Text(
+                                text = "When enabled, chat logs include tool calls, parameters, responses, and fallback/override reasons.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
+                        Switch(
+                            checked = developerLogsEnabled,
+                            onCheckedChange = { enabled ->
+                                developerLogsEnabled = enabled
+                                SettingsManager.setDeveloperLogsEnabled(context, enabled)
+                            },
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             var quickReturnMinutes by remember {
                 mutableFloatStateOf(
                     SettingsManager.getQuickReturnMinutes(context).toFloat()

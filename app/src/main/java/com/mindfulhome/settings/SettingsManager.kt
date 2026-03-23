@@ -108,6 +108,7 @@ object SettingsManager {
     private const val SUPPRESS_USAGE_ACCESS_PROMPT_KEY = "suppress_usage_access_prompt"
     private const val SUPPRESS_OVERLAY_PROMPT_KEY = "suppress_overlay_prompt"
     private const val NUDGE_BANNER_FALLBACK_ARMED_KEY = "nudge_banner_fallback_armed"
+    private const val DEVELOPER_LOGS_ENABLED_KEY = "developer_logs_enabled"
 
     /** Available Vertex AI models the user can pick from. */
     data class ModelOption(val id: String, val label: String, val description: String)
@@ -165,6 +166,15 @@ object SettingsManager {
     fun setNudgeBannerFallbackArmed(context: Context, armed: Boolean) {
         prefs(context).edit {
             putBoolean(NUDGE_BANNER_FALLBACK_ARMED_KEY, armed)
+        }
+    }
+
+    fun isDeveloperLogsEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(DEVELOPER_LOGS_ENABLED_KEY, false)
+
+    fun setDeveloperLogsEnabled(context: Context, enabled: Boolean) {
+        prefs(context).edit {
+            putBoolean(DEVELOPER_LOGS_ENABLED_KEY, enabled)
         }
     }
 

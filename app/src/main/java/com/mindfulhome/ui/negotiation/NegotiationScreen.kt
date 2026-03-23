@@ -142,6 +142,7 @@ fun NegotiationScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
     val hiddenApps by repository.hiddenApps().collectAsState(initial = emptyList())
+    val allKarma by repository.allKarma().collectAsState(initial = emptyList())
     val allIntents by repository.allIntents().collectAsState(initial = emptyList())
 
     val appLabel = remember {
@@ -168,6 +169,9 @@ fun NegotiationScreen(
     var lastLaunchRequestText by remember { mutableStateOf(unlockReason) }
     var conversationNonce by remember { mutableStateOf(0) }
     val hiddenPackages = remember(hiddenApps) { hiddenApps.map { it.packageName }.toSet() }
+    val notesByPackage = remember(allKarma) {
+        allKarma.associate { karma -> karma.packageName to karma.appNote?.trim().orEmpty() }
+    }
     val visibleApps = remember(allApps, hiddenPackages) {
         allApps.filter { it.packageName !in hiddenPackages }
     }
@@ -209,13 +213,35 @@ fun NegotiationScreen(
     var negotiationManager by remember {
         mutableStateOf(
             NegotiationManager(
-                lmManager,
-                repository,
-                karmaManager,
-                if (sessionUseBackend) backendAuth else null,
-                sessionSelectedModel,
+                context = context,
+                lmManager = lmManager,
+                repository = repository,
+                karmaManager = karmaManager,
+                backendAuth = if (sessionUseBackend) backendAuth else null,
+                backendModel = sessionSelectedModel,
             )
         )
+    }
+    val developerLogsEnabled = SettingsManager.isDeveloperLogsEnabled(context)
+
+    fun logDevBoundary(message: String) {
+        if (!developerLogsEnabled) return
+        SessionLogger.log(sessionHandle, "[DEV][boundary] $message")
+    }
+
+    fun logDevDecision(message: String) {
+        if (!developerLogsEnabled) return
+        SessionLogger.log(sessionHandle, "[DEV][decision] $message")
+    }
+
+    fun summarizeResult(result: NegotiationResult): String {
+        val parts = mutableListOf<String>()
+        if (result.accessGranted) parts.add("accessGranted=true")
+        if (result.extensionMinutes > 0) parts.add("extensionMinutes=${result.extensionMinutes}")
+        if (result.launchedPackage.isNotEmpty()) parts.add("launchedPackage=${result.launchedPackage}")
+        if (result.suggestedQuery.isNotEmpty()) parts.add("suggestedQuery=${result.suggestedQuery}")
+        if (result.showSuggestions) parts.add("showSuggestions=true")
+        return "text=\"${result.responseText.take(50)}\", actions=[${parts.joinToString(", ")}]"
     }
 
     fun addMessage(text: String, isFromUser: Boolean) {
@@ -225,42 +251,45 @@ fun NegotiationScreen(
     }
 
     suspend fun showQuickLaunchBar(queryText: String) {
+        val effectiveQuery = queryText.ifBlank { lastLaunchRequestText }
+        SessionLogger.log(
+            sessionHandle,
+            "App search invoked with query: \"$effectiveQuery\"",
+        )
         val apps = if (visibleApps.isEmpty()) {
-            Log.d("NegotiationScreen", "App list not ready — waiting before showing suggestions for '$queryText'")
-            SessionLogger.log(sessionHandle, "Loading app list...")
+            logDevDecision("launch_suggestions deferred: visibleApps empty; waiting for installed apps")
             isLoadingApps = true
             val loaded = snapshotFlow { allApps }.first { it.isNotEmpty() }
             isLoadingApps = false
-            Log.d("NegotiationScreen", "App list ready (${loaded.size} apps) — showing suggestions for '$queryText'")
-            SessionLogger.log(sessionHandle, "App list ready — showing suggestions")
+            logDevDecision("launch_suggestions candidates prepared: loadedApps=${loaded.size}, hiddenFiltered=${loaded.count { it.packageName !in hiddenPackages }}")
             loaded.filter { it.packageName !in hiddenPackages }
         } else {
             visibleApps
         }
-        // If the query unambiguously names an app, launch it directly.
-        val normalizedQuery = normalizeLookup(queryText)
-        if (normalizedQuery.isNotBlank()) {
-            val exact = apps.firstOrNull { app ->
-                normalizeLookup(app.label) == normalizedQuery ||
-                    normalizeLookup(app.packageName.substringAfterLast('.')) == normalizedQuery
-            }
-            if (exact != null) {
-                Log.d("NegotiationScreen", "Exact match '${exact.label}' for query '$queryText' — launching directly")
-                SessionLogger.log(sessionHandle, "Exact match: launching **${exact.label}** directly")
-                launchTarget = exact.packageName
-                return
-            }
-        }
         val fallbackSuggestions = apps.take(5)
         suggestedLaunchApps = fallbackSuggestions
         showLaunchSuggestions = true
-        val ranked = rankLaunchSuggestions(
-            requestText = queryText.ifBlank { lastLaunchRequestText },
+        val rankedWithScores = rankLaunchSuggestionScores(
+            requestText = effectiveQuery,
             visibleApps = apps,
             allIntents = allIntents,
         )
+        val ranked = rankedWithScores.map { it.first }
         if (showLaunchSuggestions) {
             suggestedLaunchApps = if (ranked.isNotEmpty()) ranked else fallbackSuggestions
+            val topScore = rankedWithScores.firstOrNull()?.second
+            val secondScore = rankedWithScores.getOrNull(1)?.second
+            SessionLogger.log(
+                sessionHandle,
+                "Launch chooser shown by model tool decision for query \"$effectiveQuery\". " +
+                    "Top semantic score=${topScore ?: 0f}, second=${secondScore ?: 0f}.",
+            )
+            val rankingUsed = ranked.isNotEmpty()
+            logDevDecision(
+                "launch_strategy=chooser_ui reason=model_called_presentSuggestions " +
+                    "(rankingUsed=$rankingUsed) " +
+                    "query=${effectiveQuery.take(80)} candidates=${suggestedLaunchApps.map { it.packageName }}"
+            )
         }
     }
 
@@ -277,36 +306,76 @@ fun NegotiationScreen(
         }?.packageName
     }
 
-    suspend fun resolveSuggestedAppsTool(result: NegotiationResult): NegotiationResult {
-        if (result.launchedPackage.isNotEmpty()) return result
+    suspend fun resolveSuggestedAppsTool(result: NegotiationResult, depth: Int = 0): NegotiationResult {
+        if (depth >= 3) {
+            logDevDecision("tool_followup_skipped reason=max_depth_reached")
+            return result.copy(
+                responseText = "I couldn't find any matching apps. Could you be more specific?",
+                suggestedQuery = "",
+                showSuggestions = false
+            )
+        }
+        if (result.launchedPackage.isNotEmpty()) {
+            logDevDecision("tool_followup_skipped reason=shortcut_already_selected_by_chat launchedPackage=${result.launchedPackage}")
+            return result
+        }
         val suggestedQuery = result.suggestedQuery.trim()
-        if (suggestedQuery.isBlank()) return result
+        if (suggestedQuery.isBlank()) {
+            logDevDecision("tool_followup_skipped reason=no_suggested_query_from_chat")
+            return result
+        }
 
         val ranked = rankLaunchSuggestions(
             requestText = suggestedQuery,
             visibleApps = visibleApps,
             allIntents = allIntents,
         )
-        if (ranked.isEmpty()) return result
 
-        val candidates = ranked.take(5)
-        val toolResultMessage = buildString {
-            append("Tool result for suggestApps(query=\"")
-            append(suggestedQuery)
-            append("\"):\n")
-            candidates.forEachIndexed { index, app ->
-                append(index + 1)
-                append(". ")
-                append(app.label)
-                append(" (")
-                append(app.packageName)
-                append(")\n")
+        val toolResultMessage = if (ranked.isEmpty()) {
+            logDevDecision("tool_result empty for query=$suggestedQuery (depth=$depth)")
+            "Tool result for suggestApps(query=\"$suggestedQuery\"):\nNo apps matched this query. Try a different search query with suggestApps, or ask the user for clarification."
+        } else {
+            val candidates = ranked.take(5)
+            logDevBoundary("app_to_chat tool_result suggestApps query=$suggestedQuery candidates=${candidates.map { it.packageName }}")
+            buildString {
+                append("Tool result for suggestApps(query=\"")
+                append(suggestedQuery)
+                append("\"):\n")
+                candidates.forEachIndexed { index, app ->
+                    val appNote = notesByPackage[app.packageName].orEmpty()
+                    val noteFlag = if (PromptTemplates.requiresExtraConfirmation(appNote)) "true" else "false"
+                    append(index + 1)
+                    append(". ")
+                    append(app.label)
+                    append(" (")
+                    append(app.packageName)
+                    append(")")
+                    if (appNote.isNotBlank()) {
+                        append(" note=\"")
+                        append(appNote.replace("\"", "\\\""))
+                        append("\"")
+                    }
+                    append(" needs_extra_confirmation=")
+                    append(noteFlag)
+                    append('\n')
+                }
+                append("Choose exactly one next action:\n")
+                append("- launchApp(packageName) if confident.\n")
+                append("- presentSuggestions(query) to show options.\n")
+                append("- no tool call if you want to continue conversation.\n")
+                append("You MUST consider app notes and needs_extra_confirmation flags before deciding. ")
+                append("If a note indicates risk/avoidance, do not launch immediately; ask for confirmation or push back first.")
             }
-            append("If one candidate clearly matches the user's intent, call launchApp(packageName) now. ")
-            append("If still uncertain, do not call launchApp; ask the user to pick one option.")
         }
 
+        logDevBoundary("app_to_chat payload reply toolResultMessageChars=${toolResultMessage.length}")
         val followUp = negotiationManager.reply(toolResultMessage)
+        logDevBoundary("chat_to_app payload reply_result ${summarizeResult(followUp)}")
+        
+        if (followUp.suggestedQuery.isNotBlank() && !followUp.showSuggestions) {
+            return resolveSuggestedAppsTool(followUp, depth + 1)
+        }
+
         val responseText = followUp.responseText.ifBlank { result.responseText }
         val queryForUi = followUp.suggestedQuery.ifBlank { suggestedQuery }
         return followUp.copy(
@@ -405,10 +474,12 @@ fun NegotiationScreen(
                 focusModeActive = focusModeActive,
                 usageConfrontation = usageConfrontation,
             )
+            logDevBoundary("chat_to_app gatekeeper_start_result ${summarizeResult(result)}")
             addMessage(result.responseText, isFromUser = false)
             isWaitingForAi = false
             if (result.accessGranted) {
                 accessGranted = true
+                logDevDecision("gatekeeper_result access_granted_immediately=true")
             }
         } else {
             // General chat
@@ -430,6 +501,7 @@ fun NegotiationScreen(
                 negotiationManager.startGeneralChat(context, appsForPrompt)
                 isWaitingForAi = true
                 val firstResult = negotiationManager.reply(unlockReason)
+                logDevBoundary("chat_to_app payload reply_result ${summarizeResult(firstResult)}")
                 val result = resolveSuggestedAppsTool(firstResult)
                 addMessage(result.responseText, isFromUser = false)
                 isWaitingForAi = false
@@ -442,10 +514,14 @@ fun NegotiationScreen(
                     )
                     SessionLogger.log(sessionHandle, "Launched **$label**")
                     launchTarget = result.launchedPackage
-                } else {
+                    logDevDecision("launch_strategy=direct_from_chat_tool target=${result.launchedPackage}")
+                } else if (result.showSuggestions) {
+                    logDevDecision("launch_strategy=chooser_ui_from_chat reason=model_called_presentSuggestions")
                     showQuickLaunchBar(
                         result.suggestedQuery.ifBlank { lastLaunchRequestText }
                     )
+                } else {
+                    logDevDecision("launch_strategy=continue_chat_from_model reason=no_action_tool_called")
                 }
             } else {
                 addMessage(PromptTemplates.GENERAL_CHAT_GREETING, isFromUser = false)
@@ -678,6 +754,7 @@ fun NegotiationScreen(
                             scope.launch {
                                 isWaitingForAi = true
                                 val firstResult = negotiationManager.reply(input)
+                                logDevBoundary("chat_to_app payload reply_result ${summarizeResult(firstResult)}")
                                 val result = resolveSuggestedAppsTool(firstResult)
                                 addMessage(result.responseText, isFromUser = false)
                                 isWaitingForAi = false
@@ -688,6 +765,7 @@ fun NegotiationScreen(
                                 if (result.accessGranted) {
                                     SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
                                     accessGranted = true
+                                    logDevDecision("gatekeeper_result access_granted=true")
                                 }
                                 if (result.launchedPackage.isNotEmpty()) {
                                     val label = PackageManagerHelper.getAppLabel(
@@ -695,10 +773,14 @@ fun NegotiationScreen(
                                     )
                                     SessionLogger.log(sessionHandle, "Launched **$label**")
                                     launchTarget = result.launchedPackage
-                                } else if (packageName.isEmpty()) {
+                                    logDevDecision("launch_strategy=direct_from_chat_tool target=${result.launchedPackage}")
+                                } else if (packageName.isEmpty() && result.showSuggestions) {
+                                    logDevDecision("launch_strategy=chooser_ui_from_chat reason=model_called_presentSuggestions")
                                     showQuickLaunchBar(
                                         result.suggestedQuery.ifBlank { lastLaunchRequestText }
                                     )
+                                } else if (packageName.isEmpty()) {
+                                    logDevDecision("launch_strategy=continue_chat_from_model reason=no_action_tool_called")
                                 }
                             }
                         }
@@ -801,6 +883,7 @@ fun NegotiationScreen(
                             "On-device (LiteRT-LM)"
                         }
                         negotiationManager = NegotiationManager(
+                            context = context,
                             lmManager = lmManager,
                             repository = repository,
                             karmaManager = karmaManager,
@@ -827,23 +910,49 @@ private suspend fun rankLaunchSuggestions(
     visibleApps: List<AppInfo>,
     allIntents: List<AppIntent>,
     limit: Int = 5,
-): List<AppInfo> = withContext(Dispatchers.Default) {
+): List<AppInfo> = rankLaunchSuggestionScores(
+    requestText = requestText,
+    visibleApps = visibleApps,
+    allIntents = allIntents,
+    limit = limit,
+).map { it.first }
+
+private suspend fun rankLaunchSuggestionScores(
+    requestText: String,
+    visibleApps: List<AppInfo>,
+    allIntents: List<AppIntent>,
+    limit: Int = 5,
+): List<Pair<AppInfo, Float>> = withContext(Dispatchers.Default) {
     if (visibleApps.isEmpty()) return@withContext emptyList()
-    if (requestText.isBlank()) return@withContext visibleApps.take(limit)
+    if (requestText.isBlank()) {
+        return@withContext visibleApps.take(limit).map { it to 0f }
+    }
     val intentsByPkg = allIntents.groupBy { it.packageName }
     val appTexts = visibleApps.map { app ->
         val pastIntents = intentsByPkg[app.packageName]
             ?.joinToString(" ") { it.intentText } ?: ""
+        val aliases = launchAliasesForApp(app)
         val pkgWords = app.packageName.split('.')
             .filter { it.length > 2 && it !in setOf("com", "org", "net", "android", "app") }
             .joinToString(" ")
-        app.packageName to "${app.label} $pkgWords $pastIntents".trim()
+        app.packageName to "${app.label} $aliases $pkgWords $pastIntents".trim()
     }
     val ranked = EmbeddingManager.rankApps(requestText, appTexts)
-    ranked.take(limit).mapNotNull { (pkg, _) ->
-        visibleApps.find { it.packageName == pkg }
+    ranked.take(limit).mapNotNull { (pkg, score) ->
+        visibleApps.find { it.packageName == pkg }?.let { it to score }
     }
 }
+
+private fun launchAliasesForApp(app: AppInfo): String {
+    val pkg = app.packageName.lowercase()
+    val label = app.label.lowercase()
+    val aliases = mutableListOf<String>()
+    if (pkg == "com.twitter.android" || label == "x") {
+        aliases += "x twitter everything app the everything app"
+    }
+    return aliases.joinToString(" ")
+}
+
 
 @Composable
 private fun ChatBubble(message: ChatMessage) {

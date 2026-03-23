@@ -8,7 +8,9 @@ import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.ai.backend.BackendHttpException
 import com.mindfulhome.ai.backend.BackendToolDeclarations
 import com.mindfulhome.data.AppRepository
+import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
+import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.util.PackageManagerHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -35,6 +37,7 @@ data class NegotiationResult(
     val extensionMinutes: Int = 0,
     val launchedPackage: String = "",
     val suggestedQuery: String = "",
+    val showSuggestions: Boolean = false,
 )
 
 data class GatekeeperUsageConfrontation(
@@ -45,6 +48,7 @@ data class GatekeeperUsageConfrontation(
 )
 
 class NegotiationManager(
+    private val context: Context,
     private val lmManager: LiteRtLmManager,
     private val repository: AppRepository,
     private val karmaManager: KarmaManager,
@@ -82,6 +86,7 @@ class NegotiationManager(
         focusModeActive: Boolean,
         usageConfrontation: GatekeeperUsageConfrontation? = null,
     ): NegotiationResult = withContext(Dispatchers.IO) {
+        logDeveloper("startGatekeeperNegotiation(package=$packageName, appName=$appName, focusModeActive=$focusModeActive)")
         currentAppPackage = packageName
         currentType = NegotiationType.GATEKEEPER
         exchangeCount = 0
@@ -119,17 +124,26 @@ class NegotiationManager(
                     systemPrompt, userContext, BackendToolDeclarations.GATEKEEPER_TOOLS,
                 )
                 if (result != null) {
+                    logDeveloper("backend gatekeeper start succeeded")
                     return@withContext applyGatekeeperRoundPolicy(result)
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Backend gatekeeper failed, falling back", e)
+                logDeveloper("fallback triggered: backend gatekeeper failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})")
                 if ((e as? BackendHttpException)?.code == "model_not_found") {
+                    logDeveloper("block triggered: backend model not found ($backendModel)")
                     return@withContext NegotiationResult(
                         responseText = "Model '$backendModel' is not available. " +
                             "Please go to Settings and pick a different model.",
                     )
                 }
             }
+        } else {
+            logDeveloper(
+                "fallback reason: backend path unavailable " +
+                    "(backendAuthPresent=${backendAuth != null}, hasToken=${backendAuth?.hasToken == true}); " +
+                    "using scripted gatekeeper fallback"
+            )
         }
 
         // Fallback: hardcoded responses (on-device LLM can't do tool calling)
@@ -140,6 +154,7 @@ class NegotiationManager(
             confrontationBrief = confrontationBrief,
         )
         val grant = exchangeCount >= gatekeeperMinRounds
+        logDeveloper("fallback response used: gatekeeper scripted response (grant=$grant, exchangeCount=$exchangeCount, minRounds=$gatekeeperMinRounds)")
         applyGatekeeperRoundPolicy(
             NegotiationResult(responseText = text, accessGranted = grant)
         )
@@ -153,6 +168,7 @@ class NegotiationManager(
         overrunMinutes: Int,
         nudgeCount: Int,
     ): NegotiationResult = withContext(Dispatchers.IO) {
+        logDeveloper("startNudgeNegotiation(package=$packageName, appName=$appName, overrunMinutes=$overrunMinutes, nudgeCount=$nudgeCount)")
         currentAppPackage = packageName
         currentType = NegotiationType.NUDGE
         exchangeCount = 0
@@ -172,20 +188,32 @@ class NegotiationManager(
                 val result = startBackendConversation(
                     systemPrompt, userContext, BackendToolDeclarations.NUDGE_TOOLS,
                 )
-                if (result != null) return@withContext result
+                if (result != null) {
+                    logDeveloper("backend nudge start succeeded")
+                    return@withContext result
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Backend nudge failed, falling back", e)
+                logDeveloper("fallback triggered: backend nudge failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})")
                 if ((e as? BackendHttpException)?.code == "model_not_found") {
+                    logDeveloper("block triggered: backend model not found ($backendModel)")
                     return@withContext NegotiationResult(
                         responseText = "Model '$backendModel' is not available. " +
                             "Please go to Settings and pick a different model.",
                     )
                 }
             }
+        } else {
+            logDeveloper(
+                "fallback reason: backend path unavailable " +
+                    "(backendAuthPresent=${backendAuth != null}, hasToken=${backendAuth?.hasToken == true}); " +
+                    "using scripted nudge fallback"
+            )
         }
 
         exchangeCount++
         val text = PromptTemplates.fallbackNudgeResponse(appName, nudgeCount)
+        logDeveloper("fallback response used: nudge scripted response (exchangeCount=$exchangeCount)")
         NegotiationResult(responseText = text)
     }
 
@@ -199,6 +227,7 @@ class NegotiationManager(
         appContext: Context,
         installedApps: List<Pair<String, String>> = emptyList(), // label to packageName
     ): Unit = withContext(Dispatchers.IO) {
+        logDeveloper("startGeneralChat(installedApps=${installedApps.size})")
         currentAppPackage = ""
         currentType = NegotiationType.GENERAL
         exchangeCount = 0
@@ -248,11 +277,17 @@ class NegotiationManager(
             usingBackend = true
             backendHistory.clear()
             backendTools = BackendToolDeclarations.GENERAL_CHAT_TOOLS
+            logDeveloper("general chat backend enabled with model=$backendModel, tools=${formatTools(backendTools)}")
 
             // System prompt as first user message, greeting as first model message
             backendHistory.add(userContent(systemPrompt))
             backendHistory.add(modelContent(PromptTemplates.GENERAL_CHAT_GREETING))
             return@withContext
+        } else {
+            logDeveloper(
+                "fallback reason: general chat backend disabled " +
+                    "(backendAuthPresent=${backendAuth != null}, hasToken=${backendAuth?.hasToken == true})"
+            )
         }
 
         // On-device: set up conversation (model can chat but can't launch apps)
@@ -265,15 +300,20 @@ class NegotiationManager(
                     toolSets = listOf(tools),
                 )
                 currentConversation = conversation
+                logDeveloper("general chat on-device conversation initialized (toolSupport=limited)")
             } catch (e: Exception) {
                 Log.e(TAG, "Error setting up general chat", e)
+                logDeveloper("general chat setup failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})")
             }
+        } else {
+            logDeveloper("fallback reason: on-device model not ready; general chat may use scripted responses")
         }
     }
 
     // ── Reply (multi-turn) ───────────────────────────────────────────
 
     suspend fun reply(userMessage: String): NegotiationResult = withContext(Dispatchers.IO) {
+        logDeveloper("chat user message(type=${currentType ?: "UNKNOWN"}, text=${quote(userMessage)})")
         // ── Rate limit ─────────────────────────────────────────────
         val now = System.currentTimeMillis()
         while (replyTimestamps.isNotEmpty() && now - replyTimestamps.first() > rateLimitWindowMs) {
@@ -282,6 +322,7 @@ class NegotiationManager(
         if (replyTimestamps.size >= rateLimitMessages) {
             val waitSec = (rateLimitWindowMs - (now - replyTimestamps.first())) / 1000 + 1
             Log.w(TAG, "Rate limit hit: $rateLimitMessages messages in ${rateLimitWindowMs / 1000}s window")
+            logDeveloper("block triggered: rate limit exceeded (limit=$rateLimitMessages, windowMs=$rateLimitWindowMs, waitSec=$waitSec)")
             return@withContext NegotiationResult(
                 responseText = "Too many messages — please wait ${waitSec}s before trying again.",
             )
@@ -298,17 +339,20 @@ class NegotiationManager(
                     tools = backendTools,
                 )
                 exchangeCount++
+                logDeveloper("backend chat response received(model=$backendModel, text=${quote(response.result ?: "")}, functionCalls=${formatFunctionCalls(response.function_calls)})")
 
                 val text = response.result ?: ""
                 val result = applyLaunchRiskConfirmation(
                     parseBackendResult(text, response.function_calls)
                 )
                 backendHistory.add(modelContent(result.responseText))
+                logDeveloper("chat assistant response(type=backend, text=${quote(result.responseText)}, accessGranted=${result.accessGranted}, extensionMinutes=${result.extensionMinutes}, launchedPackage=${quote(result.launchedPackage)}, suggestedQuery=${quote(result.suggestedQuery)})")
                 return@withContext applyGatekeeperRoundPolicy(result)
             } catch (e: Exception) {
                 val httpEx = e as? BackendHttpException
                 val detail = if (httpEx != null) "HTTP ${httpEx.statusCode}: ${httpEx.message}" else e.toString()
                 Log.e(TAG, "Backend reply failed – $detail", e)
+                logDeveloper("fallback triggered: backend reply failed ($detail)")
                 // Remove the user message we added since the call failed
                 if (backendHistory.isNotEmpty() &&
                     backendHistory.last().role == "user"
@@ -317,12 +361,18 @@ class NegotiationManager(
                 }
                 // Surface model_not_found directly to the user
                 if (httpEx?.code == "model_not_found") {
+                    logDeveloper("block triggered: backend model not found ($backendModel)")
                     return@withContext NegotiationResult(
                         responseText = "Model '$backendModel' is not available. " +
                             "Please go to Settings and pick a different model.",
                     )
                 }
             }
+        } else {
+            logDeveloper(
+                "fallback reason: skipping backend reply path " +
+                    "(usingBackend=$usingBackend, backendAuthPresent=${backendAuth != null})"
+            )
         }
 
         // ── On-device path ───────────────────────────────────────────
@@ -335,6 +385,7 @@ class NegotiationManager(
 
                 val response = lmManager.sendMessage(conversation, userMessage)
                 exchangeCount++
+                logDeveloper("on-device chat response received(text=${quote(response)})")
 
                 val parsed = when (currentType) {
                     NegotiationType.GATEKEEPER -> NegotiationResult(
@@ -353,14 +404,22 @@ class NegotiationManager(
                         responseText = response,
                         launchedPackage = generalChatTools?.launchedPackage ?: "",
                         suggestedQuery = generalChatTools?.suggestedQuery ?: "",
+                        showSuggestions = generalChatTools?.showSuggestions == true,
                     )
                     null -> NegotiationResult(response)
                 }
                 val result = applyLaunchRiskConfirmation(parsed)
+                logDeveloper("chat assistant response(type=on-device, text=${quote(result.responseText)}, accessGranted=${result.accessGranted}, extensionMinutes=${result.extensionMinutes}, launchedPackage=${quote(result.launchedPackage)}, suggestedQuery=${quote(result.suggestedQuery)})")
                 return@withContext applyGatekeeperRoundPolicy(result)
             } catch (e: Exception) {
                 Log.e(TAG, "Error in on-device reply", e)
+                logDeveloper("fallback triggered: on-device reply failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})")
             }
+        } else {
+            logDeveloper(
+                "fallback reason: skipping on-device reply path " +
+                    "(conversationPresent=${conversation != null}, modelReady=${lmManager.modelReady})"
+            )
         }
 
         // ── Hardcoded fallback ───────────────────────────────────────
@@ -370,6 +429,7 @@ class NegotiationManager(
                 val appName = currentAppPackage.substringAfterLast('.')
                 val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount - 1)
                 val grant = exchangeCount >= gatekeeperMinRounds
+                logDeveloper("fallback response used: gatekeeper scripted reply in ongoing chat (grant=$grant, exchangeCount=$exchangeCount, minRounds=$gatekeeperMinRounds)")
                 applyGatekeeperRoundPolicy(
                     NegotiationResult(responseText = text, accessGranted = grant)
                 )
@@ -377,12 +437,15 @@ class NegotiationManager(
             NegotiationType.NUDGE -> {
                 val appName = currentAppPackage.substringAfterLast('.')
                 val text = PromptTemplates.fallbackNudgeResponse(appName, exchangeCount - 1)
+                logDeveloper("fallback response used: nudge scripted reply in ongoing chat (exchangeCount=$exchangeCount)")
                 NegotiationResult(responseText = text)
             }
             NegotiationType.GENERAL, null -> NegotiationResult(
                 "I'm running without an AI backend right now, so I can't launch apps from here. " +
                     "Tell me which app you want and I'll show quick launch suggestions.",
-            )
+            ).also {
+                logDeveloper("fallback response used: general/no-context scripted reply (reason=no backend/on-device conversation)")
+            }
         }
     }
 
@@ -427,6 +490,7 @@ class NegotiationManager(
         backendTools = tools
 
         backendHistory.add(userContent("$systemPrompt\n\n$userContext"))
+        logDeveloper("backend request started(model=$backendModel, tools=${formatTools(tools)}, systemPrompt=${quote(systemPrompt)}, userContext=${quote(userContext)})")
 
         val response = auth.generateWithAutoRefresh(
             model = backendModel,
@@ -434,6 +498,7 @@ class NegotiationManager(
             tools = tools,
         )
         exchangeCount++
+        logDeveloper("backend response for start conversation(model=$backendModel, text=${quote(response.result ?: "")}, functionCalls=${formatFunctionCalls(response.function_calls)})")
 
         val text = response.result ?: ""
         backendHistory.add(modelContent(text))
@@ -449,6 +514,7 @@ class NegotiationManager(
         functionCalls: List<BackendClient.FunctionCall>,
     ): NegotiationResult {
         for (fc in functionCalls) {
+            logDeveloper("tool call received(name=${fc.name}, args=${fc.args})")
             when (fc.name) {
                 "grantAccess" -> return NegotiationResult(
                     responseText = text.ifBlank { "Opening the app for you." },
@@ -456,6 +522,7 @@ class NegotiationManager(
                 )
                 "grantExtension" -> {
                     val minutes = fc.args["minutes"]?.jsonPrimitive?.int ?: 10
+                    logDeveloper("tool params parsed: grantExtension(minutes=$minutes)")
                     return NegotiationResult(
                         responseText = text.ifBlank { "Extending your time by $minutes minutes." },
                         extensionMinutes = minutes,
@@ -464,6 +531,7 @@ class NegotiationManager(
                 }
                 "launchApp" -> {
                     val pkg = (fc.args["packageName"] as? JsonPrimitive)?.content ?: ""
+                    logDeveloper("tool params parsed: launchApp(packageName=${quote(pkg)})")
                     return NegotiationResult(
                         responseText = text.ifBlank { "Launching the app." },
                         launchedPackage = pkg,
@@ -471,14 +539,26 @@ class NegotiationManager(
                 }
                 "suggestApps" -> {
                     val query = (fc.args["query"] as? JsonPrimitive)?.content.orEmpty().trim()
+                    logDeveloper("tool params parsed: suggestApps(query=${quote(query)})")
                     return NegotiationResult(
                         responseText = text.ifBlank { "Here are the closest app options." },
                         suggestedQuery = query,
                     )
                 }
+                "presentSuggestions" -> {
+                    val query = (fc.args["query"] as? JsonPrimitive)?.content.orEmpty().trim()
+                    logDeveloper("tool params parsed: presentSuggestions(query=${quote(query)})")
+                    return NegotiationResult(
+                        responseText = text.ifBlank { "Pick one of these options." },
+                        suggestedQuery = query,
+                        showSuggestions = true,
+                    )
+                }
                 "queryRecentUsageSessions" -> {
                     val limit = fc.args["limit"]?.jsonPrimitive?.int ?: 5
+                    logDeveloper("tool params parsed: queryRecentUsageSessions(limit=$limit)")
                     val summary = buildUsageHistorySummary(currentAppPackage, limit)
+                    logDeveloper("tool response generated: queryRecentUsageSessions(summary=${quote(summary)})")
                     return NegotiationResult(
                         responseText = if (text.isBlank()) summary else "$text\n\n$summary",
                     )
@@ -578,6 +658,7 @@ class NegotiationManager(
         if (!shouldDelayLaunch) return result
 
         riskConfirmationAskedForPackages.add(targetPackage)
+        logDeveloper("override triggered: launch blocked pending risk confirmation(package=${quote(targetPackage)}, note=${quote(note.orEmpty())})")
         return result.copy(
             responseText = PromptTemplates.riskConfirmationPrompt(note),
             launchedPackage = "",
@@ -591,6 +672,7 @@ class NegotiationManager(
         val maxRounds = gatekeeperMaxRounds.coerceAtLeast(minRounds)
         if (exchangeCount < minRounds) {
             if (!result.accessGranted) return result
+            logDeveloper("override triggered: gatekeeper grant blocked until min rounds(exchangeCount=$exchangeCount, minRounds=$minRounds)")
             return result.copy(
                 responseText = result.responseText +
                     "\n\nOne more quick reflection before I open it.",
@@ -599,6 +681,7 @@ class NegotiationManager(
         }
 
         if (exchangeCount >= maxRounds && !result.accessGranted) {
+            logDeveloper("override triggered: gatekeeper auto-grant at max rounds(exchangeCount=$exchangeCount, maxRounds=$maxRounds)")
             return result.copy(
                 responseText = result.responseText +
                     "\n\nAlright, you've stayed with this. Go ahead.",
@@ -611,5 +694,41 @@ class NegotiationManager(
 
     companion object {
         private const val TAG = "NegotiationManager"
+    }
+
+    private fun logDeveloper(event: String) {
+        if (!SettingsManager.isDeveloperLogsEnabled(context)) return
+        val entry = "[DEV][chat] $event"
+        Log.d(TAG, entry)
+        SessionLogger.log(entry)
+    }
+
+    private fun quote(value: String): String =
+        "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+    private fun formatTools(tools: List<Map<String, JsonElement>>?): String {
+        if (tools.isNullOrEmpty()) return "[]"
+        val names = mutableListOf<String>()
+        try {
+            tools.forEach { tool ->
+                val decls = tool["functionDeclarations"] as? kotlinx.serialization.json.JsonArray
+                decls?.forEach { decl ->
+                    val name = (decl as? kotlinx.serialization.json.JsonObject)?.get("name")?.let { 
+                        (it as? kotlinx.serialization.json.JsonPrimitive)?.content 
+                    }
+                    if (name != null) names.add(name)
+                }
+            }
+        } catch (e: Exception) {
+            return "[error parsing tools]"
+        }
+        return "[${names.joinToString(", ")}]"
+    }
+
+    private fun formatFunctionCalls(functionCalls: List<BackendClient.FunctionCall>): String {
+        if (functionCalls.isEmpty()) return "[]"
+        return functionCalls.joinToString(prefix = "[", postfix = "]") { call ->
+            "{name=${call.name}, args=${call.args}}"
+        }
     }
 }
