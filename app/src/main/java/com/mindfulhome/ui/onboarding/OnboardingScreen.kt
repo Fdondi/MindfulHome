@@ -43,13 +43,28 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.settings.SettingsManager
+import kotlinx.coroutines.delay
+
+private const val PREF_NAME = "mindfulhome"
+private const val ONBOARDING_STEP_KEY = "onboarding_step"
 
 @Composable
 fun OnboardingScreen(
     onComplete: () -> Unit
 ) {
     val context = LocalContext.current
-    var step by remember { mutableIntStateOf(0) }
+    val prefs = remember(context) {
+        context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
+    }
+    var step by remember {
+        mutableIntStateOf(prefs.getInt(ONBOARDING_STEP_KEY, 0).coerceIn(0, 6))
+    }
+
+    fun goToStep(nextStep: Int) {
+        val clamped = nextStep.coerceIn(0, 6)
+        step = clamped
+        prefs.edit().putInt(ONBOARDING_STEP_KEY, clamped).apply()
+    }
 
     Column(
         modifier = Modifier
@@ -60,17 +75,17 @@ fun OnboardingScreen(
         verticalArrangement = Arrangement.Center
     ) {
         when (step) {
-            0 -> WelcomeStep(onNext = { step = 1 })
-            1 -> PhilosophyStep(onNext = { step = 2 })
-            2 -> DefaultHomeStep(onNext = { step = 3 })
-            3 -> NotificationPermissionStep(onNext = { step = 4 })
+            0 -> WelcomeStep(onNext = { goToStep(1) })
+            1 -> PhilosophyStep(onNext = { goToStep(2) })
+            2 -> DefaultHomeStep(onNext = { goToStep(3) })
+            3 -> NotificationPermissionStep(onNext = { goToStep(4) })
             4 -> UsageAccessStep(
                 onGrantUsageAccess = {
                     context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
                 },
-                onNext = { step = 5 }
+                onNext = { goToStep(5) }
             )
-            5 -> OverlayPermissionStep(onNext = { step = 6 })
+            5 -> OverlayPermissionStep(onNext = { goToStep(6) })
             6 -> ModelStep(onNext = { onComplete() })
         }
     }
@@ -157,6 +172,7 @@ private fun PhilosophyStep(onNext: () -> Unit) {
 private fun DefaultHomeStep(onNext: () -> Unit) {
     val context = LocalContext.current
     var isDefault by remember { mutableStateOf(isDefaultHome(context)) }
+    var showGrantedFallbackButton by remember { mutableStateOf(false) }
 
     // Launcher for the RoleManager request result
     val roleRequestLauncher = rememberLauncherForActivityResult(
@@ -168,6 +184,17 @@ private fun DefaultHomeStep(onNext: () -> Unit) {
     // Re-check when returning from the chooser / settings
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         isDefault = isDefaultHome(context)
+    }
+    LaunchedEffect(isDefault) {
+        if (isDefault) {
+            showGrantedFallbackButton = false
+            delay(300)
+            onNext()
+            delay(700)
+            showGrantedFallbackButton = true
+        } else {
+            showGrantedFallbackButton = false
+        }
     }
 
     Text(
@@ -213,17 +240,20 @@ private fun DefaultHomeStep(onNext: () -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    OutlinedButton(
-        onClick = onNext,
-        modifier = Modifier.fillMaxWidth(0.6f)
-    ) {
-        Text(if (isDefault) "Continue" else "Skip for now")
+    if (!isDefault || showGrantedFallbackButton) {
+        OutlinedButton(
+            onClick = onNext,
+            modifier = Modifier.fillMaxWidth(0.6f)
+        ) {
+            Text(if (isDefault) "Continue (if stuck)" else "Skip for now")
+        }
     }
 }
 
 @Composable
 private fun NotificationPermissionStep(onNext: () -> Unit) {
     val context = LocalContext.current
+    var showGrantedFallbackButton by remember { mutableStateOf(false) }
 
     // On Android < 13, notification permission is granted at install -- skip this step
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
@@ -250,6 +280,17 @@ private fun NotificationPermissionStep(onNext: () -> Unit) {
         hasPermission = ContextCompat.checkSelfPermission(
             context, Manifest.permission.POST_NOTIFICATIONS
         ) == PackageManager.PERMISSION_GRANTED
+    }
+    LaunchedEffect(hasPermission) {
+        if (hasPermission) {
+            showGrantedFallbackButton = false
+            delay(300)
+            onNext()
+            delay(700)
+            showGrantedFallbackButton = true
+        } else {
+            showGrantedFallbackButton = false
+        }
     }
 
     Text(
@@ -288,18 +329,20 @@ private fun NotificationPermissionStep(onNext: () -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    OutlinedButton(
-        onClick = {
-            SettingsManager.setPermissionPromptSuppressed(
-                context,
-                SettingsManager.PermissionPrompt.NOTIFICATIONS,
-                !hasPermission,
-            )
-            onNext()
-        },
-        modifier = Modifier.fillMaxWidth(0.6f)
-    ) {
-        Text(if (hasPermission) "Continue" else "Skip for now")
+    if (!hasPermission || showGrantedFallbackButton) {
+        OutlinedButton(
+            onClick = {
+                SettingsManager.setPermissionPromptSuppressed(
+                    context,
+                    SettingsManager.PermissionPrompt.NOTIFICATIONS,
+                    !hasPermission,
+                )
+                onNext()
+            },
+            modifier = Modifier.fillMaxWidth(0.6f)
+        ) {
+            Text(if (hasPermission) "Continue (if stuck)" else "Skip for now")
+        }
     }
 }
 
@@ -310,10 +353,22 @@ private fun UsageAccessStep(
 ) {
     val context = LocalContext.current
     var hasPermission by remember { mutableStateOf(UsageTracker.hasUsageStatsPermission(context)) }
+    var showGrantedFallbackButton by remember { mutableStateOf(false) }
 
     // Re-check every time the user comes back from Settings
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasPermission = UsageTracker.hasUsageStatsPermission(context)
+    }
+    LaunchedEffect(hasPermission) {
+        if (hasPermission) {
+            showGrantedFallbackButton = false
+            delay(300)
+            onNext()
+            delay(700)
+            showGrantedFallbackButton = true
+        } else {
+            showGrantedFallbackButton = false
+        }
     }
 
     Text(
@@ -350,18 +405,20 @@ private fun UsageAccessStep(
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    OutlinedButton(
-        onClick = {
-            SettingsManager.setPermissionPromptSuppressed(
-                context,
-                SettingsManager.PermissionPrompt.USAGE_ACCESS,
-                !hasPermission,
-            )
-            onNext()
-        },
-        modifier = Modifier.fillMaxWidth(0.6f)
-    ) {
-        Text(if (hasPermission) "Continue" else "Skip for now")
+    if (!hasPermission || showGrantedFallbackButton) {
+        OutlinedButton(
+            onClick = {
+                SettingsManager.setPermissionPromptSuppressed(
+                    context,
+                    SettingsManager.PermissionPrompt.USAGE_ACCESS,
+                    !hasPermission,
+                )
+                onNext()
+            },
+            modifier = Modifier.fillMaxWidth(0.6f)
+        ) {
+            Text(if (hasPermission) "Continue (if stuck)" else "Skip for now")
+        }
     }
 }
 
@@ -369,9 +426,21 @@ private fun UsageAccessStep(
 private fun OverlayPermissionStep(onNext: () -> Unit) {
     val context = LocalContext.current
     var hasPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var showGrantedFallbackButton by remember { mutableStateOf(false) }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasPermission = Settings.canDrawOverlays(context)
+    }
+    LaunchedEffect(hasPermission) {
+        if (hasPermission) {
+            showGrantedFallbackButton = false
+            delay(300)
+            onNext()
+            delay(700)
+            showGrantedFallbackButton = true
+        } else {
+            showGrantedFallbackButton = false
+        }
     }
 
     Text(
@@ -416,25 +485,27 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
     }
 
-    OutlinedButton(
-        onClick = {
-            SettingsManager.setPermissionPromptSuppressed(
-                context,
-                SettingsManager.PermissionPrompt.OVERLAY,
-                !hasPermission,
-            )
-            onNext()
-        },
-        modifier = Modifier.fillMaxWidth(0.6f)
-    ) {
-        Text(if (hasPermission) "Continue" else "Skip for now")
+    if (!hasPermission || showGrantedFallbackButton) {
+        OutlinedButton(
+            onClick = {
+                SettingsManager.setPermissionPromptSuppressed(
+                    context,
+                    SettingsManager.PermissionPrompt.OVERLAY,
+                    !hasPermission,
+                )
+                onNext()
+            },
+            modifier = Modifier.fillMaxWidth(0.6f)
+        ) {
+            Text(if (hasPermission) "Continue (if stuck)" else "Skip for now")
+        }
     }
 }
 
 @Composable
 private fun ModelStep(onNext: () -> Unit) {
     Text(
-        text = "AI Model (Optional)",
+        text = "AI Model Options",
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center
@@ -443,10 +514,13 @@ private fun ModelStep(onNext: () -> Unit) {
     Spacer(modifier = Modifier.height(16.dp))
 
     Text(
-        text = "For the best experience, download a Gemma3-1B model (557 MB) " +
-                "from HuggingFace and place it in the app's models folder.\n\n" +
-                "Without a model, MindfulHome will use scripted responses " +
-                "that still create the same reflective friction.",
+        text = "Private, free, offline use is possible with a local model, " +
+                "such as a Gemma3-1B model (557 MB). Download it " +
+                "from HuggingFace and place it in the app's models folder.\n" +
+                "Be warned however that small models won't be as smart as you might expect.\n\n" +
+                "For a solution more powerful and less taxing on your space and compute " +
+                "we recommend signing in to use our AI service, powered by Gemini.\n\n" +
+                "If neither is configured, a scripted fallback will be used.",
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant

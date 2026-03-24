@@ -138,7 +138,10 @@ class MainActivity : ComponentActivity() {
                     composable("onboarding") {
                         OnboardingScreen(
                             onComplete = {
-                                prefs.edit().putBoolean("onboarding_done", true).apply()
+                                prefs.edit()
+                                    .putBoolean("onboarding_done", true)
+                                    .remove("onboarding_step")
+                                    .apply()
                                 shouldShowTimer = false
                                 navCtrl.navigate("default") {
                                     popUpTo("onboarding") { inclusive = true }
@@ -513,8 +516,16 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        wentToBackground = true
-        backgroundTimestampMs = System.currentTimeMillis()
+        // Opening system Settings (usage access, overlay, default launcher, etc.) stops this
+        // activity. If we mark that as "went to background", onResume navigates to default and
+        // pops the graph — which aborts onboarding and loses step state while onboarding_done
+        // is still false. Only track background after onboarding is finished.
+        val onboardingDone = getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+            .getBoolean("onboarding_done", false)
+        if (onboardingDone) {
+            wentToBackground = true
+            backgroundTimestampMs = System.currentTimeMillis()
+        }
         shouldShowTimer = false
     }
 
@@ -531,40 +542,46 @@ class MainActivity : ComponentActivity() {
         if (wentToBackground) {
             wentToBackground = false
 
-            val awayMs = System.currentTimeMillis() - backgroundTimestampMs
-            val timerWasRunning = TimerService.timerState.value is TimerState.Counting
-            val quickReturnMs =
-                SettingsManager.getQuickReturnMinutes(this) * 60_000L
-            Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
-
-            if (quickLaunchSessionActive) {
-                val destination = "default"
-                Log.d("MainActivity", "onResume: quick launch session active, navigating to $destination")
-                shouldShowTimer = false
-                lifecycleScope.launch {
-                    navController?.navigate(destination) {
-                        popUpTo("root") { inclusive = true }
-                    }
-                }
-            } else if (awayMs < quickReturnMs && timerWasRunning) {
-                shouldShowTimer = false
-                val destination = "home"
-                SessionLogger.log(
-                    ensureSessionHandle(),
-                    "Quick return (${awayMs / 1000}s) — back to $destination"
-                )
-                lifecycleScope.launch {
-                    navController?.navigate(destination) {
-                        popUpTo("root") { inclusive = true }
-                    }
-                }
+            val onboardingDoneNow = getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+                .getBoolean("onboarding_done", false)
+            if (!onboardingDoneNow) {
+                Log.d("MainActivity", "onResume: skipping post-background navigation (onboarding in progress)")
             } else {
-                val destination = "default"
-                Log.d("MainActivity", "onResume: navigating to $destination")
-                shouldShowTimer = false
-                lifecycleScope.launch {
-                    navController?.navigate(destination) {
-                        popUpTo("root") { inclusive = true }
+                val awayMs = System.currentTimeMillis() - backgroundTimestampMs
+                val timerWasRunning = TimerService.timerState.value is TimerState.Counting
+                val quickReturnMs =
+                    SettingsManager.getQuickReturnMinutes(this) * 60_000L
+                Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
+
+                if (quickLaunchSessionActive) {
+                    val destination = "default"
+                    Log.d("MainActivity", "onResume: quick launch session active, navigating to $destination")
+                    shouldShowTimer = false
+                    lifecycleScope.launch {
+                        navController?.navigate(destination) {
+                            popUpTo("root") { inclusive = true }
+                        }
+                    }
+                } else if (awayMs < quickReturnMs && timerWasRunning) {
+                    shouldShowTimer = false
+                    val destination = "home"
+                    SessionLogger.log(
+                        ensureSessionHandle(),
+                        "Quick return (${awayMs / 1000}s) — back to $destination"
+                    )
+                    lifecycleScope.launch {
+                        navController?.navigate(destination) {
+                            popUpTo("root") { inclusive = true }
+                        }
+                    }
+                } else {
+                    val destination = "default"
+                    Log.d("MainActivity", "onResume: navigating to $destination")
+                    shouldShowTimer = false
+                    lifecycleScope.launch {
+                        navController?.navigate(destination) {
+                            popUpTo("root") { inclusive = true }
+                        }
                     }
                 }
             }
