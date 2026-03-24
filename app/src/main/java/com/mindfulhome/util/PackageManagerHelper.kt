@@ -65,8 +65,11 @@ object PackageManagerHelper {
         }
         val resolveInfos: List<ResolveInfo> = pm.queryIntentActivities(mainIntent, 0)
 
+        // One package can expose multiple launcher activities; keep a single row per package
+        // so UI keys (e.g. HomeGrid "app:packageName") stay unique.
         return resolveInfos
             .filter { it.activityInfo.packageName != context.packageName }
+            .distinctBy { it.activityInfo.packageName }
             .map { resolveInfo ->
                 val icon = resolveInfo.loadIcon(pm)
                 CachedAppEntry(

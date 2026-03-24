@@ -171,19 +171,16 @@ interface TodoDao {
 }
 
 @Dao
-interface QuickLaunchDao {
+interface AppKvDao {
 
-    @Query("SELECT * FROM quick_launch_items ORDER BY position")
-    fun getAll(): Flow<List<QuickLaunchItem>>
+    @Query("SELECT value FROM app_kv WHERE key = :key")
+    fun observeValue(key: String): Flow<String?>
 
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insert(item: QuickLaunchItem)
+    @Query("SELECT value FROM app_kv WHERE key = :key")
+    suspend fun getValue(key: String): String?
 
-    @Query("DELETE FROM quick_launch_items WHERE packageName = :packageName")
-    suspend fun remove(packageName: String)
-
-    @Query("SELECT COALESCE(MAX(position), -1) FROM quick_launch_items")
-    suspend fun maxPosition(): Int
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(kv: AppKv)
 }
 
 data class SessionLogWithCount(

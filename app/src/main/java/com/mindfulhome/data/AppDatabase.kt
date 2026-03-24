@@ -19,9 +19,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TodoItem::class,
         SessionLog::class,
         SessionLogEvent::class,
-        QuickLaunchItem::class,
+        AppKv::class,
     ],
-    version = 11,
+    version = 14,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -34,7 +34,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun shelfDao(): ShelfDao
     abstract fun todoDao(): TodoDao
     abstract fun sessionLogDao(): SessionLogDao
-    abstract fun quickLaunchDao(): QuickLaunchDao
+    abstract fun appKvDao(): AppKvDao
 
     companion object {
         @Volatile
@@ -174,6 +174,51 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS quick_launch_items_new (
+                        packageName TEXT NOT NULL PRIMARY KEY,
+                        slotPosition INTEGER NOT NULL DEFAULT 0,
+                        orderInSlot INTEGER NOT NULL DEFAULT 0
+                    )"""
+                )
+                db.execSQL(
+                    """INSERT INTO quick_launch_items_new (packageName, slotPosition, orderInSlot)
+                       SELECT packageName, position, 0 FROM quick_launch_items"""
+                )
+                db.execSQL("DROP TABLE quick_launch_items")
+                db.execSQL("ALTER TABLE quick_launch_items_new RENAME TO quick_launch_items")
+            }
+        }
+
+        private val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE quick_launch_items ADD COLUMN folderName TEXT DEFAULT NULL")
+            }
+        }
+
+        private val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                val cursor = db.query(
+                    "SELECT packageName, slotPosition, orderInSlot, folderName FROM quick_launch_items ORDER BY slotPosition ASC, orderInSlot ASC",
+                )
+                val json = QuickLaunchLegacyMigration.buildJsonFromLegacyCursor(cursor)
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS app_kv (
+                        key TEXT NOT NULL PRIMARY KEY,
+                        value TEXT NOT NULL
+                    )""",
+                )
+                val stmt = db.compileStatement("INSERT OR REPLACE INTO app_kv (key, value) VALUES (?, ?)")
+                stmt.bindString(1, QuickLaunchJson.KV_KEY)
+                stmt.bindString(2, json)
+                stmt.execute()
+                stmt.close()
+                db.execSQL("DROP TABLE IF EXISTS quick_launch_items")
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -184,7 +229,8 @@ abstract class AppDatabase : RoomDatabase() {
                     .addMigrations(
                         MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,
                         MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8,
-                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11
+                        MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
+                        MIGRATION_13_14,
                     )
                     .build().also { INSTANCE = it }
             }
