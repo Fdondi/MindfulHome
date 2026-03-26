@@ -20,7 +20,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
-        android:name="com.mindfulhome.MindfulHomeApp"
+        android:name=".MindfulHomeApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -32,7 +32,7 @@
         <uses-native-library android:name="libOpenCL.so" android:required="false"/>
 
         <activity
-            android:name="com.mindfulhome.MainActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:stateNotNeeded="true">
@@ -45,7 +45,7 @@
         </activity>
 
         <service
-            android:name="com.mindfulhome.service.TimerService"
+            android:name=".service.TimerService"
             android:exported="false"
             android:foregroundServiceType="specialUse" />
 
@@ -53,7 +53,7 @@
              because Android 8+ doesn't deliver it to manifest receivers.
              BOOT_COMPLETED is exempted and works from the manifest. -->
         <receiver
-            android:name="com.mindfulhome.receiver.ScreenUnlockReceiver"
+            android:name=".receiver.ScreenUnlockReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
