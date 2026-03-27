@@ -15,7 +15,6 @@ class AppRepository(private val database: AppDatabase) {
     private val sessionDao = database.usageSessionDao()
     private val layoutDao = database.homeLayoutDao()
     private val intentDao = database.appIntentDao()
-    private val shelfDao = database.shelfDao()
     private val todoDao = database.todoDao()
     private val appKvDao = database.appKvDao()
 
@@ -189,33 +188,77 @@ class AppRepository(private val database: AppDatabase) {
         intentDao.insert(AppIntent(packageName = packageName, intentText = text))
     }
 
-    // Shelf (favorites shelf with numbered slots; >1 app in a slot = folder)
-    fun shelfApps(): Flow<List<ShelfItem>> = shelfDao.getAll()
-    fun appsInShelfSlot(slot: Int): Flow<List<ShelfItem>> = shelfDao.getAppsInSlot(slot)
+    // Favorites (home strip): same JSON model as QuickLaunch — [FavoritesKv.KEY] in app_kv.
+    fun favoritesSlots(): Flow<List<QuickLaunchSlot>> =
+        appKvDao.observeValue(FavoritesKv.KEY).map { raw ->
+            normalizeQuickLaunchSlots(QuickLaunchJson.decode(raw))
+        }.distinctUntilChanged()
 
-    /** Add app as a new slot at the end of the shelf. */
-    suspend fun addToShelf(packageName: String) {
-        val nextSlot = shelfDao.maxSlot() + 1
-        shelfDao.upsert(ShelfItem(packageName = packageName, slotPosition = nextSlot))
+    suspend fun addToFavorites(packageName: String) {
+        if (packageName.isBlank()) return
+        persistFavorites(favoritesSnapshot() + QuickLaunchSlot.Single(packageName))
     }
 
-    /** Add app into an existing slot (creates a folder if the slot already has apps). */
-    suspend fun addToShelfSlot(packageName: String, slot: Int) {
-        val orderInSlot = shelfDao.countInSlot(slot)
-        shelfDao.upsert(ShelfItem(packageName = packageName, slotPosition = slot, orderInSlot = orderInSlot))
-    }
-
-    /** Remove app from the shelf; if the slot becomes empty, compact remaining slots. */
-    suspend fun removeFromShelf(packageName: String) {
-        val item = shelfDao.getByPackageName(packageName) ?: return
-        shelfDao.remove(packageName)
-        val remainingInSlot = shelfDao.countInSlot(item.slotPosition)
-        if (remainingInSlot == 0) {
-            shelfDao.compactSlotsAfter(item.slotPosition)
+    /** Merge [packageName] into the slot at [uiIndex] (folder if the tile already holds apps). */
+    suspend fun mergePackageIntoFavoritesAt(uiIndex: Int, packageName: String) {
+        if (packageName.isBlank()) return
+        val slots = favoritesSnapshot().toMutableList()
+        if (uiIndex !in slots.indices) return
+        val existing = slots[uiIndex]
+        val mergedPkgs = (existing.flattenPackages() + packageName).distinct()
+        val merged: QuickLaunchSlot = if (mergedPkgs.size == 1) {
+            QuickLaunchSlot.Single(mergedPkgs[0])
+        } else {
+            val name = (existing as? QuickLaunchSlot.Folder)?.name?.takeIf { !it.isNullOrBlank() }
+            QuickLaunchSlot.Folder(name, mergedPkgs)
         }
+        slots[uiIndex] = merged
+        persistFavorites(slots)
     }
 
-    // QuickLaunch (default page only): ordered JSON array of package strings and folder objects — see QuickLaunchJson.
+    suspend fun removeFromFavorites(packageName: String) {
+        persistFavorites(removePackageFromSlots(favoritesSnapshot(), packageName))
+    }
+
+    suspend fun moveFavoritesSlot(fromUiIndex: Int, toUiIndex: Int) {
+        if (fromUiIndex == toUiIndex) return
+        val m = favoritesSnapshot().toMutableList()
+        if (fromUiIndex !in m.indices || toUiIndex !in m.indices) return
+        val moved = m.removeAt(fromUiIndex)
+        m.add(toUiIndex, moved)
+        persistFavorites(m)
+    }
+
+    suspend fun mergeFavoritesSlots(fromUiIndex: Int, intoUiIndex: Int) {
+        mergeSlotsMutable(favoritesSnapshot().toMutableList(), fromUiIndex, intoUiIndex)?.let { persistFavorites(it) }
+    }
+
+    suspend fun extractFavoritesAppToOwnSlot(packageName: String) {
+        val m = favoritesSnapshot().toMutableList()
+        extractFromFolderSlot(m, packageName)?.let { persistFavorites(it) }
+    }
+
+    suspend fun setFavoritesFolderName(anchorPackageName: String, name: String?) {
+        val normalized = name?.trim()?.takeIf { it.isNotEmpty() }
+        val slots = favoritesSnapshot().map { slot ->
+            if (slot is QuickLaunchSlot.Folder && anchorPackageName in slot.apps) {
+                slot.copy(name = normalized)
+            } else {
+                slot
+            }
+        }
+        persistFavorites(slots)
+    }
+
+    private suspend fun favoritesSnapshot(): List<QuickLaunchSlot> {
+        val raw = appKvDao.getValue(FavoritesKv.KEY)
+        return normalizeQuickLaunchSlots(QuickLaunchJson.decode(raw))
+    }
+
+    private suspend fun persistFavorites(slots: List<QuickLaunchSlot>) =
+        persistSlotKey(FavoritesKv.KEY, slots)
+
+    // QuickLaunch (default page): ordered JSON — [QuickLaunchJson.KV_KEY].
     fun quickLaunchSlots(): Flow<List<QuickLaunchSlot>> =
         appKvDao.observeValue(QuickLaunchJson.KV_KEY).map { raw ->
             normalizeQuickLaunchSlots(QuickLaunchJson.decode(raw))
@@ -227,21 +270,7 @@ class AppRepository(private val database: AppDatabase) {
     }
 
     suspend fun removeFromQuickLaunch(packageName: String) {
-        val next = quickLaunchSnapshot().mapNotNull { slot ->
-            when (slot) {
-                is QuickLaunchSlot.Single ->
-                    if (slot.packageName == packageName) null else slot
-                is QuickLaunchSlot.Folder -> {
-                    val apps = slot.apps.filter { it != packageName }
-                    when (apps.size) {
-                        0 -> null
-                        1 -> QuickLaunchSlot.Single(apps[0])
-                        else -> QuickLaunchSlot.Folder(slot.name, apps)
-                    }
-                }
-            }
-        }
-        persistQuickLaunch(next)
+        persistQuickLaunch(removePackageFromSlots(quickLaunchSnapshot(), packageName))
     }
 
     suspend fun swapQuickLaunchSlotsAt(uiIndexA: Int, uiIndexB: Int) {
@@ -263,45 +292,12 @@ class AppRepository(private val database: AppDatabase) {
     }
 
     suspend fun mergeQuickLaunchSlots(fromUiIndex: Int, intoUiIndex: Int) {
-        if (fromUiIndex == intoUiIndex) return
-        val slots = quickLaunchSnapshot().toMutableList()
-        if (fromUiIndex !in slots.indices || intoUiIndex !in slots.indices) return
-        val fromSlot = slots.removeAt(fromUiIndex)
-        val intoIndexAfterRemove = if (fromUiIndex < intoUiIndex) intoUiIndex - 1 else intoUiIndex
-        val intoSlot = slots[intoIndexAfterRemove]
-        val mergedApps = (intoSlot.flattenPackages() + fromSlot.flattenPackages()).distinct()
-        val mergedName = when {
-            intoSlot is QuickLaunchSlot.Folder && !intoSlot.name.isNullOrBlank() -> intoSlot.name
-            fromSlot is QuickLaunchSlot.Folder && !fromSlot.name.isNullOrBlank() -> fromSlot.name
-            else -> null
-        }
-        val merged: QuickLaunchSlot = if (mergedApps.size == 1) {
-            QuickLaunchSlot.Single(mergedApps[0])
-        } else {
-            QuickLaunchSlot.Folder(mergedName, mergedApps)
-        }
-        slots[intoIndexAfterRemove] = merged
-        persistQuickLaunch(slots)
+        mergeSlotsMutable(quickLaunchSnapshot().toMutableList(), fromUiIndex, intoUiIndex)?.let { persistQuickLaunch(it) }
     }
 
-    /** Takes one app out of a multi-app folder into its own tile after that folder (still on QuickLaunch). */
     suspend fun extractQuickLaunchAppToOwnSlot(packageName: String) {
-        val slots = quickLaunchSnapshot().toMutableList()
-        for (i in slots.indices) {
-            val slot = slots[i]
-            if (slot !is QuickLaunchSlot.Folder) continue
-            if (packageName !in slot.apps) continue
-            if (slot.apps.size <= 1) return
-            val remaining = slot.apps.filter { it != packageName }
-            val updatedFolder: QuickLaunchSlot = when (remaining.size) {
-                1 -> QuickLaunchSlot.Single(remaining[0])
-                else -> QuickLaunchSlot.Folder(slot.name, remaining)
-            }
-            slots[i] = updatedFolder
-            slots.add(i + 1, QuickLaunchSlot.Single(packageName))
-            persistQuickLaunch(slots)
-            return
-        }
+        val m = quickLaunchSnapshot().toMutableList()
+        extractFromFolderSlot(m, packageName)?.let { persistQuickLaunch(it) }
     }
 
     suspend fun setQuickLaunchFolderName(anchorPackageName: String, name: String?) {
@@ -321,11 +317,76 @@ class AppRepository(private val database: AppDatabase) {
         return normalizeQuickLaunchSlots(QuickLaunchJson.decode(raw))
     }
 
-    private suspend fun persistQuickLaunch(slots: List<QuickLaunchSlot>) {
+    private suspend fun persistQuickLaunch(slots: List<QuickLaunchSlot>) =
+        persistSlotKey(QuickLaunchJson.KV_KEY, slots)
+
+    private suspend fun persistSlotKey(key: String, slots: List<QuickLaunchSlot>) {
         val normalized = normalizeQuickLaunchSlots(slots)
         database.withTransaction {
-            appKvDao.upsert(AppKv(QuickLaunchJson.KV_KEY, QuickLaunchJson.encode(normalized)))
+            appKvDao.upsert(AppKv(key, QuickLaunchJson.encode(normalized)))
         }
+    }
+
+    private fun removePackageFromSlots(slots: List<QuickLaunchSlot>, packageName: String): List<QuickLaunchSlot> =
+        slots.mapNotNull { slot ->
+            when (slot) {
+                is QuickLaunchSlot.Single ->
+                    if (slot.packageName == packageName) null else slot
+                is QuickLaunchSlot.Folder -> {
+                    val apps = slot.apps.filter { it != packageName }
+                    when (apps.size) {
+                        0 -> null
+                        1 -> QuickLaunchSlot.Single(apps[0])
+                        else -> QuickLaunchSlot.Folder(slot.name, apps)
+                    }
+                }
+            }
+        }
+
+    private fun mergeSlotsMutable(
+        slots: MutableList<QuickLaunchSlot>,
+        fromUiIndex: Int,
+        intoUiIndex: Int,
+    ): List<QuickLaunchSlot>? {
+        if (fromUiIndex == intoUiIndex) return null
+        if (fromUiIndex !in slots.indices || intoUiIndex !in slots.indices) return null
+        val fromSlot = slots.removeAt(fromUiIndex)
+        val intoIndexAfterRemove = if (fromUiIndex < intoUiIndex) intoUiIndex - 1 else intoUiIndex
+        val intoSlot = slots[intoIndexAfterRemove]
+        val mergedApps = (intoSlot.flattenPackages() + fromSlot.flattenPackages()).distinct()
+        val mergedName = when {
+            intoSlot is QuickLaunchSlot.Folder && !intoSlot.name.isNullOrBlank() -> intoSlot.name
+            fromSlot is QuickLaunchSlot.Folder && !fromSlot.name.isNullOrBlank() -> fromSlot.name
+            else -> null
+        }
+        val merged: QuickLaunchSlot = if (mergedApps.size == 1) {
+            QuickLaunchSlot.Single(mergedApps[0])
+        } else {
+            QuickLaunchSlot.Folder(mergedName, mergedApps)
+        }
+        slots[intoIndexAfterRemove] = merged
+        return slots
+    }
+
+    private fun extractFromFolderSlot(
+        slots: MutableList<QuickLaunchSlot>,
+        packageName: String,
+    ): List<QuickLaunchSlot>? {
+        for (i in slots.indices) {
+            val slot = slots[i]
+            if (slot !is QuickLaunchSlot.Folder) continue
+            if (packageName !in slot.apps) continue
+            if (slot.apps.size <= 1) return null
+            val remaining = slot.apps.filter { it != packageName }
+            val updatedFolder: QuickLaunchSlot = when (remaining.size) {
+                1 -> QuickLaunchSlot.Single(remaining[0])
+                else -> QuickLaunchSlot.Folder(slot.name, remaining)
+            }
+            slots[i] = updatedFolder
+            slots.add(i + 1, QuickLaunchSlot.Single(packageName))
+            return slots
+        }
+        return null
     }
 
     // Todo widget (integrated)

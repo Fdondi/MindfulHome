@@ -35,7 +35,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Timer
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -73,15 +72,14 @@ import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.HomeLayoutItem
-import com.mindfulhome.data.ShelfItem
+import com.mindfulhome.data.flattenPackages
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
-import com.mindfulhome.ui.common.AddAppsDialog
-import com.mindfulhome.ui.common.AppShelf
-import com.mindfulhome.ui.common.AppShelfEntry
+import com.mindfulhome.ui.quicklaunch.AppSlotStripKind
+import com.mindfulhome.ui.quicklaunch.AppSlotStripSection
 import com.mindfulhome.ui.search.SearchOverlay
 import com.mindfulhome.util.PackageManagerHelper
 import android.util.Log
@@ -91,9 +89,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
-import kotlin.math.ceil
-
-private const val FAVORITES_COLLAPSED_ROWS = 1
 
 @Composable
 fun HomeScreen(
@@ -115,12 +110,11 @@ fun HomeScreen(
 
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var showSearch by remember { mutableStateOf(false) }
-    var showAddDialog by remember { mutableStateOf(false) }
 
     // DB flows
     val karmaEntries by repository.allKarma().collectAsState(initial = emptyList())
     val layoutItems by repository.homeLayout().collectAsState(initial = emptyList())
-    val shelfItems by repository.shelfApps().collectAsState(initial = emptyList())
+    val favoritesEntries by repository.favoritesSlots().collectAsState(initial = emptyList())
     val allIntents by repository.allIntents().collectAsState(initial = emptyList())
 
     // Derived state
@@ -172,11 +166,9 @@ fun HomeScreen(
         }
     }
 
-    val favoriteSlots = remember(shelfItems, allApps) {
-        buildFavoriteSlots(shelfItems, allApps)
+    val favoritePackages = remember(favoritesEntries) {
+        favoritesEntries.flatMap { it.flattenPackages() }.toSet()
     }
-    val favoritePackages = remember(shelfItems) { shelfItems.map { it.packageName }.toSet() }
-    var openFolderSlot by remember { mutableStateOf<FavoriteSlot?>(null) }
 
     LaunchedEffect(Unit) {
         if (TimerService.timerState.value !is TimerState.Idle) {
@@ -215,13 +207,13 @@ fun HomeScreen(
     fun addToFavorites(packageName: String) {
         scope.launch {
             if (packageName !in favoritePackages) {
-                repository.addToShelf(packageName)
+                repository.addToFavorites(packageName)
             }
         }
     }
 
     fun removeFromFavorites(packageName: String) {
-        scope.launch { repository.removeFromShelf(packageName) }
+        scope.launch { repository.removeFromFavorites(packageName) }
     }
 
     fun handleDrop(draggedItem: HomeGridItem, result: DropResult) {
@@ -232,8 +224,11 @@ fun HomeScreen(
                 }
 
                 result.target is DropTarget.OnFavoriteSlot && draggedItem is HomeGridItem.AppEntry -> {
-                    val favoriteSlot = result.target
-                    repository.addToShelfSlot(draggedItem.appInfo.packageName, favoriteSlot.slot)
+                    val favoriteSlot = result.target as DropTarget.OnFavoriteSlot
+                    repository.mergePackageIntoFavoritesAt(
+                        favoriteSlot.slot,
+                        draggedItem.appInfo.packageName,
+                    )
                 }
 
                 result.target is DropTarget.OnItem -> {
@@ -345,26 +340,41 @@ fun HomeScreen(
                 }
             }
 
-            FavoriteDock(
-                slots = favoriteSlots,
-                isDragOver = dragDropState.hoverTarget is DropTarget.Dock ||
-                    dragDropState.hoverTarget is DropTarget.OnFavoriteSlot,
-                hoveredSlot = (dragDropState.hoverTarget as? DropTarget.OnFavoriteSlot)?.slot,
-                onAppClick = { handleAppTap(it) },
-                onOpenFolder = { openFolderSlot = it },
-                onRemove = { removeFromFavorites(it.packageName) },
-                isAppDimmed = { app -> hasNegativeKarma(app.packageName) },
-                onAddClick = { showAddDialog = true },
-                onRegisterBounds = { topLeft, size ->
-                    dragDropState.dockBounds =
-                        androidx.compose.ui.geometry.Rect(topLeft, size)
-                },
-                onRegisterSlotBounds = { slot, topLeft, size ->
-                    dragDropState.registerFavoriteSlotBounds(slot, topLeft, size)
-                },
+            val favoritesStripHighlight =
+                dragDropState.hoverTarget is DropTarget.Dock ||
+                    dragDropState.hoverTarget is DropTarget.OnFavoriteSlot
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
-            )
+                    .navigationBarsPadding()
+                    .then(
+                        if (favoritesStripHighlight) {
+                            Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f))
+                        } else {
+                            Modifier.background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+                        },
+                    )
+                    .onGloballyPositioned { coords ->
+                        dragDropState.dockBounds = androidx.compose.ui.geometry.Rect(
+                            coords.positionInRoot(),
+                            coords.size.toSize(),
+                        )
+                    },
+            ) {
+                AppSlotStripSection(
+                    repository = repository,
+                    kind = AppSlotStripKind.Favorites,
+                    onLaunchApp = { pkg, _ ->
+                        allApps.find { it.packageName == pkg }?.let { handleAppTap(it) }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 8.dp),
+                    onAppSlotBounds = { idx, topLeft, size ->
+                        dragDropState.registerFavoriteSlotBounds(idx, topLeft, size)
+                    },
+                )
+            }
         }
 
         // Drag overlay
@@ -388,59 +398,6 @@ fun HomeScreen(
             onAddToDock = { app -> addToFavorites(app.packageName) }
         )
 
-        if (showAddDialog) {
-            AddAppsDialog(
-                title = "Add to Favorites",
-                apps = allApps,
-                excludedPackages = favoritePackages,
-                onAdd = { packageName -> addToFavorites(packageName) },
-                onDismiss = { showAddDialog = false },
-            )
-        }
-
-    }
-
-    openFolderSlot?.let { folder ->
-        AlertDialog(
-            onDismissRequest = { openFolderSlot = null },
-            title = { Text("Favorites folder") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    folder.apps.forEach { app ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .graphicsLayer {
-                                    alpha = if (hasNegativeKarma(app.packageName)) 0.45f else 1f
-                                },
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    openFolderSlot = null
-                                    handleAppTap(app)
-                                },
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text(
-                                    text = app.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                            TextButton(onClick = { removeFromFavorites(app.packageName) }) {
-                                Text("Remove")
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { openFolderSlot = null }) {
-                    Text("Done")
-                }
-            }
-        )
     }
 }
 
@@ -634,84 +591,6 @@ private fun DragItemOverlay(
 }
 
 // ---------------------------------------------------------------------------
-// Bottom dock
-// ---------------------------------------------------------------------------
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun FavoriteDock(
-    slots: List<FavoriteSlot>,
-    isDragOver: Boolean,
-    hoveredSlot: Int?,
-    onAppClick: (AppInfo) -> Unit,
-    onOpenFolder: (FavoriteSlot) -> Unit,
-    onRemove: (AppInfo) -> Unit,
-    isAppDimmed: (AppInfo) -> Boolean,
-    onAddClick: () -> Unit,
-    onRegisterBounds: (Offset, Size) -> Unit,
-    onRegisterSlotBounds: (Int, Offset, Size) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    val highlightColor = if (isDragOver) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    }
-    val entries = remember(
-        slots,
-        hoveredSlot,
-        onAppClick,
-        onOpenFolder,
-        onRemove,
-        isAppDimmed,
-        onRegisterSlotBounds
-    ) {
-        slots.mapNotNull { slot ->
-            val firstApp = slot.apps.firstOrNull() ?: return@mapNotNull null
-            val isFolder = slot.apps.size > 1
-            AppShelfEntry(
-                key = "slot_${slot.slotPosition}",
-                label = if (isFolder) "Folder (${slot.apps.size})" else firstApp.label,
-                icon = firstApp.icon,
-                isHighlighted = hoveredSlot == slot.slotPosition,
-                isDimmed = isAppDimmed(firstApp),
-                onClick = {
-                    if (isFolder) onOpenFolder(slot) else onAppClick(firstApp)
-                },
-                onLongClick = {
-                    if (isFolder) onOpenFolder(slot) else onRemove(firstApp)
-                },
-                onPositioned = { x, y, w, h ->
-                    onRegisterSlotBounds(
-                        slot.slotPosition,
-                        Offset(x, y),
-                        Size(w, h)
-                    )
-                }
-            )
-        }
-    }
-
-    AppShelf(
-        entries = entries,
-        expanded = expanded,
-        onExpandedChange = { expanded = it },
-        collapsedRows = FAVORITES_COLLAPSED_ROWS,
-        showBodyWhenCollapsed = true,
-        onAddClick = onAddClick,
-        addContentDescription = "Add app to favorites",
-        contentDescriptionExpand = "Expand favorites",
-        contentDescriptionCollapse = "Collapse favorites",
-        modifier = modifier
-            .onGloballyPositioned { coords ->
-                onRegisterBounds(coords.positionInRoot(), coords.size.toSize())
-            },
-        containerColor = highlightColor,
-    )
-}
-
-// ---------------------------------------------------------------------------
 // Grid-building logic
 // ---------------------------------------------------------------------------
 
@@ -750,24 +629,3 @@ private suspend fun persistGridOrder(
     repository.updateGridPositions(layoutUpdates)
 }
 
-private data class FavoriteSlot(
-    val slotPosition: Int,
-    val apps: List<AppInfo>
-)
-
-private fun buildFavoriteSlots(
-    shelfItems: List<ShelfItem>,
-    allApps: List<AppInfo>
-): List<FavoriteSlot> {
-    if (shelfItems.isEmpty()) return emptyList()
-    val appsByPackage = allApps.associateBy { it.packageName }
-    return shelfItems
-        .groupBy { it.slotPosition }
-        .toSortedMap()
-        .mapNotNull { (slot, itemsInSlot) ->
-            val apps = itemsInSlot
-                .sortedBy { it.orderInSlot }
-                .mapNotNull { item -> appsByPackage[item.packageName] }
-            if (apps.isEmpty()) null else FavoriteSlot(slot, apps)
-        }
-}
