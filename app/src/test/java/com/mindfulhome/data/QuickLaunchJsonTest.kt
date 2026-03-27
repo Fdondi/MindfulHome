@@ -56,4 +56,21 @@ class QuickLaunchJsonTest {
         )
         assertTrue(!json.contains("\"name\""))
     }
+
+    @Test
+    fun encodeDecode_folderSymbolIcon_roundTrips() {
+        val original = listOf(
+            QuickLaunchSlot.Folder("Travel", listOf("x", "y"), "flight_takeoff"),
+        )
+        val decoded = QuickLaunchJson.decode(QuickLaunchJson.encode(original))
+        assertEquals(original, decoded)
+    }
+
+    @Test
+    fun decode_folderWithSymbolIcon() {
+        val json = """[{"name":"T","symbolIcon":"sms","apps":["a","b"]}]"""
+        val slots = QuickLaunchJson.decode(json)
+        val folder = slots.single() as QuickLaunchSlot.Folder
+        assertEquals("sms", folder.symbolIconName)
+    }
 }

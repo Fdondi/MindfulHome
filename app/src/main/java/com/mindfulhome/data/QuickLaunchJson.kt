@@ -25,6 +25,8 @@ internal object QuickLaunchJson {
                     buildJsonObject {
                         val n = slot.name?.trim()?.takeIf { it.isNotEmpty() }
                         if (n != null) put("name", n)
+                        val sym = slot.symbolIconName?.trim()?.takeIf { it.isNotEmpty() }
+                        if (sym != null) put("symbolIcon", sym)
                         put(
                             "apps",
                             JsonArray(slot.apps.map { JsonPrimitive(it) }),
@@ -52,8 +54,10 @@ internal object QuickLaunchJson {
                         ?: return@mapNotNull null
                     if (apps.isEmpty()) return@mapNotNull null
                     val name = el["name"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+                    val symbolIcon =
+                        el["symbolIcon"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
                     if (apps.size == 1) QuickLaunchSlot.Single(apps[0])
-                    else QuickLaunchSlot.Folder(name, apps)
+                    else QuickLaunchSlot.Folder(name, apps, symbolIcon)
                 }
                 else -> null
             }

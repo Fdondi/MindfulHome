@@ -27,7 +27,7 @@ import com.mindfulhome.data.QuickLaunchSlot
 import com.mindfulhome.data.flattenPackages
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog
-import com.mindfulhome.ui.common.PullTabShelf
+import com.mindfulhome.ui.icons.MaterialSymbolPickerDialog
 import com.mindfulhome.util.PackageManagerHelper
 import kotlinx.coroutines.launch
 
@@ -46,6 +46,7 @@ fun AppSlotStripSection(
     onLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
     modifier: Modifier = Modifier,
     onAppSlotBounds: (uiIndex: Int, topLeft: Offset, size: Size) -> Unit = { _, _, _ -> },
+    maxRows: Int? = null,
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -58,10 +59,11 @@ fun AppSlotStripSection(
 
     var installedApps by remember { mutableStateOf(emptyList<AppInfo>()) }
     var showAddDialog by remember { mutableStateOf(false) }
-    var stripExpanded by remember { mutableStateOf(false) }
     var folderToShow by remember { mutableStateOf<QuickLaunchFolderOpen?>(null) }
     var folderRenameAnchorPackage by remember { mutableStateOf<String?>(null) }
     var folderRenameText by remember { mutableStateOf("") }
+    var folderSymbolAnchorPackage by remember { mutableStateOf<String?>(null) }
+    var folderSymbolInitial by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         installedApps = PackageManagerHelper.getInstalledApps(context)
@@ -91,6 +93,7 @@ fun AppSlotStripSection(
                     QuickLaunchSlotUi(
                         apps = apps,
                         folderName = slot.name?.takeIf { it.isNotBlank() }?.takeIf { apps.size > 1 },
+                        folderSymbolIconName = slot.symbolIconName?.takeIf { apps.size > 1 },
                     )
                 }
             }
@@ -117,14 +120,6 @@ fun AppSlotStripSection(
         AppSlotStripKind.QuickLaunch -> "Drop to remove from QuickLaunch"
         AppSlotStripKind.Favorites -> "Drop to remove from Favorites"
     }
-    val expandStripCd = when (kind) {
-        AppSlotStripKind.QuickLaunch -> "Expand QuickLaunch"
-        AppSlotStripKind.Favorites -> "Expand Favorites"
-    }
-    val collapseStripCd = when (kind) {
-        AppSlotStripKind.QuickLaunch -> "Collapse QuickLaunch"
-        AppSlotStripKind.Favorites -> "Collapse Favorites"
-    }
 
     Column(
         modifier = modifier,
@@ -136,51 +131,42 @@ fun AppSlotStripSection(
             modifier = Modifier.fillMaxWidth(),
         )
 
-        PullTabShelf(
-            expanded = stripExpanded,
-            onExpandedChange = { stripExpanded = it },
-            showBodyWhenCollapsed = true,
-            modifier = Modifier.fillMaxWidth(),
-            contentDescriptionExpand = expandStripCd,
-            contentDescriptionCollapse = collapseStripCd,
-        ) {
-            QuickLaunchWrappedRow(
-                slots = slotUiRows,
-                quickLaunchPackages = stripPackages,
-                onQuickLaunchApp = onLaunchApp,
-                onAddQuickLaunch = { showAddDialog = true },
-                onMoveSlot = { from, to ->
-                    scope.launch {
-                        when (kind) {
-                            AppSlotStripKind.QuickLaunch -> repository.moveQuickLaunchSlot(from, to)
-                            AppSlotStripKind.Favorites -> repository.moveFavoritesSlot(from, to)
-                        }
+        QuickLaunchWrappedRow(
+            slots = slotUiRows,
+            quickLaunchPackages = stripPackages,
+            onQuickLaunchApp = onLaunchApp,
+            onAddQuickLaunch = { showAddDialog = true },
+            onMoveSlot = { from, to ->
+                scope.launch {
+                    when (kind) {
+                        AppSlotStripKind.QuickLaunch -> repository.moveQuickLaunchSlot(from, to)
+                        AppSlotStripKind.Favorites -> repository.moveFavoritesSlot(from, to)
                     }
-                },
-                onMergeSlotInto = { from, into ->
-                    scope.launch {
-                        when (kind) {
-                            AppSlotStripKind.QuickLaunch -> repository.mergeQuickLaunchSlots(from, into)
-                            AppSlotStripKind.Favorites -> repository.mergeFavoritesSlots(from, into)
-                        }
+                }
+            },
+            onMergeSlotInto = { from, into ->
+                scope.launch {
+                    when (kind) {
+                        AppSlotStripKind.QuickLaunch -> repository.mergeQuickLaunchSlots(from, into)
+                        AppSlotStripKind.Favorites -> repository.mergeFavoritesSlots(from, into)
                     }
-                },
-                onRemoveSlot = { apps ->
-                    scope.launch {
-                        when (kind) {
-                            AppSlotStripKind.QuickLaunch -> apps.forEach { repository.removeFromQuickLaunch(it.packageName) }
-                            AppSlotStripKind.Favorites -> apps.forEach { repository.removeFromFavorites(it.packageName) }
-                        }
+                }
+            },
+            onRemoveSlot = { apps ->
+                scope.launch {
+                    when (kind) {
+                        AppSlotStripKind.QuickLaunch -> apps.forEach { repository.removeFromQuickLaunch(it.packageName) }
+                        AppSlotStripKind.Favorites -> apps.forEach { repository.removeFromFavorites(it.packageName) }
                     }
-                },
-                onOpenFolder = { slotIndex, apps, folderName ->
-                    folderToShow = QuickLaunchFolderOpen(slotIndex, apps, folderName)
-                },
-                addTileContentDescription = addTileCd,
-                onAppSlotBounds = onAppSlotBounds,
-                maxRows = if (stripExpanded) null else 1,
-            )
-        }
+                }
+            },
+            onOpenFolder = { slotIndex, apps, folderName, folderSymbolIconName ->
+                folderToShow = QuickLaunchFolderOpen(slotIndex, apps, folderName, folderSymbolIconName)
+            },
+            addTileContentDescription = addTileCd,
+            onAppSlotBounds = onAppSlotBounds,
+            maxRows = maxRows,
+        )
     }
 
     if (showAddDialog) {
@@ -212,6 +198,12 @@ fun AppSlotStripSection(
                 folder.apps.firstOrNull()?.packageName?.let { anchor ->
                     folderRenameAnchorPackage = anchor
                     folderRenameText = folder.folderName.orEmpty()
+                }
+            },
+            onSymbolIconClick = {
+                folder.apps.firstOrNull()?.packageName?.let { anchor ->
+                    folderSymbolAnchorPackage = anchor
+                    folderSymbolInitial = folder.folderSymbolIconName
                 }
             },
             onLaunchApp = { app ->
@@ -252,6 +244,26 @@ fun AppSlotStripSection(
             },
             dragHintText = folderHintRemove,
             removeDropContentDescription = folderRemoveCd,
+        )
+    }
+
+    folderSymbolAnchorPackage?.let { anchorPkg ->
+        MaterialSymbolPickerDialog(
+            initialSelection = folderSymbolInitial,
+            onDismiss = {
+                folderSymbolAnchorPackage = null
+                folderSymbolInitial = null
+            },
+            onConfirm = { symbol ->
+                scope.launch {
+                    when (kind) {
+                        AppSlotStripKind.QuickLaunch -> repository.setQuickLaunchFolderSymbolIcon(anchorPkg, symbol)
+                        AppSlotStripKind.Favorites -> repository.setFavoritesFolderSymbolIcon(anchorPkg, symbol)
+                    }
+                }
+                folderSymbolAnchorPackage = null
+                folderSymbolInitial = null
+            },
         )
     }
 

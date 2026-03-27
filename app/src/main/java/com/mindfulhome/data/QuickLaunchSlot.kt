@@ -6,7 +6,15 @@ package com.mindfulhome.data
  */
 sealed class QuickLaunchSlot {
     data class Single(val packageName: String) : QuickLaunchSlot()
-    data class Folder(val name: String?, val apps: List<String>) : QuickLaunchSlot()
+    /**
+     * @param symbolIconName Optional Material Icons name (snake_case, see fonts.google.com/icons)
+     *  drawn as a badge over the folder glyph; must exist in [material_icons_outlined.codepoints].
+     */
+    data class Folder(
+        val name: String?,
+        val apps: List<String>,
+        val symbolIconName: String? = null,
+    ) : QuickLaunchSlot()
 }
 
 fun QuickLaunchSlot.flattenPackages(): List<String> = when (this) {
@@ -25,7 +33,7 @@ internal fun normalizeQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<Quick
                 when (apps.size) {
                     0 -> null
                     1 -> QuickLaunchSlot.Single(apps[0])
-                    else -> QuickLaunchSlot.Folder(slot.name, apps)
+                    else -> QuickLaunchSlot.Folder(slot.name, apps, slot.symbolIconName)
                 }
             }
         }
