@@ -78,6 +78,7 @@ import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
+import com.mindfulhome.ui.common.PullTabShelf
 import com.mindfulhome.ui.quicklaunch.AppSlotStripKind
 import com.mindfulhome.ui.quicklaunch.AppSlotStripSection
 import com.mindfulhome.ui.search.SearchOverlay
@@ -158,6 +159,7 @@ fun HomeScreen(
     val gridItems = remember { mutableStateListOf<HomeGridItem>() }
     val dragDropState = rememberDragDropState()
     val gridState = rememberLazyGridState()
+    var favoritesStripExpanded by remember { mutableStateOf(false) }
 
     LaunchedEffect(baseGridItems) {
         if (!dragDropState.isDragging) {
@@ -361,19 +363,29 @@ fun HomeScreen(
                         )
                     },
             ) {
-                AppSlotStripSection(
-                    repository = repository,
-                    kind = AppSlotStripKind.Favorites,
-                    onLaunchApp = { pkg, _ ->
-                        allApps.find { it.packageName == pkg }?.let { handleAppTap(it) }
-                    },
+                PullTabShelf(
+                    expanded = favoritesStripExpanded,
+                    onExpandedChange = { favoritesStripExpanded = it },
+                    showBodyWhenCollapsed = true,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 8.dp, vertical = 8.dp),
-                    onAppSlotBounds = { idx, topLeft, size ->
-                        dragDropState.registerFavoriteSlotBounds(idx, topLeft, size)
-                    },
-                )
+                    contentDescriptionExpand = "Expand favorites",
+                    contentDescriptionCollapse = "Collapse favorites",
+                ) {
+                    AppSlotStripSection(
+                        repository = repository,
+                        kind = AppSlotStripKind.Favorites,
+                        onLaunchApp = { pkg, _ ->
+                            allApps.find { it.packageName == pkg }?.let { handleAppTap(it) }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        onAppSlotBounds = { idx, topLeft, size ->
+                            dragDropState.registerFavoriteSlotBounds(idx, topLeft, size)
+                        },
+                        maxRows = if (favoritesStripExpanded) null else 1,
+                    )
+                }
             }
         }
 
