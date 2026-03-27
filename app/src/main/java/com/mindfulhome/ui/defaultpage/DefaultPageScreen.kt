@@ -424,9 +424,8 @@ fun DefaultPageScreen(
     }
 
     folderToShow?.let { folder ->
-        val folderApps = folder.apps
         val titleLabel = folder.folderName?.takeIf { it.isNotBlank() }
-            ?: "Folder (${folderApps.size})"
+            ?: "Folder (${folder.apps.size})"
         AlertDialog(
             onDismissRequest = { folderToShow = null },
             title = {
@@ -442,7 +441,6 @@ fun DefaultPageScreen(
                     )
                     IconButton(
                         onClick = {
-                            // Use first package in stored folder order (matches JSON), not first visible row.
                             val anchor = folder.apps.firstOrNull()?.packageName ?: return@IconButton
                             folderRenameAnchorPackage = anchor
                             folderRenameText = folder.folderName.orEmpty()
@@ -456,41 +454,35 @@ fun DefaultPageScreen(
                 }
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    folderApps.forEach { app ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            TextButton(
-                                onClick = {
-                                    folderToShow = null
-                                    onQuickLaunchApp(app.packageName, quickLaunchPackages)
-                                },
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                Text(
-                                    text = app.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            IconButton(
-                                onClick = {
-                                    scope.launch {
-                                        repository.extractQuickLaunchAppToOwnSlot(app.packageName)
-                                    }
-                                    folderToShow = null
-                                },
-                            ) {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = "Move out",
-                                )
+                QuickLaunchFolderBody(
+                    apps = folder.apps,
+                    onLaunchApp = { app ->
+                        folderToShow = null
+                        onQuickLaunchApp(app.packageName, quickLaunchPackages)
+                    },
+                    onDragRemoveFromQuickLaunch = { app ->
+                        scope.launch { repository.removeFromQuickLaunch(app.packageName) }
+                        folderToShow = folderToShow?.let { f ->
+                            val next = f.apps.filter { it.packageName != app.packageName }
+                            when {
+                                next.isEmpty() -> null
+                                next.size <= 1 -> null
+                                else -> f.copy(apps = next)
                             }
                         }
-                    }
-                }
+                    },
+                    onDragExtractToOwnSlot = { app ->
+                        scope.launch { repository.extractQuickLaunchAppToOwnSlot(app.packageName) }
+                        folderToShow = folderToShow?.let { f ->
+                            val next = f.apps.filter { it.packageName != app.packageName }
+                            when {
+                                next.isEmpty() -> null
+                                next.size <= 1 -> null
+                                else -> f.copy(apps = next)
+                            }
+                        }
+                    },
+                )
             },
             confirmButton = {
                 TextButton(onClick = { folderToShow = null }) {
@@ -569,6 +561,242 @@ fun DefaultPageScreen(
                 }
             },
         )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun QuickLaunchFolderBody(
+    apps: List<com.mindfulhome.model.AppInfo>,
+    onLaunchApp: (com.mindfulhome.model.AppInfo) -> Unit,
+    onDragRemoveFromQuickLaunch: (com.mindfulhome.model.AppInfo) -> Unit,
+    onDragExtractToOwnSlot: (com.mindfulhome.model.AppInfo) -> Unit,
+) {
+    val appCoords = remember { mutableStateMapOf<String, LayoutCoordinates>() }
+    var draggingPackage by remember { mutableStateOf<String?>(null) }
+    var lastPointerInRoot by remember { mutableStateOf(Offset.Zero) }
+    var removeZoneBounds by remember { mutableStateOf<Rect?>(null) }
+    var extractZoneBounds by remember { mutableStateOf<Rect?>(null) }
+    var hoveringRemove by remember { mutableStateOf(false) }
+    var hoveringExtract by remember { mutableStateOf(false) }
+
+    fun appByPackage(pkg: String) = apps.firstOrNull { it.packageName == pkg }
+
+    fun updateFolderHover() {
+        val finger = lastPointerInRoot
+        if (draggingPackage == null) {
+            hoveringRemove = false
+            hoveringExtract = false
+            return
+        }
+        hoveringRemove = removeZoneBounds?.contains(finger) == true
+        hoveringExtract = extractZoneBounds?.contains(finger) == true && !hoveringRemove
+    }
+
+    val draggedApp = draggingPackage?.let { appByPackage(it) }
+    val minCell = 76.dp
+    var folderBodyRoot by remember { mutableStateOf(Offset.Zero) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { folderBodyRoot = it.positionInRoot() },
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+        apps.chunked(4).forEach { rowApps ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                rowApps.forEach { app ->
+                    val pkg = app.packageName
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(minCell)
+                            .pointerInput(pkg, apps) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { startLocal ->
+                                        draggingPackage = pkg
+                                        val coords = appCoords[pkg]
+                                        lastPointerInRoot = coords?.localToRoot(startLocal)
+                                            ?: Offset.Zero
+                                        updateFolderHover()
+                                    },
+                                    onDrag = { change, _ ->
+                                        change.consume()
+                                        val coords = appCoords[pkg]
+                                        if (coords != null) {
+                                            lastPointerInRoot = coords.localToRoot(change.position)
+                                        }
+                                        updateFolderHover()
+                                    },
+                                    onDragCancel = {
+                                        draggingPackage = null
+                                        hoveringRemove = false
+                                        hoveringExtract = false
+                                    },
+                                    onDragEnd = {
+                                        val draggedPkg = draggingPackage
+                                            ?: return@detectDragGesturesAfterLongPress
+                                        val droppedApp = appByPackage(draggedPkg)
+                                        draggingPackage = null
+                                        hoveringRemove = false
+                                        hoveringExtract = false
+                                        if (droppedApp == null) return@detectDragGesturesAfterLongPress
+                                        when {
+                                            removeZoneBounds?.contains(lastPointerInRoot) == true ->
+                                                onDragRemoveFromQuickLaunch(droppedApp)
+                                            extractZoneBounds?.contains(lastPointerInRoot) == true ->
+                                                onDragExtractToOwnSlot(droppedApp)
+                                            else -> { /* no drop */ }
+                                        }
+                                    },
+                                )
+                            }
+                            .combinedClickable(
+                                onClick = {
+                                    if (draggingPackage != null) return@combinedClickable
+                                    onLaunchApp(app)
+                                },
+                            ),
+                    ) {
+                        Box(
+                            modifier = Modifier.onGloballyPositioned { coords ->
+                                appCoords[pkg] = coords
+                                if (draggingPackage != null) updateFolderHover()
+                            },
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                if (app.icon != null) {
+                                    Image(
+                                        painter = rememberDrawablePainter(app.icon),
+                                        contentDescription = app.label,
+                                        modifier = Modifier
+                                            .size(42.dp)
+                                            .then(
+                                                if (draggingPackage == pkg) Modifier.alpha(0.22f) else Modifier,
+                                            ),
+                                    )
+                                } else {
+                                    Spacer(modifier = Modifier.size(42.dp))
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = app.label,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (draggingPackage != null) {
+            Text(
+                text = "Drop on → exit folder, or ✕ to remove from QuickLaunch",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .onGloballyPositioned { coords ->
+                            extractZoneBounds = Rect(
+                                coords.positionInRoot(),
+                                Size(coords.size.width.toFloat(), coords.size.height.toFloat()),
+                            )
+                            if (draggingPackage != null) updateFolderHover()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                if (hoveringExtract) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                },
+                                CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward,
+                            contentDescription = "Drop to move out of folder",
+                            tint = if (hoveringExtract) {
+                                MaterialTheme.colorScheme.onPrimaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .onGloballyPositioned { coords ->
+                            removeZoneBounds = Rect(
+                                coords.positionInRoot(),
+                                Size(coords.size.width.toFloat(), coords.size.height.toFloat()),
+                            )
+                            if (draggingPackage != null) updateFolderHover()
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .background(
+                                if (hoveringRemove) Color.Red else MaterialTheme.colorScheme.surfaceVariant,
+                                CircleShape,
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Drop to remove from QuickLaunch",
+                            tint = if (hoveringRemove) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+        }
+        if (draggedApp != null && draggingPackage != null) {
+            val rel = lastPointerInRoot - folderBodyRoot - Offset(30f, 30f)
+            Box(
+                Modifier.offset { IntOffset(rel.x.roundToInt(), rel.y.roundToInt()) },
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                            RoundedCornerShape(12.dp),
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (draggedApp.icon != null) {
+                        Image(
+                            painter = rememberDrawablePainter(draggedApp.icon),
+                            contentDescription = draggedApp.label,
+                            modifier = Modifier.size(36.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
