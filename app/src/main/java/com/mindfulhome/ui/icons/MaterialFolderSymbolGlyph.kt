@@ -21,6 +21,18 @@ import com.mindfulhome.R
 
 private fun codepointToString(cp: Int): String = String(Character.toChars(cp))
 
+private data class ResolvedSymbol(val text: String, val useMaterialFont: Boolean)
+
+private fun resolveSymbolText(symbolToken: String?, context: android.content.Context): ResolvedSymbol? {
+    val token = symbolToken?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    val cp = MaterialIconCatalog.codepoint(context, token)
+    return if (cp != null) {
+        ResolvedSymbol(codepointToString(cp), useMaterialFont = true)
+    } else {
+        ResolvedSymbol(token, useMaterialFont = false)
+    }
+}
+
 /** Single Material Icons glyph at [size] (e.g. open-folder header: symbol only, no folder outline). */
 @Composable
 fun MaterialSymbolGlyph(
@@ -34,15 +46,13 @@ fun MaterialSymbolGlyph(
     val fontFamily = remember {
         FontFamily(Font(R.font.material_icons_outlined))
     }
-    val cp = remember(symbolIconName) {
-        MaterialIconCatalog.codepoint(context, symbolIconName)
-    }
+    val symbolText = remember(symbolIconName) { resolveSymbolText(symbolIconName, context) }
     val semanticsMod = if (contentDescription.isNotBlank()) {
         Modifier.semantics { this.contentDescription = contentDescription }
     } else {
         Modifier.clearAndSetSemantics { }
     }
-    if (cp == null) return
+    if (symbolText == null) return
     Box(
         modifier
             .size(size)
@@ -50,8 +60,8 @@ fun MaterialSymbolGlyph(
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = codepointToString(cp),
-            fontFamily = fontFamily,
+            text = symbolText.text,
+            fontFamily = if (symbolText.useMaterialFont) fontFamily else null,
             fontSize = (size.value * 0.95f).sp,
             color = tint,
         )
@@ -78,9 +88,7 @@ fun MaterialFolderWithSymbolOverlay(
     val folderCp = remember {
         MaterialIconCatalog.codepoint(context, "folder")
     }
-    val badgeCp = remember(symbolIconName) {
-        symbolIconName?.let { MaterialIconCatalog.codepoint(context, it) }
-    }
+    val badgeText = remember(symbolIconName) { resolveSymbolText(symbolIconName, context) }
     val folderText = folderCp?.let { codepointToString(it) }
     val semanticsMod = if (contentDescription.isNotBlank()) {
         Modifier.semantics { this.contentDescription = contentDescription }
@@ -102,11 +110,11 @@ fun MaterialFolderWithSymbolOverlay(
                 modifier = Modifier.align(Alignment.Center),
             )
         }
-        if (badgeCp != null && symbolIconName != null) {
+        if (badgeText != null) {
             val badgeSp = (folderSize.value * 0.6f).sp
             Text(
-                text = codepointToString(badgeCp),
-                fontFamily = fontFamily,
+                text = badgeText.text,
+                fontFamily = if (badgeText.useMaterialFont) fontFamily else null,
                 fontSize = badgeSp,
                 color = tintOnBadge,
                 modifier = Modifier.align(Alignment.BottomEnd),

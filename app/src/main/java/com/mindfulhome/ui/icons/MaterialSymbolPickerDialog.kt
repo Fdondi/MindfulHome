@@ -43,6 +43,7 @@ private fun codepointToString(cp: Int): String = String(Character.toChars(cp))
 
 /**
  * Search and pick a Material Icons Outlined symbol (same catalog as fonts.google.com).
+ * You can also type an emoji/emoticon and save it as the folder symbol.
  * Tap an icon to apply and close, or use OK / Clear symbol / Cancel at the bottom.
  * [onConfirm] receives `null` to clear the folder badge.
  */
@@ -58,6 +59,7 @@ fun MaterialSymbolPickerDialog(
     }
     var query by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(initialSelection) }
+    var emojiInput by remember { mutableStateOf("") }
 
     val filtered = remember(query, context) {
         MaterialIconCatalog.filterNames(context, query)
@@ -65,6 +67,12 @@ fun MaterialSymbolPickerDialog(
 
     LaunchedEffect(initialSelection) {
         selected = initialSelection
+        val initial = initialSelection?.trim().orEmpty()
+        emojiInput = if (initial.isNotEmpty() && MaterialIconCatalog.codepoint(context, initial) == null) {
+            initial
+        } else {
+            ""
+        }
     }
 
     val screenHeightPx = LocalConfiguration.current.screenHeightDp
@@ -98,6 +106,14 @@ fun MaterialSymbolPickerDialog(
                     value = query,
                     onValueChange = { query = it },
                     label = { Text("Search icons") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(modifier = Modifier.size(8.dp))
+                OutlinedTextField(
+                    value = emojiInput,
+                    onValueChange = { emojiInput = it },
+                    label = { Text("Or type an emoji / emoticon") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -176,7 +192,8 @@ fun MaterialSymbolPickerDialog(
                     }
                     TextButton(
                         onClick = {
-                            onConfirm(selected)
+                            val custom = emojiInput.trim().takeIf { it.isNotEmpty() }
+                            onConfirm(custom ?: selected)
                             onDismiss()
                         },
                     ) {
