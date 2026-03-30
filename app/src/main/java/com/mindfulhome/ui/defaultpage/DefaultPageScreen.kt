@@ -2,14 +2,9 @@ package com.mindfulhome.ui.defaultpage
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,24 +13,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stars
-import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -47,7 +38,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -58,20 +48,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.AppVersion
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.TodoItem
-import com.mindfulhome.ui.common.AddAppsDialog
-import com.mindfulhome.util.PackageManagerHelper
+import com.mindfulhome.ui.quicklaunch.QuickLaunchSection
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
 import kotlinx.coroutines.launch
-import androidx.compose.foundation.BorderStroke
 
 private data class TodoEditorState(
     val id: Long? = null,
@@ -95,28 +83,13 @@ fun DefaultPageScreen(
     onStartTodo: (minutes: Int?, intent: String) -> Unit,
     onScreenShown: () -> Unit = {},
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val appVersion = AppVersion.versionName
-    val quickLaunchItems by repository.quickLaunchApps().collectAsState(initial = emptyList())
     val todoItems by repository.sortedOpenTodos().collectAsState(initial = emptyList())
-    val quickLaunchPackages = remember(quickLaunchItems) { quickLaunchItems.map { it.packageName }.toSet() }
-
-    var installedApps by remember { mutableStateOf(emptyList<com.mindfulhome.model.AppInfo>()) }
-    var showAddDialog by remember { mutableStateOf(false) }
-    var isRemoveMode by remember { mutableStateOf(false) }
     var editor by remember { mutableStateOf<TodoEditorState?>(null) }
 
     LaunchedEffect(Unit) {
-        installedApps = PackageManagerHelper.getInstalledApps(context)
-    }
-
-    LaunchedEffect(Unit) {
         onScreenShown()
-    }
-
-    val quickLaunchApps = remember(installedApps, quickLaunchPackages) {
-        installedApps.filter { it.packageName in quickLaunchPackages }
     }
 
     Column(
@@ -237,32 +210,9 @@ fun DefaultPageScreen(
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "QuickLaunch",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            if (isRemoveMode) {
-                TextButton(onClick = { isRemoveMode = false }) {
-                    Text("Done")
-                }
-            }
-        }
-
-        QuickLaunchWrappedRow(
-            quickLaunchApps = quickLaunchApps,
-            quickLaunchPackages = quickLaunchPackages,
+        QuickLaunchSection(
+            repository = repository,
             onQuickLaunchApp = onQuickLaunchApp,
-            onAddQuickLaunch = { showAddDialog = true },
-            isRemoveMode = isRemoveMode,
-            onEnterRemoveMode = { isRemoveMode = true },
-            onRemoveApp = { packageName ->
-                scope.launch { repository.removeFromQuickLaunch(packageName) }
-            },
         )
 
         Button(
@@ -272,18 +222,6 @@ fun DefaultPageScreen(
             Text("something else?")
         }
         Spacer(modifier = Modifier.height(12.dp))
-    }
-
-    if (showAddDialog) {
-        AddAppsDialog(
-            title = "Add to QuickLaunch",
-            apps = installedApps,
-            excludedPackages = quickLaunchPackages,
-            onAdd = { packageName ->
-                scope.launch { repository.addToQuickLaunch(packageName) }
-            },
-            onDismiss = { showAddDialog = false },
-        )
     }
 
     editor?.let { current ->
@@ -308,133 +246,6 @@ fun DefaultPageScreen(
         )
     }
 }
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun QuickLaunchWrappedRow(
-    quickLaunchApps: List<com.mindfulhome.model.AppInfo>,
-    quickLaunchPackages: Set<String>,
-    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
-    onAddQuickLaunch: () -> Unit,
-    isRemoveMode: Boolean,
-    onEnterRemoveMode: () -> Unit,
-    onRemoveApp: (String) -> Unit,
-) {
-    data class Tile(
-        val app: com.mindfulhome.model.AppInfo? = null,
-        val isAdd: Boolean = false,
-        val isPlaceholder: Boolean = false,
-    )
-
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val minCellWidth = 74.dp
-        val columns = (maxWidth / minCellWidth).toInt().coerceAtLeast(1)
-        val horizontalGap = if (columns > 1) {
-            ((maxWidth - (minCellWidth * columns)) / (columns - 1)).coerceAtLeast(0.dp)
-        } else {
-            0.dp
-        }
-        val rowChunks = remember(quickLaunchApps, columns) {
-            val base = (quickLaunchApps.map { Tile(app = it) } + Tile(isAdd = true))
-                .chunked(columns)
-            base.map { row ->
-                if (row.size >= columns) {
-                    row
-                } else {
-                    row + List(columns - row.size) { Tile(isPlaceholder = true) }
-                }
-            }
-        }
-
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            rowChunks.forEach { rowTiles ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(horizontalGap),
-                ) {
-                    rowTiles.forEach { tile ->
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            val app = tile.app
-                            when {
-                                tile.isPlaceholder -> {
-                                    Spacer(
-                                        modifier = Modifier
-                                            .width(minCellWidth)
-                                            .height(1.dp)
-                                    )
-                                }
-                                app != null -> {
-                                Box {
-                                    Column(
-                                        modifier = Modifier
-                                            .width(minCellWidth)
-                                            .combinedClickable(
-                                                onLongClick = onEnterRemoveMode,
-                                                onClick = {
-                                                    if (isRemoveMode) onRemoveApp(app.packageName)
-                                                    else onQuickLaunchApp(app.packageName, quickLaunchPackages)
-                                                },
-                                            ),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                    ) {
-                                        if (app.icon != null) {
-                                            Image(
-                                                painter = rememberDrawablePainter(app.icon),
-                                                contentDescription = app.label,
-                                                modifier = Modifier.size(42.dp),
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = app.label,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            style = MaterialTheme.typography.labelSmall,
-                                        )
-                                    }
-                                    if (isRemoveMode) {
-                                        Box(
-                                            modifier = Modifier
-                                                .align(Alignment.TopEnd)
-                                                .size(18.dp)
-                                                .background(Color.Red, CircleShape),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Close,
-                                                contentDescription = "Remove",
-                                                modifier = Modifier.size(12.dp),
-                                                tint = Color.White,
-                                            )
-                                        }
-                                    }
-                                }
-                                }
-                                tile.isAdd -> {
-                                OutlinedButton(
-                                    onClick = onAddQuickLaunch,
-                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
-                                    modifier = Modifier.width(minCellWidth),
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = "Add QuickLaunch app")
-                                }
-                                }
-                                else -> {}
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 @Composable
 private fun TodoRow(
     item: TodoItem,
