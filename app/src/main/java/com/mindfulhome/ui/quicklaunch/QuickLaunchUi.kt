@@ -162,6 +162,8 @@ fun QuickLaunchFolderBody(
     onDragExtractToOwnSlot: (AppInfo) -> Unit,
     dragHintText: String = "Drop on → exit folder, or ✕ to remove from QuickLaunch",
     removeDropContentDescription: String = "Drop to remove from QuickLaunch",
+    onAddAppsClick: (() -> Unit)? = null,
+    addAppsContentDescription: String = "Add app to folder",
 ) {
     val appCoords = remember { mutableStateMapOf<String, LayoutCoordinates>() }
     var draggingPackage by remember { mutableStateOf<String?>(null) }
@@ -285,6 +287,23 @@ fun QuickLaunchFolderBody(
                                 }
                             }
                         }
+                    }
+                }
+            }
+            if (onAddAppsClick != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Start,
+                ) {
+                    OutlinedButton(
+                        onClick = onAddAppsClick,
+                        border = BorderStroke(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                        ),
+                        modifier = Modifier.width(minCell),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = addAppsContentDescription)
                     }
                 }
             }

@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.QuickLaunchSlot
 import com.mindfulhome.data.flattenPackages
+import com.mindfulhome.data.placementsByPackage
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog
 import com.mindfulhome.ui.icons.MaterialSymbolPickerDialog
@@ -56,9 +57,12 @@ fun AppSlotStripSection(
         AppSlotStripKind.Favorites -> repository.favoritesSlots().collectAsState(initial = emptyList())
     }
     val stripPackages = remember(rawSlots) { rawSlots.flatMap { it.flattenPackages() }.toSet() }
+    val placementByPackage = remember(rawSlots) { placementsByPackage(rawSlots) }
 
     var installedApps by remember { mutableStateOf(emptyList<AppInfo>()) }
     var showAddDialog by remember { mutableStateOf(false) }
+    /** When non-null, [onAdd] merges into this strip slot index (folder add). */
+    var addDialogFolderSlotIndex by remember { mutableStateOf<Int?>(null) }
     var folderToShow by remember { mutableStateOf<QuickLaunchFolderOpen?>(null) }
     var folderRenameAnchorPackage by remember { mutableStateOf<String?>(null) }
     var folderRenameText by remember { mutableStateOf("") }
@@ -76,6 +80,34 @@ fun AppSlotStripSection(
         when (kind) {
             AppSlotStripKind.QuickLaunch -> missing.forEach { pkg -> repository.removeFromQuickLaunch(pkg) }
             AppSlotStripKind.Favorites -> missing.forEach { pkg -> repository.removeFromFavorites(pkg) }
+        }
+    }
+
+    LaunchedEffect(rawSlots, installedApps, folderToShow?.slotIndex) {
+        val open = folderToShow ?: return@LaunchedEffect
+        val idx = open.slotIndex
+        if (idx !in rawSlots.indices) {
+            folderToShow = null
+            return@LaunchedEffect
+        }
+        when (val slot = rawSlots[idx]) {
+            is QuickLaunchSlot.Single -> {
+                folderToShow = null
+            }
+            is QuickLaunchSlot.Folder -> {
+                val map = installedApps.associateBy { it.packageName }
+                val apps = slot.apps.mapNotNull { map[it] }
+                folderToShow = when {
+                    apps.isEmpty() -> null
+                    apps.size <= 1 -> null
+                    else -> QuickLaunchFolderOpen(
+                        idx,
+                        apps,
+                        slot.name,
+                        slot.symbolIconName,
+                    )
+                }
+            }
         }
     }
 
@@ -135,7 +167,10 @@ fun AppSlotStripSection(
             slots = slotUiRows,
             quickLaunchPackages = stripPackages,
             onQuickLaunchApp = onLaunchApp,
-            onAddQuickLaunch = { showAddDialog = true },
+            onAddQuickLaunch = {
+                addDialogFolderSlotIndex = null
+                showAddDialog = true
+            },
             onMoveSlot = { from, to ->
                 scope.launch {
                     when (kind) {
@@ -170,19 +205,42 @@ fun AppSlotStripSection(
     }
 
     if (showAddDialog) {
+        val addTitle = when {
+            addDialogFolderSlotIndex != null -> when (kind) {
+                AppSlotStripKind.QuickLaunch -> "Add to QuickLaunch folder"
+                AppSlotStripKind.Favorites -> "Add to Favorites folder"
+            }
+            else -> addDialogTitle
+        }
         AddAppsDialog(
-            title = addDialogTitle,
+            title = addTitle,
             apps = installedApps,
-            excludedPackages = stripPackages,
+            placementByPackage = placementByPackage,
             onAdd = { packageName ->
                 scope.launch {
-                    when (kind) {
-                        AppSlotStripKind.QuickLaunch -> repository.addToQuickLaunch(packageName)
-                        AppSlotStripKind.Favorites -> repository.addToFavorites(packageName)
+                    val folderIdx = addDialogFolderSlotIndex
+                    when {
+                        folderIdx != null -> {
+                            when (kind) {
+                                AppSlotStripKind.QuickLaunch ->
+                                    repository.mergePackageIntoQuickLaunchAt(folderIdx, packageName)
+                                AppSlotStripKind.Favorites ->
+                                    repository.mergePackageIntoFavoritesAt(folderIdx, packageName)
+                            }
+                        }
+                        else -> {
+                            when (kind) {
+                                AppSlotStripKind.QuickLaunch -> repository.addToQuickLaunch(packageName)
+                                AppSlotStripKind.Favorites -> repository.addToFavorites(packageName)
+                            }
+                        }
                     }
                 }
             },
-            onDismiss = { showAddDialog = false },
+            onDismiss = {
+                showAddDialog = false
+                addDialogFolderSlotIndex = null
+            },
         )
     }
 
@@ -244,6 +302,14 @@ fun AppSlotStripSection(
             },
             dragHintText = folderHintRemove,
             removeDropContentDescription = folderRemoveCd,
+            onAddAppsClick = {
+                addDialogFolderSlotIndex = folder.slotIndex
+                showAddDialog = true
+            },
+            addAppsContentDescription = when (kind) {
+                AppSlotStripKind.QuickLaunch -> "Add app to QuickLaunch folder"
+                AppSlotStripKind.Favorites -> "Add app to Favorites folder"
+            },
         )
     }
 

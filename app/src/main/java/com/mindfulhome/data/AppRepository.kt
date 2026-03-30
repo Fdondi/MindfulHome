@@ -282,6 +282,24 @@ class AppRepository(private val database: AppDatabase) {
         persistQuickLaunch(quickLaunchSnapshot() + QuickLaunchSlot.Single(packageName))
     }
 
+    /** Merge [packageName] into the slot at [uiIndex] (folder if the tile already holds multiple apps). */
+    suspend fun mergePackageIntoQuickLaunchAt(uiIndex: Int, packageName: String) {
+        if (packageName.isBlank()) return
+        val slots = quickLaunchSnapshot().toMutableList()
+        if (uiIndex !in slots.indices) return
+        val existing = slots[uiIndex]
+        val mergedPkgs = (existing.flattenPackages() + packageName).distinct()
+        val merged: QuickLaunchSlot = if (mergedPkgs.size == 1) {
+            QuickLaunchSlot.Single(mergedPkgs[0])
+        } else {
+            val name = (existing as? QuickLaunchSlot.Folder)?.name?.takeIf { !it.isNullOrBlank() }
+            val sym = (existing as? QuickLaunchSlot.Folder)?.symbolIconName?.takeIf { !it.isNullOrBlank() }
+            QuickLaunchSlot.Folder(name, mergedPkgs, sym)
+        }
+        slots[uiIndex] = merged
+        persistQuickLaunch(slots)
+    }
+
     suspend fun removeFromQuickLaunch(packageName: String) {
         persistQuickLaunch(removePackageFromSlots(quickLaunchSnapshot(), packageName))
     }
