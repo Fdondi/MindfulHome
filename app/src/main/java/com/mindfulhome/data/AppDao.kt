@@ -208,6 +208,22 @@ interface SessionLogDao {
         """
     )
     suspend fun getSessionsWithCountsInRange(startMs: Long, endMs: Long): List<SessionLogWithCount>
+
+    /**
+     * Distinct local calendar days (yyyy-MM-dd) that have at least one session with events,
+     * most recent first. Matches grouping in [com.mindfulhome.ui.logs.LogsScreen].
+     */
+    @Query(
+        """
+        SELECT date(s.startedAtMs / 1000, 'unixepoch', 'localtime') AS dayKey
+        FROM session_logs s
+        INNER JOIN session_log_events e ON e.sessionId = s.id
+        GROUP BY date(s.startedAtMs / 1000, 'unixepoch', 'localtime')
+        ORDER BY dayKey DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getRecentDistinctLocalDaysWithLogs(limit: Int): List<String>
 }
 
 @Dao

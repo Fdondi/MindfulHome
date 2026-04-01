@@ -7,19 +7,28 @@ import android.content.IntentFilter
 import android.util.Log
 import com.mindfulhome.data.AppDatabase
 import com.mindfulhome.logging.DailyLogSummaryScheduler
+import com.mindfulhome.logging.DailyLogSummaryStartupBackfill
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.receiver.ScreenUnlockReceiver
 import com.mindfulhome.util.PackageManagerHelper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class MindfulHomeApp : Application() {
 
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
     private var unlockReceiver: ScreenUnlockReceiver? = null
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     override fun onCreate() {
         super.onCreate()
         SessionLogger.init(this, database)
         DailyLogSummaryScheduler.ensureScheduled(this)
+        appScope.launch(Dispatchers.IO) {
+            DailyLogSummaryStartupBackfill.runIfNeeded(applicationContext)
+        }
         createNotificationChannels()
         registerUnlockReceiver()
         PackageManagerHelper.precomputeInstalledApps(this)
