@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.IntentFilter
 import android.util.Log
 import com.mindfulhome.data.AppDatabase
+import com.mindfulhome.logging.DailyLogSummaryScheduler
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.receiver.ScreenUnlockReceiver
 import com.mindfulhome.util.PackageManagerHelper
@@ -18,6 +19,7 @@ class MindfulHomeApp : Application() {
     override fun onCreate() {
         super.onCreate()
         SessionLogger.init(this, database)
+        DailyLogSummaryScheduler.ensureScheduled(this)
         createNotificationChannels()
         registerUnlockReceiver()
         PackageManagerHelper.precomputeInstalledApps(this)

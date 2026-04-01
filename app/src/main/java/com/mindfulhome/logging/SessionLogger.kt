@@ -32,6 +32,7 @@ object SessionLogger {
 
     data class SessionRecord(
         val id: Long,
+        val startedAtMs: Long,
         val title: String,
         val markdown: String,
         val eventCount: Int,
@@ -268,6 +269,7 @@ object SessionLogger {
             val markdown = renderSessionMarkdown(dao, session)
             SessionRecord(
                 id = session.id,
+                startedAtMs = session.startedAtMs,
                 title = session.title,
                 markdown = markdown,
                 eventCount = session.eventCount,

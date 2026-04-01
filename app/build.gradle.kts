@@ -76,6 +76,9 @@ dependencies {
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
+    // WorkManager (background jobs)
+    implementation("androidx.work:work-runtime-ktx:2.10.3")
+
     // Drawable painter for Compose (render Android Drawables)
     implementation("com.google.accompanist:accompanist-drawablepainter:0.37.3")
 

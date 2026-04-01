@@ -18,9 +18,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TodoItem::class,
         SessionLog::class,
         SessionLogEvent::class,
+        DailyLogSummary::class,
         AppKv::class,
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -32,6 +33,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun appIntentDao(): AppIntentDao
     abstract fun todoDao(): TodoDao
     abstract fun sessionLogDao(): SessionLogDao
+    abstract fun dailyLogSummaryDao(): DailyLogSummaryDao
     abstract fun appKvDao(): AppKvDao
 
     companion object {
@@ -232,6 +234,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_15_16 = object : Migration(15, 16) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """CREATE TABLE IF NOT EXISTS daily_log_summaries (
+                        day TEXT NOT NULL PRIMARY KEY,
+                        summary TEXT NOT NULL,
+                        generatedAtMs INTEGER NOT NULL,
+                        sessionCount INTEGER NOT NULL,
+                        eventCount INTEGER NOT NULL
+                    )""",
+                )
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -245,6 +261,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13,
                         MIGRATION_13_14,
                         MIGRATION_14_15,
+                        MIGRATION_15_16,
                     )
                     .build().also { INSTANCE = it }
             }

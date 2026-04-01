@@ -271,7 +271,29 @@ class NegotiationManager(
             .takeIf { it.isNotEmpty() }
             ?.joinToString("\n") { (label, pkg) -> "- $label ($pkg)" }
             ?.let { "Installed apps available to launch:\n$it" }
-        val systemPrompt = PromptTemplates.generalChatSystemPrompt(hiddenAppsBriefing, notesBriefing, installedAppsBriefing)
+        val dailySummaries = try {
+            repository.getLatestDailySummaries(5)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading daily summaries", e)
+            emptyList()
+        }
+        val dailySummariesBriefing = dailySummaries
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString(separator = "\n\n") { s ->
+                "### ${s.day}\n${s.summary.trim()}"
+            }
+            ?.let { "Recent daily log summaries (most recent first):\n$it" }
+
+        val basePrompt = PromptTemplates.generalChatSystemPrompt(hiddenAppsBriefing, notesBriefing, installedAppsBriefing)
+        val systemPrompt = if (dailySummariesBriefing.isNullOrBlank()) {
+            basePrompt
+        } else {
+            buildString {
+                appendLine(basePrompt)
+                appendLine()
+                appendLine(dailySummariesBriefing)
+            }.trim()
+        }
 
         if (backendAuth != null && backendAuth.hasToken) {
             usingBackend = true

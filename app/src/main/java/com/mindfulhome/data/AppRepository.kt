@@ -17,6 +17,7 @@ class AppRepository(private val database: AppDatabase) {
     private val intentDao = database.appIntentDao()
     private val todoDao = database.todoDao()
     private val appKvDao = database.appKvDao()
+    private val dailyLogSummaryDao = database.dailyLogSummaryDao()
 
     // Karma
     fun allKarma(): Flow<List<AppKarma>> = karmaDao.getAllKarma()
@@ -147,6 +148,12 @@ class AppRepository(private val database: AppDatabase) {
 
     suspend fun getRecentSessions(packageName: String): List<UsageSession> {
         return sessionDao.getRecentSessions(packageName)
+    }
+
+    // Daily log summaries
+    suspend fun getLatestDailySummaries(limit: Int = 5): List<DailyLogSummary> {
+        val safeLimit = limit.coerceIn(1, 30)
+        return dailyLogSummaryDao.getLatest(safeLimit)
     }
 
     // Layout

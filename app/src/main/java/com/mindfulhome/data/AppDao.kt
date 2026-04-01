@@ -195,4 +195,29 @@ interface SessionLogDao {
 
     @Query("SELECT * FROM session_log_events WHERE sessionId = :sessionId ORDER BY timestampMs ASC, id ASC")
     suspend fun getEventsForSession(sessionId: Long): List<SessionLogEvent>
+
+    @Query(
+        """
+        SELECT s.id, s.startedAtMs, s.title, COUNT(e.id) as eventCount
+        FROM session_logs s
+        LEFT JOIN session_log_events e ON e.sessionId = s.id
+        WHERE s.startedAtMs >= :startMs AND s.startedAtMs < :endMs
+        GROUP BY s.id
+        HAVING COUNT(e.id) > 0
+        ORDER BY s.startedAtMs ASC
+        """
+    )
+    suspend fun getSessionsWithCountsInRange(startMs: Long, endMs: Long): List<SessionLogWithCount>
+}
+
+@Dao
+interface DailyLogSummaryDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(summary: DailyLogSummary)
+
+    @Query("SELECT * FROM daily_log_summaries WHERE day = :day LIMIT 1")
+    suspend fun getByDay(day: String): DailyLogSummary?
+
+    @Query("SELECT * FROM daily_log_summaries ORDER BY day DESC LIMIT :limit")
+    suspend fun getLatest(limit: Int): List<DailyLogSummary>
 }

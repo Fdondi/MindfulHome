@@ -43,13 +43,23 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.mindfulhome.data.AppDatabase
 import com.mindfulhome.logging.SessionLogger
+import java.time.Instant
+import java.time.ZoneId
 
 private data class SessionEntry(
     val id: Long,
+    val startedAtMs: Long,
     val title: String,
     val content: String,
     val eventCount: Int,
+)
+
+private data class DayEntry(
+    val day: String, // yyyy-MM-dd
+    val summary: String,
+    val sessions: List<SessionEntry>,
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,20 +67,42 @@ private data class SessionEntry(
 fun LogsScreen(
     onBack: () -> Unit
 ) {
-    val sessions = remember { mutableStateListOf<SessionEntry>() }
+    val days = remember { mutableStateListOf<DayEntry>() }
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
-        sessions.clear()
-        SessionLogger.getAllSessions().forEach { record ->
-            sessions.add(
+        val zone = ZoneId.systemDefault()
+        val db = AppDatabase.getInstance(context)
+        val summaries = db.dailyLogSummaryDao().getLatest(60)
+            .associateBy({ it.day }, { it.summary })
+
+        val sessions = SessionLogger.getAllSessions()
+            .map { record ->
                 SessionEntry(
                     id = record.id,
+                    startedAtMs = record.startedAtMs,
                     title = record.title,
                     content = record.markdown,
                     eventCount = record.eventCount,
                 )
-            )
+            }
+
+        val grouped = sessions.groupBy { entry ->
+            Instant.ofEpochMilli(entry.startedAtMs).atZone(zone).toLocalDate().toString()
         }
+
+        val built = grouped.entries
+            .sortedByDescending { it.key }
+            .map { (day, sessionsForDay) ->
+                DayEntry(
+                    day = day,
+                    summary = summaries[day].orEmpty(),
+                    sessions = sessionsForDay.sortedByDescending { it.startedAtMs },
+                )
+            }
+
+        days.clear()
+        days.addAll(built)
     }
 
     Column(
@@ -88,7 +120,7 @@ fun LogsScreen(
             }
         )
 
-        if (sessions.isEmpty()) {
+        if (days.isEmpty()) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -117,11 +149,72 @@ fun LogsScreen(
             ) {
                 item { Spacer(modifier = Modifier.height(4.dp)) }
 
-                items(sessions, key = { it.id }) { entry ->
-                    SessionCard(entry, onCopy = entry.content)
+                items(days, key = { it.day }) { dayEntry ->
+                    DaySummaryCard(dayEntry)
                 }
 
                 item { Spacer(modifier = Modifier.height(8.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DaySummaryCard(entry: DayEntry) {
+    var expanded by remember { mutableStateOf(false) }
+    val summaryPreview = remember(entry.summary) {
+        entry.summary.lines().firstOrNull().orEmpty().trim().ifBlank { "No summary yet." }
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .clickable { expanded = !expanded },
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entry.day,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = "${entry.sessions.size} sessions",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                text = if (expanded) entry.summary.ifBlank { "No summary yet." } else summaryPreview,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (expanded) 20 else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+
+            if (expanded) {
+                Spacer(modifier = Modifier.height(10.dp))
+                entry.sessions.forEach { session ->
+                    SessionCard(session, onCopy = session.content)
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
             }
         }
     }
@@ -152,10 +245,10 @@ private fun SessionCard(entry: SessionEntry, onCopy: String) {
             .animateContentSize()
             .clickable { expanded = !expanded },
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f)
         )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -204,7 +297,6 @@ private fun SessionCard(entry: SessionEntry, onCopy: String) {
             }
 
             if (!expanded && !isSingleEventSession) {
-                // Show a one-line preview
                 if (preview.isNotEmpty()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
