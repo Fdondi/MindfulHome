@@ -14,6 +14,7 @@ class KarmaManager(private val context: Context, private val repository: AppRepo
         const val KARMA_WEAK_REASON = -1
         const val KARMA_CLOSED_ON_TIME = 1
         const val KARMA_DAILY_RECOVERY = 1
+        const val KARMA_QUICK_LAUNCH_EXIT_AFTER_RED = -1
     }
 
     private fun hideThreshold(): Int = -SettingsManager.getHideThreshold(context)
@@ -44,6 +45,13 @@ class KarmaManager(private val context: Context, private val repository: AppRepo
     suspend fun onClosedInGraceWindow(packageName: String) {
         // Partial recovery: overran but caught themselves quickly
         repository.adjustKarma(packageName, KARMA_CLOSED_ON_TIME, hideThreshold())
+    }
+
+    /** Quick Launch: stayed on a non-allowed app until forced return after the red semaphore phase. */
+    suspend fun onQuickLaunchExitAfterRed(packageName: String) {
+        if (packageName.isBlank()) return
+        if (repository.getKarma(packageName).isOptedOut) return
+        repository.adjustKarma(packageName, KARMA_QUICK_LAUNCH_EXIT_AFTER_RED, hideThreshold())
     }
 
     suspend fun isAppHidden(packageName: String): Boolean {

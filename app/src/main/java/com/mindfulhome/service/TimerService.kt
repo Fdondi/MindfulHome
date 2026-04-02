@@ -51,6 +51,8 @@ class TimerService : Service() {
     private var quickLaunchExitCandidateLabel: String? = null
     private var lastQuickLaunchNotificationText: String? = null
     private var quickLaunchFrameSuppressedForSensitiveApp: Boolean = false
+    /** Green/yellow/red segment length for the Quick Launch overlay; shorter when the exit app has negative karma. */
+    private var quickLaunchSemaphorePhaseMs: Long = QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
     private lateinit var overlayManager: OverlayNudgeManager
@@ -345,8 +347,18 @@ class TimerService : Service() {
             quickLaunchExitCandidateStartedAtMs = now
             quickLaunchExitCandidateLabel = getAppLabel(packageName)
             val appLabel = getAppLabel(packageName)
+            serviceScope.launch {
+                val k = repository.getKarma(packageName)
+                quickLaunchSemaphorePhaseMs =
+                    if (!k.isOptedOut && k.karmaScore < 0) {
+                        QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NEGATIVE_KARMA
+                    } else {
+                        QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL
+                    }
+                refreshQuickLaunchMonitoringNotification()
+            }
             logWithSession(
-                "Quick Launch switch observed: **$appLabel** — waiting 1m grace period"
+                "Quick Launch switch observed: **$appLabel** — green → yellow → red, then return to timer"
             )
             logSessionEvent(
                 "Quick Launch grace window started for package=$packageName"
@@ -360,6 +372,7 @@ class TimerService : Service() {
         quickLaunchExitCandidatePackage = null
         quickLaunchExitCandidateStartedAtMs = 0L
         quickLaunchExitCandidateLabel = null
+        quickLaunchSemaphorePhaseMs = QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL
         refreshQuickLaunchMonitoringNotification()
     }
 
@@ -450,9 +463,10 @@ class TimerService : Service() {
         val startedAtMs = quickLaunchExitCandidateStartedAtMs
         if (startedAtMs <= 0L) return OverlayNudgeManager.QuickLaunchFrameLevel.GREEN
         val elapsedMs = (nowMs - startedAtMs).coerceAtLeast(0L)
+        val phaseMs = quickLaunchSemaphorePhaseMs
         return when {
-            elapsedMs < QUICK_LAUNCH_MONITOR_POLL_MS -> OverlayNudgeManager.QuickLaunchFrameLevel.GREEN
-            elapsedMs < QUICK_LAUNCH_MONITOR_POLL_MS * 2 -> OverlayNudgeManager.QuickLaunchFrameLevel.YELLOW
+            elapsedMs < phaseMs -> OverlayNudgeManager.QuickLaunchFrameLevel.GREEN
+            elapsedMs < phaseMs * 2 -> OverlayNudgeManager.QuickLaunchFrameLevel.YELLOW
             else -> OverlayNudgeManager.QuickLaunchFrameLevel.RED
         }
     }
@@ -469,15 +483,20 @@ class TimerService : Service() {
         if (candidateStartedAt <= 0L) return
 
         val elapsedMs = (nowMs - candidateStartedAt).coerceAtLeast(0L)
-        if (elapsedMs < QUICK_LAUNCH_SWITCH_GRACE_MS) return
+        val phaseMs = quickLaunchSemaphorePhaseMs
+        val graceMs = phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES
+        if (elapsedMs < graceMs) return
 
         val appLabel = getAppLabel(foregroundPackage)
         Log.d(TAG, "non-quick app still active after grace: $foregroundPackage")
-        logWithSession("Quick Launch exit detected: opened **$appLabel** — returning to timer")
+        logWithSession("Quick Launch exit detected: opened **$appLabel** — returning to timer (karma -1)")
         clearQuickLaunchExitCandidate()
         SettingsManager.clearQuickLaunchSession(this)
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissQuickLaunchFrame()
+        serviceScope.launch {
+            karmaManager.onQuickLaunchExitAfterRed(foregroundPackage)
+        }
         forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
     }
 
@@ -496,7 +515,7 @@ class TimerService : Service() {
                     maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
                 }
                 evaluateQuickLaunchExitProgress(foregroundPackage)
-                delay(QUICK_LAUNCH_MONITOR_POLL_MS)
+                delay(QUICK_LAUNCH_MONITOR_TICK_MS)
             }
             Log.d(TAG, "quick-launch monitoring loop ended")
             logSessionEvent("Quick Launch monitor loop ended")
@@ -1320,12 +1339,14 @@ class TimerService : Service() {
 
         val candidateLabel = quickLaunchExitCandidateLabel ?: getAppLabel(candidatePackage)
         val elapsedMs = (System.currentTimeMillis() - candidateStartedAt).coerceAtLeast(0L)
+        val phaseMs = quickLaunchSemaphorePhaseMs
+        val graceMs = phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES
         val phase = when {
-            elapsedMs < QUICK_LAUNCH_MONITOR_POLL_MS -> "green"
-            elapsedMs < QUICK_LAUNCH_MONITOR_POLL_MS * 2 -> "yellow"
+            elapsedMs < phaseMs -> "green"
+            elapsedMs < phaseMs * 2 -> "yellow"
             else -> "red"
         }
-        val remainingSeconds = ((QUICK_LAUNCH_SWITCH_GRACE_MS - elapsedMs).coerceAtLeast(0L) / 1_000L)
+        val remainingSeconds = ((graceMs - elapsedMs).coerceAtLeast(0L) / 1_000L)
         return "Detected $candidateLabel. Phase $phase, forcing home in ${remainingSeconds}s."
     }
 
@@ -1402,8 +1423,12 @@ class TimerService : Service() {
         private const val QUICK_LAUNCH_NOTIFICATION_ID = 1003
         private const val TIMER_TICK_MS = 20_000L
         private const val NUDGE_LOOP_TICK_MS = 20_000L
-        private const val QUICK_LAUNCH_MONITOR_POLL_MS = 20_000L
-        private const val QUICK_LAUNCH_SWITCH_GRACE_MS = 60_000L
+        /** One semaphore color segment when the exit app does not have negative karma (20s × 3 = 60s to forced return). */
+        private const val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL = 20_000L
+        /** Twice as fast as [QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL] when karma is negative (10s × 3 = 30s). */
+        private const val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NEGATIVE_KARMA = 10_000L
+        private const val QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES = 3
+        private const val QUICK_LAUNCH_MONITOR_TICK_MS = 1_000L
         private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
         private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
         private const val PREDATORY_BIRD_EVERY_N_BIRDS = 10
