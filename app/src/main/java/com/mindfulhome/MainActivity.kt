@@ -29,6 +29,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mindfulhome.data.AppRepository
+import com.mindfulhome.data.flattenPackages
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
@@ -45,6 +46,7 @@ import com.mindfulhome.ui.settings.SettingsScreen
 import com.mindfulhome.ui.theme.MindfulHomeTheme
 import com.mindfulhome.ui.timer.TimerScreen
 import com.mindfulhome.util.PackageManagerHelper
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
@@ -279,6 +281,7 @@ class MainActivity : ComponentActivity() {
                                 }
                             },
                             onScreenShown = {
+                                ensureQuickLaunchMonitoringAtHome()
                                 maybePreflightBackendAuth()
                             },
                         )
@@ -762,6 +765,26 @@ class MainActivity : ComponentActivity() {
 
     private fun shouldShowAssistantAfterUnlock(): Boolean {
         return SettingsManager.isFocusTimeActiveNow(this)
+    }
+
+    /**
+     * Starts Quick Launch monitoring as soon as the launcher default page is shown, so usage
+     * (e.g. recents → another app on unlock) is tracked even before tapping a Quick Launch tile.
+     * Only when no session timer is running — starting Quick Launch would otherwise suspend a countdown.
+     */
+    private fun ensureQuickLaunchMonitoringAtHome() {
+        if (TimerService.timerState.value !is TimerState.Idle) return
+        lifecycleScope.launch {
+            if (TimerService.timerState.value !is TimerState.Idle) return@launch
+            val slots = repository.quickLaunchSlots().first()
+            val allowed = slots.flatMap { it.flattenPackages() }.toSet()
+            TimerService.startQuickLaunchSession(
+                this@MainActivity,
+                initialPackageName = packageName,
+                allowedQuickLaunchPackages = allowed.toList(),
+                sessionHandle = ensureSessionHandle(),
+            )
+        }
     }
 
     private fun maybePreflightBackendAuth() {
