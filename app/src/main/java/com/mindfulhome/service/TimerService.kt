@@ -145,14 +145,7 @@ class TimerService : Service() {
             if (SettingsManager.isQuickLaunchSessionActive(this)) {
                 Log.w(TAG, "Null intent restart - restoring quick launch monitoring")
                 logSessionEvent("Service restarted with null intent — restoring quick launch monitor")
-                startForeground(
-                    QUICK_LAUNCH_NOTIFICATION_ID,
-                    buildQuickLaunchMonitoringNotification(),
-                )
-                val currentForeground = UsageTracker.getForegroundApp(this)
-                    ?: _currentPackage.value
-                evaluateQuickLaunchExitProgress(currentForeground)
-                startQuickLaunchMonitoringLoop()
+                restoreQuickLaunchMonitoring(reason = "null-intent restart")
             }
             return START_STICKY
         }
@@ -183,6 +176,14 @@ class TimerService : Service() {
                     "ACTION_START_QUICK_LAUNCH_SESSION requested: initial=${packageName.ifBlank { "<none>" }} allowed=${allowedPackages.size}"
                 )
                 startQuickLaunchSession(packageName, allowedPackages)
+            }
+            ACTION_RESUME_QUICK_LAUNCH_MONITORING -> {
+                if (SettingsManager.isQuickLaunchSessionActive(this)) {
+                    logSessionEvent("ACTION_RESUME_QUICK_LAUNCH_MONITORING requested")
+                    restoreQuickLaunchMonitoring(reason = "unlock")
+                } else {
+                    logSessionEvent("Ignoring quick-launch resume: session not active")
+                }
             }
             ACTION_TRACK_APP -> {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
@@ -967,7 +968,6 @@ class TimerService : Service() {
 
     private fun suspendForScreenOff() {
         logSessionEvent("Suspending timer workflow due to screen off")
-        val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this)
         timerJob?.cancel()
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
@@ -980,6 +980,7 @@ class TimerService : Service() {
         val state = _timerState.value
         val appLabel = getAppLabel(pkg)
         val suspendedAtMs = System.currentTimeMillis()
+        val quickLaunchActive = SettingsManager.isQuickLaunchSessionActive(this)
 
         serviceScope.launch {
             when (state) {
@@ -1016,24 +1017,38 @@ class TimerService : Service() {
             _timerState.value = TimerState.Idle
             logSessionEvent("Timer state -> Idle (screen off suspend)")
             _sessionStartedAtMs.value = 0L
-            _currentPackage.value = ""
             _nudgeCount.value = 0
             softDeadlineAtMs = null
             hardDeadlineAtMs = null
             overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
             SettingsManager.setTimerRunning(this@TimerService, false)
-            if (!quickLaunchSessionActive) {
-                SettingsManager.clearQuickLaunchSession(this@TimerService)
-            } else {
-                logSessionEvent("Preserving quick-launch session across screen off")
-            }
-            quickLaunchExitResumeByPackage.clear()
 
             endNudgeConversation()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            logSessionEvent("Timer service suspended and stopped")
+            if (quickLaunchActive) {
+                // Screen off should not end Quick Launch; keep session alive so unlock
+                // doesn't steal focus back into the launcher.
+                logSessionEvent("Screen off during Quick Launch — session preserved; monitoring paused")
+            } else {
+                SettingsManager.clearQuickLaunchSession(this@TimerService)
+                quickLaunchExitResumeByPackage.clear()
+                _currentPackage.value = ""
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                logSessionEvent("Timer service suspended and stopped")
+            }
         }
+    }
+
+    private fun restoreQuickLaunchMonitoring(reason: String) {
+        startForeground(
+            QUICK_LAUNCH_NOTIFICATION_ID,
+            buildQuickLaunchMonitoringNotification(),
+        )
+        val currentForeground = UsageTracker.getForegroundApp(this)
+            ?: _currentPackage.value
+        logSessionEvent("Restoring quick-launch monitoring (reason=$reason foreground=${currentForeground.ifBlank { "<none>" }})")
+        evaluateQuickLaunchExitProgress(currentForeground)
+        startQuickLaunchMonitoringLoop()
     }
 
     // ── Nudge conversation (notification + overlays) ─────────────────
@@ -1676,6 +1691,7 @@ class TimerService : Service() {
 
         const val ACTION_START = "com.mindfulhome.ACTION_START_TIMER"
         const val ACTION_START_QUICK_LAUNCH_SESSION = "com.mindfulhome.ACTION_START_QUICK_LAUNCH_SESSION"
+        const val ACTION_RESUME_QUICK_LAUNCH_MONITORING = "com.mindfulhome.ACTION_RESUME_QUICK_LAUNCH_MONITORING"
         const val ACTION_TRACK_APP = "com.mindfulhome.ACTION_TRACK_APP"
         const val ACTION_EXTEND = "com.mindfulhome.ACTION_EXTEND_TIMER"
         const val ACTION_STOP = "com.mindfulhome.ACTION_STOP_TIMER"
@@ -1776,6 +1792,17 @@ class TimerService : Service() {
                     EXTRA_ALLOWED_PACKAGES,
                     ArrayList(allowedQuickLaunchPackages),
                 )
+                attachSession(sessionHandle)
+            }
+            context.startForegroundService(intent)
+        }
+
+        fun resumeQuickLaunchMonitoring(
+            context: Context,
+            sessionHandle: SessionLogger.SessionHandle? = null,
+        ) {
+            val intent = Intent(context, TimerService::class.java).apply {
+                action = ACTION_RESUME_QUICK_LAUNCH_MONITORING
                 attachSession(sessionHandle)
             }
             context.startForegroundService(intent)

@@ -7,6 +7,7 @@ import android.util.Log
 import com.mindfulhome.MainActivity
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.service.TimerService
 
 class ScreenUnlockReceiver : BroadcastReceiver() {
 
@@ -17,6 +18,8 @@ class ScreenUnlockReceiver : BroadcastReceiver() {
 
         if (SettingsManager.isQuickLaunchSessionActive(context)) {
             Log.d(TAG, "Quick Launch session active on unlock — skipping timer")
+            // Resume quick-launch monitoring (if the service was paused/killed while locked)
+            TimerService.resumeQuickLaunchMonitoring(context, SessionLogger.getActiveSessionHandle())
             return
         }
 
