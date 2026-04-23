@@ -12,6 +12,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
 import android.os.Process
+import android.text.format.DateFormat
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
@@ -36,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import java.util.Date
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -72,6 +74,8 @@ class TimerService : Service() {
     private var negotiationManager: NegotiationManager? = null
     private var lmManager: LiteRtLmManager? = null
     private val nudgeMessages = mutableListOf<NudgeMessage>()
+    private var pendingExtensionMinutes: Int? = null
+    private var pendingExtensionKeepBannerVisible: Boolean = true
     private val userPerson = Person.Builder().setName("You").setKey("user").build()
     private val aiPerson =
         Person.Builder().setName("MindfulHome").setKey("ai").setBot(true).build()
@@ -848,6 +852,9 @@ class TimerService : Service() {
         if (payload.isBlank()) return
         markNotificationInteractionObserved("banner reply")
         logSessionEvent("User replied from banner (chars=${payload.length})")
+        if (handlePendingExtensionConfirmationReply(payload, keepBannerVisible = true, source = "banner")) {
+            return
+        }
         nudgeResetRequested = true
         nudgePauseUntilMs = System.currentTimeMillis() + (
             SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
@@ -1095,11 +1102,15 @@ class TimerService : Service() {
     private fun handleNudgeReply(intent: Intent) {
         val remoteInput = RemoteInput.getResultsFromIntent(intent)
         val replyText = remoteInput?.getCharSequence(KEY_TEXT_REPLY)?.toString()
+            ?: intent.getStringExtra(EXTRA_QUICK_REPLY_TEXT)
         if (replyText.isNullOrBlank()) return
         val payload = replyText.trim()
         if (payload.isBlank()) return
         markNotificationInteractionObserved("inline reply")
         logSessionEvent("User replied to nudge (chars=${payload.length})")
+        if (handlePendingExtensionConfirmationReply(payload, keepBannerVisible = false, source = "inline")) {
+            return
+        }
         overlayManager.dismissAllNudges()
         nudgeResetRequested = true
         nudgePauseUntilMs = System.currentTimeMillis() + (
@@ -1167,28 +1178,112 @@ class TimerService : Service() {
     }
 
     private fun handleExtension(minutes: Int, keepBannerVisible: Boolean = true) {
-        val extended = extendTimer(minutes)
-        if (extended) {
-            logSessionEvent("Applying AI extension: +$minutes min")
-            logWithSession("AI granted extension: **$minutes min**")
-            endNudgeConversation()
-            return
-        }
-
-        val message =
-            "I can't grant an extension now - your hard deadline is now the closest limit."
+        pendingExtensionMinutes = minutes
+        pendingExtensionKeepBannerVisible = keepBannerVisible
+        val message = buildExtensionConfirmationMessage(minutes)
         nudgeMessages.add(NudgeMessage(message, isFromUser = false))
         showConversationNotification(alertUser = false)
         overlayManager.updateConversationMessage(message, _nudgeCount.value)
         if (keepBannerVisible) {
             overlayManager.showConversationBanner(buildBannerPreviewLines())
         }
-        logWithSession("AI extension blocked by hard deadline")
-        logSessionEvent("AI extension blocked by hard deadline")
+        logWithSession("AI offered extension: **$minutes min** (awaiting confirmation)")
+        logSessionEvent("AI extension pending confirmation: +$minutes min")
+    }
+
+    private fun handlePendingExtensionConfirmationReply(
+        payload: String,
+        keepBannerVisible: Boolean,
+        source: String,
+    ): Boolean {
+        val pendingMinutes = pendingExtensionMinutes ?: return false
+        val normalized = payload.trim().lowercase()
+        val isConfirm = normalized == QUICK_REPLY_CONFIRM_EXTENSION ||
+            normalized == "y" ||
+            normalized.startsWith("${QUICK_REPLY_CONFIRM_EXTENSION} ")
+        val isDecline = normalized == QUICK_REPLY_DECLINE_EXTENSION.lowercase() ||
+            normalized.contains("i'll close")
+        if (!isConfirm && !isDecline) return false
+
+        nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
+        logSessionEvent("Pending extension decision via $source: \"$payload\"")
+        val keepPendingBannerVisible = pendingExtensionKeepBannerVisible
+
+        if (isConfirm) {
+            clearPendingExtensionConfirmation()
+            val extended = extendTimer(pendingMinutes)
+            if (extended) {
+                logSessionEvent("Applying confirmed AI extension: +$pendingMinutes min")
+                logWithSession("AI extension confirmed: **+$pendingMinutes min**")
+                endNudgeConversation()
+                return true
+            }
+
+            val blocked =
+                "I can't grant that extension now - your hard deadline is now the closest limit."
+            nudgeMessages.add(NudgeMessage(blocked, isFromUser = false))
+            showConversationNotification(alertUser = false)
+            overlayManager.updateConversationMessage(blocked, _nudgeCount.value)
+            if (keepBannerVisible || keepPendingBannerVisible) {
+                overlayManager.showConversationBanner(buildBannerPreviewLines())
+            }
+            logWithSession("Confirmed extension blocked by hard deadline")
+            logSessionEvent("Confirmed extension blocked by hard deadline")
+            return true
+        }
+
+        clearPendingExtensionConfirmation()
+        nudgeResetRequested = true
+        nudgePauseUntilMs = System.currentTimeMillis() + (
+            SettingsManager.getNudgeInitialNotificationDelayMinutes(this)
+                .coerceAtLeast(0) * 60_000L
+            )
+        val declinedMessage = "Understood - no extension applied. If it is late, close the app now."
+        nudgeMessages.add(NudgeMessage(declinedMessage, isFromUser = false))
+        showConversationNotification(alertUser = false)
+        overlayManager.updateConversationMessage(declinedMessage, _nudgeCount.value)
+        if (keepBannerVisible || keepPendingBannerVisible) {
+            overlayManager.showConversationBanner(buildBannerPreviewLines())
+        }
+        logWithSession("AI extension declined by user")
+        logSessionEvent("AI extension declined by user")
+        return true
+    }
+
+    private fun buildExtensionConfirmationMessage(minutes: Int): String {
+        val projectedExpirationMs = calculateProjectedExpirationTimeMs(minutes)
+        if (projectedExpirationMs == null) {
+            return "This will now make your timer expire later by $minutes minutes. Are you sure?"
+        }
+        val formattedTime = DateFormat.getTimeFormat(this).format(Date(projectedExpirationMs))
+        return "This will now make your timer expire at $formattedTime. Are you sure?"
+    }
+
+    private fun calculateProjectedExpirationTimeMs(extraMinutes: Int): Long? {
+        val now = System.currentTimeMillis()
+        val remainingMs = when (val state = _timerState.value) {
+            is TimerState.Counting -> state.remainingMs
+            is TimerState.Expired -> 0L
+            is TimerState.Idle -> return null
+            else -> return null
+        }
+        val projected = now + remainingMs + extraMinutes.coerceAtLeast(0) * 60_000L
+        val hardDeadline = hardDeadlineAtMs
+        return if (hardDeadline != null && hardDeadline > 0L) {
+            minOf(projected, hardDeadline)
+        } else {
+            projected
+        }
+    }
+
+    private fun clearPendingExtensionConfirmation() {
+        pendingExtensionMinutes = null
+        pendingExtensionKeepBannerVisible = true
     }
 
     private fun endNudgeConversation() {
         logSessionEvent("Ending nudge conversation and clearing overlays/notification")
+        clearPendingExtensionConfirmation()
         negotiationManager?.endConversation()
         negotiationManager = null
         lmManager?.shutdown()
@@ -1238,6 +1333,37 @@ class TimerService : Service() {
             .addRemoteInput(remoteInput)
             .setAllowGeneratedReplies(true)
             .build()
+        val hasPendingExtensionDecision = pendingExtensionMinutes != null
+        val quickConfirmIntent = Intent(this, TimerService::class.java).apply {
+            action = ACTION_HANDLE_REPLY
+            putExtra(EXTRA_QUICK_REPLY_TEXT, QUICK_REPLY_CONFIRM_EXTENSION)
+        }
+        val quickConfirmPendingIntent = PendingIntent.getService(
+            this,
+            NUDGE_NOTIFICATION_ID + 1,
+            quickConfirmIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val quickConfirmAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_nudge_notification,
+            QUICK_REPLY_CONFIRM_EXTENSION,
+            quickConfirmPendingIntent,
+        ).build()
+        val quickDeclineIntent = Intent(this, TimerService::class.java).apply {
+            action = ACTION_HANDLE_REPLY
+            putExtra(EXTRA_QUICK_REPLY_TEXT, QUICK_REPLY_DECLINE_EXTENSION)
+        }
+        val quickDeclinePendingIntent = PendingIntent.getService(
+            this,
+            NUDGE_NOTIFICATION_ID + 2,
+            quickDeclineIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val quickDeclineAction = NotificationCompat.Action.Builder(
+            R.drawable.ic_nudge_notification,
+            QUICK_REPLY_DECLINE_EXTENSION,
+            quickDeclinePendingIntent,
+        ).build()
 
         // Build the conversation as a MessagingStyle notification
         val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
@@ -1249,18 +1375,24 @@ class TimerService : Service() {
             )
         }
 
-        val notification = NotificationCompat.Builder(this, MindfulHomeApp.NUDGE_CHANNEL_ID)
+        val notificationBuilder = NotificationCompat.Builder(this, MindfulHomeApp.NUDGE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_nudge_notification)
             .setContentIntent(tapPendingIntent)
             .setStyle(messagingStyle)
-            .addAction(replyAction)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setOnlyAlertOnce(true)
             .setSilent(!alertUser)
             .setAutoCancel(false)
             .setOngoing(false)
-            .build()
+        if (hasPendingExtensionDecision) {
+            notificationBuilder.addAction(quickConfirmAction)
+            notificationBuilder.addAction(quickDeclineAction)
+            notificationBuilder.addAction(replyAction)
+        } else {
+            notificationBuilder.addAction(replyAction)
+        }
+        val notification = notificationBuilder.build()
 
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.notify(NUDGE_NOTIFICATION_ID, notification)
@@ -1553,6 +1685,9 @@ class TimerService : Service() {
         const val EXTRA_SESSION_TOKEN = "session_token"
 
         private const val KEY_TEXT_REPLY = "key_text_reply"
+        private const val EXTRA_QUICK_REPLY_TEXT = "extra_quick_reply_text"
+        private const val QUICK_REPLY_CONFIRM_EXTENSION = "yes"
+        private const val QUICK_REPLY_DECLINE_EXTENSION = "oh, it IS late, I'll close"
 
         private val _timerState = MutableStateFlow<TimerState>(TimerState.Idle)
         val timerState: StateFlow<TimerState> = _timerState

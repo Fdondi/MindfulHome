@@ -120,6 +120,15 @@ fun SettingsScreen(
     var dailySummaryRegenerateN by remember { mutableStateOf("0") }
     var dailySummarySaveBusy by remember { mutableStateOf(false) }
 
+    val hasModel = remember { LiteRtLmManager.hasModel(context) }
+
+    var aiMode by remember { mutableStateOf(SettingsManager.getAIMode(context)) }
+    var backendModel by remember { mutableStateOf(SettingsManager.getBackendModel(context)) }
+    var isSignedIn by remember { mutableStateOf(ApiKeyManager.isSignedIn(context)) }
+    var signedInEmail by remember { mutableStateOf(ApiKeyManager.getSignedInEmail(context)) }
+    var signInInProgress by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasUsageStats = UsageTracker.hasUsageStatsPermission(context)
         hasNotificationPermission =
@@ -145,15 +154,6 @@ fun SettingsScreen(
         dailySummaryPromptVersion = SettingsManager.getDailySummaryPromptVersion(context)
         dailySummaryPromptText = SettingsManager.getDailySummaryPromptTextForEditing(context)
     }
-
-    val hasModel = remember { LiteRtLmManager.hasModel(context) }
-
-    var aiMode by remember { mutableStateOf(SettingsManager.getAIMode(context)) }
-    var backendModel by remember { mutableStateOf(SettingsManager.getBackendModel(context)) }
-    var isSignedIn by remember { mutableStateOf(ApiKeyManager.isSignedIn(context)) }
-    var signedInEmail by remember { mutableStateOf(ApiKeyManager.getSignedInEmail(context)) }
-    var signInInProgress by remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
 
     // Fetch available models from backend, fall back to hardcoded list
     var availableModels by remember {
