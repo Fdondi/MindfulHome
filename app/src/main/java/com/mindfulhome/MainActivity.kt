@@ -456,6 +456,23 @@ class MainActivity : ComponentActivity() {
             return
         }
 
+        val isLauncherHomeIntent = isLauncherHomeIntent(intent)
+        if (isLauncherHomeIntent) {
+            val onboardingDone = getSharedPreferences("mindfulhome", MODE_PRIVATE)
+                .getBoolean("onboarding_done", false)
+            if (onboardingDone) {
+                clearPendingPrefill()
+                shouldShowTimer = false
+                wentToBackground = false
+                lifecycleScope.launch {
+                    navController?.navigate("default") {
+                        popUpTo("root") { inclusive = true }
+                    }
+                }
+            }
+            return
+        }
+
         val fromUnlock = intent.getBooleanExtra(
             com.mindfulhome.receiver.ScreenUnlockReceiver.EXTRA_FROM_UNLOCK, false
         )
@@ -500,6 +517,17 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun isLauncherHomeIntent(intent: Intent): Boolean {
+        return intent.action == Intent.ACTION_MAIN &&
+            intent.hasCategory(Intent.CATEGORY_HOME) &&
+            !intent.getBooleanExtra(EXTRA_OPEN_TIMER_PREFILL, false) &&
+            !intent.getBooleanExtra(
+                com.mindfulhome.receiver.ScreenUnlockReceiver.EXTRA_FROM_UNLOCK,
+                false,
+            ) &&
+            !intent.getBooleanExtra(EXTRA_FORCE_TIMER, false)
     }
 
     override fun onStop() {
