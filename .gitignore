@@ -38,6 +38,7 @@ backend/
 
 .claude/
 CLAUDE.md
+AGENT.md
 
 open-worktree.bat
 
