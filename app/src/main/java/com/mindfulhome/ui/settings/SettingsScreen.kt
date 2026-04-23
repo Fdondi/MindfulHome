@@ -139,6 +139,8 @@ fun SettingsScreen(
         skippedOverlayPrompt = SettingsManager.isPermissionPromptSuppressed(
             context, SettingsManager.PermissionPrompt.OVERLAY
         )
+        isSignedIn = ApiKeyManager.isSignedIn(context)
+        signedInEmail = ApiKeyManager.getSignedInEmail(context)
 
         dailySummaryPromptVersion = SettingsManager.getDailySummaryPromptVersion(context)
         dailySummaryPromptText = SettingsManager.getDailySummaryPromptTextForEditing(context)

@@ -78,6 +78,29 @@ object ApiKeyManager {
         }
     }
 
+    /**
+     * Normalizes backend expiry values to unix milliseconds.
+     *
+     * Backends may send:
+     * - absolute unix seconds (preferred),
+     * - absolute unix milliseconds,
+     * - relative TTL seconds.
+     *
+     * We accept all three to avoid immediately invalidating fresh sessions.
+     */
+    private fun normalizeSessionExpiryMs(expiresAt: Long): Long {
+        if (expiresAt <= 0L) return 0L
+        val now = System.currentTimeMillis()
+        return when {
+            // Already unix milliseconds.
+            expiresAt >= 1_000_000_000_000L -> expiresAt
+            // Unix seconds (roughly year 2001+).
+            expiresAt >= 1_000_000_000L -> expiresAt * 1000L
+            // Small value likely means TTL seconds.
+            else -> now + (expiresAt * 1000L)
+        }
+    }
+
     // ── Session token (preferred) ─────────────────────────────────────
 
     /**
@@ -101,9 +124,10 @@ object ApiKeyManager {
      * `/api/auth/exchange` response so we don't need to parse our own JWT here.
      */
     fun saveSessionToken(context: Context, token: String, expiresAtUnixSeconds: Long) {
+        val normalizedExpiryMs = normalizeSessionExpiryMs(expiresAtUnixSeconds)
         prefs(context).edit()
             .putString(KEY_SESSION_TOKEN, token)
-            .putLong(KEY_SESSION_EXPIRES_MS, expiresAtUnixSeconds * 1000L)
+            .putLong(KEY_SESSION_EXPIRES_MS, normalizedExpiryMs)
             .apply()
     }
 
