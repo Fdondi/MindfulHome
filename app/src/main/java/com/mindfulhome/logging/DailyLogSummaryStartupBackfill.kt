@@ -4,6 +4,8 @@ import android.content.Context
 import android.util.Log
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.data.AppDatabase
+import java.time.LocalDate
+import java.time.ZoneId
 
 /**
  * Fills in missing daily summaries for the most recent [BACKFILL_LOG_DAY_COUNT] distinct local days
@@ -23,7 +25,10 @@ object DailyLogSummaryStartupBackfill {
 
         val db = AppDatabase.getInstance(context)
         val sessionDao = db.sessionLogDao()
-        val dayKeys = sessionDao.getRecentDistinctLocalDaysWithLogs(BACKFILL_LOG_DAY_COUNT)
+        val today = LocalDate.now(ZoneId.systemDefault()).toString()
+        val dayKeys = sessionDao.getRecentDistinctLocalDaysWithLogs(BACKFILL_LOG_DAY_COUNT + 1)
+            .filter { it < today }
+            .take(BACKFILL_LOG_DAY_COUNT)
         if (dayKeys.isEmpty()) return
 
         for (dayKey in dayKeys) {

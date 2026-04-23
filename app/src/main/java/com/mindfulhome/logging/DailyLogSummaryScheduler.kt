@@ -16,7 +16,8 @@ object DailyLogSummaryScheduler {
 
     fun ensureScheduled(context: Context) {
         val appContext = context.applicationContext
-        val initialDelay = computeInitialDelayToLocalTime(hour = 23, minute = 55)
+        // Run shortly after midnight so the previous local day is complete.
+        val initialDelay = computeInitialDelayToLocalTime(hour = 0, minute = 5)
 
         val periodic = PeriodicWorkRequestBuilder<DailyLogSummaryWorker>(24, TimeUnit.HOURS)
             .setInitialDelay(initialDelay)
@@ -28,7 +29,7 @@ object DailyLogSummaryScheduler {
             periodic,
         )
 
-        // Catch up a missed previous-day summary (e.g. if the app wasn't running at 23:55).
+        // Catch up a missed previous-day summary (e.g. if the app wasn't running around midnight).
         val catchup = OneTimeWorkRequestBuilder<DailyLogSummaryWorker>().build()
         WorkManager.getInstance(appContext).enqueueUniqueWork(
             UNIQUE_CATCHUP_WORK,

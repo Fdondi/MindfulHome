@@ -22,7 +22,7 @@ class DailyLogSummaryWorker(
 
         val zone = ZoneId.systemDefault()
         val now = ZonedDateTime.now(zone)
-        val candidates = listOf(now.toLocalDate().minusDays(1), now.toLocalDate())
+        val candidates = listOf(now.toLocalDate().minusDays(1))
 
         for (day in candidates) {
             val dayKey = day.toString()
