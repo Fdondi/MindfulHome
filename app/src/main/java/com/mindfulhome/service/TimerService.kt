@@ -967,6 +967,7 @@ class TimerService : Service() {
 
     private fun suspendForScreenOff() {
         logSessionEvent("Suspending timer workflow due to screen off")
+        val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this)
         timerJob?.cancel()
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
@@ -1021,7 +1022,11 @@ class TimerService : Service() {
             hardDeadlineAtMs = null
             overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
             SettingsManager.setTimerRunning(this@TimerService, false)
-            SettingsManager.clearQuickLaunchSession(this@TimerService)
+            if (!quickLaunchSessionActive) {
+                SettingsManager.clearQuickLaunchSession(this@TimerService)
+            } else {
+                logSessionEvent("Preserving quick-launch session across screen off")
+            }
             quickLaunchExitResumeByPackage.clear()
 
             endNudgeConversation()
@@ -1582,7 +1587,6 @@ class TimerService : Service() {
         overlayManager.dismissAllNudges()
         overlayManager.dismissQuickLaunchFrame()
         SettingsManager.setTimerRunning(this, false)
-        SettingsManager.clearQuickLaunchSession(this)
         quickLaunchExitResumeByPackage.clear()
         _sessionStartedAtMs.value = 0L
         softDeadlineAtMs = null

@@ -87,6 +87,17 @@ class MainActivity : ComponentActivity() {
         // Set in onStop, cleared in onResume.
         var wentToBackground = false
         private var backgroundTimestampMs = 0L
+
+        @JvmStatic
+        internal fun postBackgroundDestination(
+            quickLaunchSessionActive: Boolean,
+            awayMs: Long,
+            timerWasRunning: Boolean,
+            quickReturnMs: Long,
+        ): String? {
+            if (quickLaunchSessionActive) return null
+            return if (awayMs < quickReturnMs && timerWasRunning) "home" else "default"
+        }
     }
 
     private val notificationPermissionLauncher = registerForActivityResult(
@@ -589,14 +600,20 @@ class MainActivity : ComponentActivity() {
                     SettingsManager.getQuickReturnMinutes(this) * 60_000L
                 Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
 
-                if (quickLaunchSessionActive) {
-                    // While Quick Launch is active, do not reroute the user on resume.
-                    // This preserves whichever foreground app they are currently using.
-                    Log.d("MainActivity", "onResume: quick launch session active, leaving current app/screen unchanged")
+                when (val destination = postBackgroundDestination(
+                    quickLaunchSessionActive = quickLaunchSessionActive,
+                    awayMs = awayMs,
+                    timerWasRunning = timerWasRunning,
+                    quickReturnMs = quickReturnMs,
+                )) {
+                    null -> {
+                        // While Quick Launch is active, do not reroute the user on resume.
+                        // This preserves whichever foreground app they are currently using.
+                        Log.d("MainActivity", "onResume: quick launch session active, leaving current app/screen unchanged")
+                        shouldShowTimer = false
+                    }
+                    "home" -> {
                     shouldShowTimer = false
-                } else if (awayMs < quickReturnMs && timerWasRunning) {
-                    shouldShowTimer = false
-                    val destination = "home"
                     SessionLogger.log(
                         ensureSessionHandle(),
                         "Quick return (${awayMs / 1000}s) — back to $destination"
@@ -606,14 +623,15 @@ class MainActivity : ComponentActivity() {
                             popUpTo("root") { inclusive = true }
                         }
                     }
-                } else {
-                    val destination = "default"
+                    }
+                    else -> {
                     Log.d("MainActivity", "onResume: navigating to $destination")
                     shouldShowTimer = false
                     lifecycleScope.launch {
                         navController?.navigate(destination) {
                             popUpTo("root") { inclusive = true }
                         }
+                    }
                     }
                 }
             }
