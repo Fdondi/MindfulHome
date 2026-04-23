@@ -126,13 +126,10 @@ class MainActivity : ComponentActivity() {
                 val navCtrl = rememberNavController()
                 navController = navCtrl
                 val startDestination = remember {
-                    val quickLaunchSessionActive =
-                        SettingsManager.isQuickLaunchSessionActive(this@MainActivity)
                     val timerIsRunning = TimerService.timerState.value is TimerState.Counting
                     when {
                         !onboardingDone -> "onboarding"
                         shouldShowTimer -> "timer"
-                        quickLaunchSessionActive -> postTimerTargetRoute()
                         timerIsRunning -> postTimerTargetRoute()
                         else -> "default"
                     }
@@ -565,14 +562,10 @@ class MainActivity : ComponentActivity() {
                 Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
 
                 if (quickLaunchSessionActive) {
-                    val destination = "default"
-                    Log.d("MainActivity", "onResume: quick launch session active, navigating to $destination")
+                    // While Quick Launch is active, do not reroute the user on resume.
+                    // This preserves whichever foreground app they are currently using.
+                    Log.d("MainActivity", "onResume: quick launch session active, leaving current app/screen unchanged")
                     shouldShowTimer = false
-                    lifecycleScope.launch {
-                        navController?.navigate(destination) {
-                            popUpTo("root") { inclusive = true }
-                        }
-                    }
                 } else if (awayMs < quickReturnMs && timerWasRunning) {
                     shouldShowTimer = false
                     val destination = "home"
