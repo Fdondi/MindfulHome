@@ -49,6 +49,7 @@ class TimerService : Service() {
     private var quickLaunchExitCandidatePackage: String? = null
     private var quickLaunchExitCandidateStartedAtMs: Long = 0L
     private var quickLaunchExitCandidateLabel: String? = null
+    private val quickLaunchExitResumeByPackage = mutableMapOf<String, QuickLaunchExitSnapshot>()
     private var lastQuickLaunchNotificationText: String? = null
     private var quickLaunchFrameSuppressedForSensitiveApp: Boolean = false
     /** Green/yellow/red segment length for the Quick Launch overlay; shorter when the exit app has negative karma. */
@@ -79,6 +80,11 @@ class TimerService : Service() {
         val text: String,
         val isFromUser: Boolean,
         val timestamp: Long = System.currentTimeMillis(),
+    )
+
+    private data class QuickLaunchExitSnapshot(
+        val frameLevel: OverlayNudgeManager.QuickLaunchFrameLevel,
+        val capturedAtMs: Long,
     )
 
     private enum class NudgeStage {
@@ -291,6 +297,7 @@ class TimerService : Service() {
 
         timerJob?.cancel()
         resetNudgesForNewTimer()
+        quickLaunchExitResumeByPackage.clear()
         clearQuickLaunchExitCandidate()
         Log.d(
             TAG,
@@ -330,8 +337,9 @@ class TimerService : Service() {
         val allowedPackages = SettingsManager.getQuickLaunchPackages(this) + this.packageName
         val isAllowedQuickLaunchPackage = packageName in allowedPackages
         val isSystemUtilityPackage = isSystemOrUtilityPackage(packageName)
+        val now = System.currentTimeMillis()
         if (isAllowedQuickLaunchPackage || isSystemUtilityPackage) {
-            clearQuickLaunchExitCandidate()
+            clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
             if (isAllowedQuickLaunchPackage) {
                 Log.v(TAG, "quick-launch app allowed: $packageName")
             } else {
@@ -341,8 +349,8 @@ class TimerService : Service() {
         }
         if (packageName.isBlank()) return
 
-        val now = System.currentTimeMillis()
         if (quickLaunchExitCandidatePackage != packageName) {
+            rememberQuickLaunchExitProgress(now)
             quickLaunchExitCandidatePackage = packageName
             quickLaunchExitCandidateStartedAtMs = now
             quickLaunchExitCandidateLabel = getAppLabel(packageName)
@@ -355,6 +363,13 @@ class TimerService : Service() {
                     } else {
                         QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL
                     }
+                val resumedStartAtMs = resumedCandidateStartAtMs(packageName, quickLaunchSemaphorePhaseMs, now)
+                if (quickLaunchExitCandidatePackage == packageName && resumedStartAtMs != null) {
+                    quickLaunchExitCandidateStartedAtMs = resumedStartAtMs
+                    logSessionEvent(
+                        "Quick Launch grace resumed for package=$packageName from cached semaphore color"
+                    )
+                }
                 refreshQuickLaunchMonitoringNotification()
             }
             logWithSession(
@@ -368,12 +383,46 @@ class TimerService : Service() {
         }
     }
 
-    private fun clearQuickLaunchExitCandidate() {
+    private fun clearQuickLaunchExitCandidate(
+        preserveProgress: Boolean = false,
+        nowMs: Long = System.currentTimeMillis(),
+    ) {
+        if (preserveProgress) {
+            rememberQuickLaunchExitProgress(nowMs)
+        }
         quickLaunchExitCandidatePackage = null
         quickLaunchExitCandidateStartedAtMs = 0L
         quickLaunchExitCandidateLabel = null
         quickLaunchSemaphorePhaseMs = QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL
         refreshQuickLaunchMonitoringNotification()
+    }
+
+    private fun rememberQuickLaunchExitProgress(nowMs: Long = System.currentTimeMillis()) {
+        val candidatePackage = quickLaunchExitCandidatePackage ?: return
+        val candidateStartedAt = quickLaunchExitCandidateStartedAtMs
+        if (candidatePackage.isBlank() || candidateStartedAt <= 0L) return
+        val level = quickLaunchFrameLevelForNow(nowMs)
+        quickLaunchExitResumeByPackage[candidatePackage] = QuickLaunchExitSnapshot(
+            frameLevel = level,
+            capturedAtMs = nowMs,
+        )
+    }
+
+    private fun resumedCandidateStartAtMs(
+        packageName: String,
+        phaseMs: Long,
+        nowMs: Long,
+    ): Long? {
+        val snapshot = quickLaunchExitResumeByPackage[packageName] ?: return null
+        if (nowMs - snapshot.capturedAtMs > QUICK_LAUNCH_EXIT_RESUME_WINDOW_MS) {
+            quickLaunchExitResumeByPackage.remove(packageName)
+            return null
+        }
+        return when (snapshot.frameLevel) {
+            OverlayNudgeManager.QuickLaunchFrameLevel.GREEN -> nowMs
+            OverlayNudgeManager.QuickLaunchFrameLevel.YELLOW -> nowMs - phaseMs
+            OverlayNudgeManager.QuickLaunchFrameLevel.RED -> nowMs - (phaseMs * 2)
+        }
     }
 
     private fun isSystemOrUtilityPackage(packageName: String): Boolean {
@@ -900,6 +949,7 @@ class TimerService : Service() {
             overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
             SettingsManager.setTimerRunning(this@TimerService, false)
             SettingsManager.clearQuickLaunchSession(this@TimerService)
+            quickLaunchExitResumeByPackage.clear()
 
             endNudgeConversation()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -965,6 +1015,7 @@ class TimerService : Service() {
             overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
             SettingsManager.setTimerRunning(this@TimerService, false)
             SettingsManager.clearQuickLaunchSession(this@TimerService)
+            quickLaunchExitResumeByPackage.clear()
 
             endNudgeConversation()
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -1400,6 +1451,7 @@ class TimerService : Service() {
         overlayManager.dismissQuickLaunchFrame()
         SettingsManager.setTimerRunning(this, false)
         SettingsManager.clearQuickLaunchSession(this)
+        quickLaunchExitResumeByPackage.clear()
         _sessionStartedAtMs.value = 0L
         softDeadlineAtMs = null
         hardDeadlineAtMs = null
@@ -1432,6 +1484,7 @@ class TimerService : Service() {
         /** Twice as fast as [QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL] when karma is negative (10s × 3 = 30s). */
         private const val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NEGATIVE_KARMA = 10_000L
         private const val QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES = 3
+        private const val QUICK_LAUNCH_EXIT_RESUME_WINDOW_MS = 60 * 60_000L
         private const val QUICK_LAUNCH_MONITOR_TICK_MS = 1_000L
         private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
         private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
