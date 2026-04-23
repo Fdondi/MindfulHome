@@ -115,6 +115,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        logInstallAndPermissionState()
 
         Log.d("MainActivity", "onCreate: shouldShowTimer=$shouldShowTimer intent.extras=${intent?.extras}")
 
@@ -903,4 +904,24 @@ class MainActivity : ComponentActivity() {
         clearSessionToken = { ApiKeyManager.clearSessionToken(this@MainActivity) },
         isSessionExpiringSoon = { ApiKeyManager.isSessionExpiringSoon(this@MainActivity) },
     )
+
+    private fun logInstallAndPermissionState() {
+        try {
+            val packageInfo = packageManager.getPackageInfo(packageName, 0)
+            val installTime = packageInfo.firstInstallTime
+            val updateTime = packageInfo.lastUpdateTime
+            val installKind = if (installTime == updateTime) "fresh_install" else "update"
+            Log.d(
+                "MainActivity",
+                "install_state kind=$installKind firstInstall=$installTime lastUpdate=$updateTime",
+            )
+        } catch (e: Exception) {
+            Log.w("MainActivity", "install_state unavailable: ${e.message}")
+        }
+
+        Log.d(
+            "MainActivity",
+            "permission_state notifications=${hasNotificationPermission()} usage=${UsageTracker.hasUsageStatsPermission(this)} overlay=${Settings.canDrawOverlays(this)}",
+        )
+    }
 }

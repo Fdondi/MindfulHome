@@ -49,15 +49,13 @@ object UsageTracker {
     }
 
     fun hasUsageStatsPermission(context: Context): Boolean {
-        val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
-                as? UsageStatsManager ?: return false
-        val now = System.currentTimeMillis()
-        val stats = usageStatsManager.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY,
-            now - 60 * 1000,
-            now
+        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager ?: return false
+        val mode = appOps.unsafeCheckOpNoThrow(
+            android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+            android.os.Process.myUid(),
+            context.packageName
         )
-        return stats != null && stats.isNotEmpty()
+        return mode == android.app.AppOpsManager.MODE_ALLOWED
     }
 
     fun getLastUserActivityTimestampMs(

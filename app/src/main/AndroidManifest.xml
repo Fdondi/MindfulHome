@@ -5,8 +5,7 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
     <!-- Required for usage stats (detecting foreground app) -->
-    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
-        android:protectionLevel="signature" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
 
     <!-- Foreground service for timer -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
