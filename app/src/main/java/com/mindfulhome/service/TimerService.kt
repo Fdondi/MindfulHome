@@ -988,13 +988,17 @@ class TimerService : Service() {
         val selectedModel = SettingsManager.getBackendModel(ctx)
         val backendAuth = if (useBackend) {
             BackendAuthHelper(
-                signIn = { null }, // no interactive sign-in from a service
-                getAppToken = { ApiKeyManager.getAppToken(ctx) },
-                saveAppToken = { token, expiresAtMs ->
-                    ApiKeyManager.saveAppToken(ctx, token, expiresAtMs)
+                // Services can't show Google UI, so return null and let the
+                // caller decide to fall back to on-device when no session is
+                // available. This also handles the "session expired in
+                // background" edge: the service won't try to reauth.
+                signInForExchange = { null },
+                getSessionToken = { ApiKeyManager.getSessionToken(ctx) },
+                saveSessionToken = { token, exp ->
+                    ApiKeyManager.saveSessionToken(ctx, token, exp)
                 },
-                clearAppToken = { ApiKeyManager.clearAppToken(ctx) },
-                getGoogleIdToken = { ApiKeyManager.getGoogleIdToken(ctx) },
+                clearSessionToken = { ApiKeyManager.clearSessionToken(ctx) },
+                isSessionExpiringSoon = { ApiKeyManager.isSessionExpiringSoon(ctx) },
             )
         } else {
             null

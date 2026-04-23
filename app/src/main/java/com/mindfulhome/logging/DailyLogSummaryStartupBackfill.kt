@@ -15,9 +15,9 @@ object DailyLogSummaryStartupBackfill {
     private const val BACKFILL_LOG_DAY_COUNT = 5
 
     suspend fun runIfNeeded(context: Context) {
-        val token = ApiKeyManager.getAppToken(context)
+        val token = ApiKeyManager.getSessionToken(context)
         if (token.isNullOrBlank()) {
-            Log.d(TAG, "No backend token; skipping summary backfill")
+            Log.d(TAG, "No backend session; skipping summary backfill")
             return
         }
 

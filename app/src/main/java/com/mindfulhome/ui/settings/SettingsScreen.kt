@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -31,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
@@ -49,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.credentials.exceptions.NoCredentialException
@@ -61,6 +64,7 @@ import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.ai.backend.BackendHttpException
 import com.mindfulhome.service.UsageTracker
+import com.mindfulhome.logging.DailyLogSummaryGenerator
 import com.mindfulhome.settings.SettingsManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -107,6 +111,15 @@ fun SettingsScreen(
         )
     }
 
+    var dailySummaryPromptText by remember {
+        mutableStateOf(SettingsManager.getDailySummaryPromptTextForEditing(context))
+    }
+    var dailySummaryPromptVersion by remember {
+        mutableStateOf(SettingsManager.getDailySummaryPromptVersion(context))
+    }
+    var dailySummaryRegenerateN by remember { mutableStateOf("0") }
+    var dailySummarySaveBusy by remember { mutableStateOf(false) }
+
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasUsageStats = UsageTracker.hasUsageStatsPermission(context)
         hasNotificationPermission =
@@ -126,6 +139,9 @@ fun SettingsScreen(
         skippedOverlayPrompt = SettingsManager.isPermissionPromptSuppressed(
             context, SettingsManager.PermissionPrompt.OVERLAY
         )
+
+        dailySummaryPromptVersion = SettingsManager.getDailySummaryPromptVersion(context)
+        dailySummaryPromptText = SettingsManager.getDailySummaryPromptTextForEditing(context)
     }
 
     val hasModel = remember { LiteRtLmManager.hasModel(context) }
@@ -955,31 +971,39 @@ fun SettingsScreen(
                                                 if (result.email != null) {
                                                     ApiKeyManager.saveSignedInEmail(context, result.email)
                                                 }
-                                                // Exchange Google token for app token immediately
+                                                // Exchange the Google ID token for a long-lived session JWT.
+                                                // All subsequent API calls will use that session, not the
+                                                // Google token, so we don't talk to Google again until the
+                                                // session expires (~30 days).
                                                 try {
-                                                    val exchangeResponse = withContext(Dispatchers.IO) {
-                                                        BackendClient.exchangeToken(result.idToken)
+                                                    val session = withContext(Dispatchers.IO) {
+                                                        BackendClient.exchange(result.idToken)
                                                     }
-                                                    val expiresAtMs = BackendClient.parseExpiresAt(
-                                                        exchangeResponse.expiresAt
-                                                    )
-                                                    ApiKeyManager.saveAppToken(
-                                                        context, exchangeResponse.token, expiresAtMs
+                                                    ApiKeyManager.saveSessionToken(
+                                                        context,
+                                                        session.session_token,
+                                                        session.expires_at,
                                                     )
                                                     isSignedIn = true
                                                     signedInEmail = result.email
                                                 } catch (e: BackendHttpException) {
                                                     val message = when {
                                                         e.statusCode == 401 ->
-                                                            "Sign-in rejected. Your account may not have credits."
+                                                            "Sign-in rejected. Please try again."
+                                                        e.statusCode == 403 && e.code == "PENDING_APPROVAL" ->
+                                                            "Your account is pending approval."
+                                                        e.statusCode == 403 && e.code == "ACCESS_REFUSED" ->
+                                                            "Your account access has been refused."
+                                                        e.statusCode == 429 ->
+                                                            "Too many sign-in attempts. Please try again later."
                                                         else ->
-                                                            "Token exchange failed: HTTP ${e.statusCode}"
+                                                            "Backend sign-in failed: HTTP ${e.statusCode}"
                                                     }
                                                     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                                                 } catch (e: Exception) {
                                                     Toast.makeText(
                                                         context,
-                                                        "Token exchange failed: ${e.message}",
+                                                        "Backend sign-in failed: ${e.message}",
                                                         Toast.LENGTH_LONG
                                                     ).show()
                                                 }
@@ -1064,6 +1088,121 @@ fun SettingsScreen(
                                 }
                             }
                         }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            SectionHeader("Daily log summaries")
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Summarization prompt",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = "End-of-day summaries are stored as JSON " +
+                            "({\"summary\":\"…\",\"tagline\":\"…\"}). " +
+                            "The tagline is the folded snippet and expanded title. " +
+                            "Requires remote AI sign-in for generation.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+                    )
+                    Text(
+                        text = "Prompt version: $dailySummaryPromptVersion " +
+                            "(0 = default; increments when you save new instructions)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    OutlinedTextField(
+                        value = dailySummaryPromptText,
+                        onValueChange = { dailySummaryPromptText = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        label = { Text("Instructions") },
+                        minLines = 6,
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = dailySummaryRegenerateN,
+                        onValueChange = { v ->
+                            if (v.all { it.isDigit() } || v.isEmpty()) dailySummaryRegenerateN = v
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Regenerate last N summaries with an older prompt") },
+                        supportingText = {
+                            Text(
+                                "0 skips. After save, re-runs the newest days that were produced " +
+                                    "with a lower prompt version (max " +
+                                    "${SettingsManager.MAX_DAILY_SUMMARY_REGENERATE}).",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true,
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(
+                        onClick = {
+                            if (dailySummarySaveBusy) return@Button
+                            dailySummarySaveBusy = true
+                            coroutineScope.launch {
+                                try {
+                                    val n = dailySummaryRegenerateN.toIntOrNull()?.coerceIn(
+                                        SettingsManager.MIN_DAILY_SUMMARY_REGENERATE,
+                                        SettingsManager.MAX_DAILY_SUMMARY_REGENERATE,
+                                    ) ?: 0
+                                    val message = withContext(Dispatchers.IO) {
+                                        val newVersion = SettingsManager.saveDailySummaryPromptText(
+                                            context,
+                                            dailySummaryPromptText,
+                                        )
+                                        var regenMsg = ""
+                                        if (n > 0) {
+                                            val token = ApiKeyManager.getSessionToken(context)
+                                            if (token.isNullOrBlank()) {
+                                                regenMsg = " Sign in to remote AI to regenerate summaries."
+                                            } else {
+                                                val regen =
+                                                    DailyLogSummaryGenerator.regenerateSummariesWithOlderPrompt(
+                                                        context,
+                                                        token,
+                                                        newVersion,
+                                                        n,
+                                                    )
+                                                regenMsg = when {
+                                                    regen.candidateDays == 0 ->
+                                                        " No stored summaries had an older prompt version (nothing to refresh)."
+                                                    regen.successCount == regen.candidateDays ->
+                                                        " Refreshed ${regen.successCount} day(s)."
+                                                    else ->
+                                                        " Refreshed ${regen.successCount} of ${regen.candidateDays} day(s); " +
+                                                            "others left unchanged after API or JSON errors."
+                                                }
+                                            }
+                                        }
+                                        Pair(newVersion, regenMsg)
+                                    }
+                                    dailySummaryPromptVersion = message.first
+                                    Toast.makeText(
+                                        context,
+                                        "Saved prompt version ${message.first}.${message.second}",
+                                        Toast.LENGTH_LONG,
+                                    ).show()
+                                } finally {
+                                    dailySummarySaveBusy = false
+                                }
+                            }
+                        },
+                        enabled = !dailySummarySaveBusy,
+                    ) {
+                        Text(if (dailySummarySaveBusy) "Saving…" else "Save instructions")
                     }
                 }
             }

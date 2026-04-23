@@ -236,4 +236,20 @@ interface DailyLogSummaryDao {
 
     @Query("SELECT * FROM daily_log_summaries ORDER BY day DESC LIMIT :limit")
     suspend fun getLatest(limit: Int): List<DailyLogSummary>
+
+    @Query("DELETE FROM daily_log_summaries WHERE day = :day")
+    suspend fun deleteByDay(day: String)
+
+    /**
+     * Most recent days whose summary was produced with a prompt older than [beforeVersion].
+     */
+    @Query(
+        """
+        SELECT day FROM daily_log_summaries
+        WHERE promptVersion < :beforeVersion
+        ORDER BY day DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getDaysWithPromptVersionBefore(beforeVersion: Int, limit: Int): List<String>
 }

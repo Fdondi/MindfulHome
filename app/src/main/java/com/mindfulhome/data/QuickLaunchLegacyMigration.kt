@@ -25,7 +25,6 @@ internal object QuickLaunchLegacyMigration {
                 ),
             )
         }
-        cursor.close()
         if (rows.isEmpty()) return "[]"
 
         val bySlot = rows.groupBy { it.slot }.toSortedMap()

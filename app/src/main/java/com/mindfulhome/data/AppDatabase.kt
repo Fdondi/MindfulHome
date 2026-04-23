@@ -6,6 +6,7 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import org.json.JSONObject
 
 @Database(
     entities = [
@@ -21,7 +22,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DailyLogSummary::class,
         AppKv::class,
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -200,37 +201,41 @@ abstract class AppDatabase : RoomDatabase() {
 
         private val MIGRATION_13_14 = object : Migration(13, 14) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                val cursor = db.query(
+                db.query(
                     "SELECT packageName, slotPosition, orderInSlot, folderName FROM quick_launch_items ORDER BY slotPosition ASC, orderInSlot ASC",
-                )
-                val json = QuickLaunchLegacyMigration.buildJsonFromLegacyCursor(cursor)
-                db.execSQL(
-                    """CREATE TABLE IF NOT EXISTS app_kv (
+                ).use { cursor ->
+                    val json = QuickLaunchLegacyMigration.buildJsonFromLegacyCursor(cursor)
+                    db.execSQL(
+                        """CREATE TABLE IF NOT EXISTS app_kv (
                         key TEXT NOT NULL PRIMARY KEY,
                         value TEXT NOT NULL
                     )""",
-                )
-                val stmt = db.compileStatement("INSERT OR REPLACE INTO app_kv (key, value) VALUES (?, ?)")
-                stmt.bindString(1, QuickLaunchJson.KV_KEY)
-                stmt.bindString(2, json)
-                stmt.execute()
-                stmt.close()
-                db.execSQL("DROP TABLE IF EXISTS quick_launch_items")
+                    )
+                    db.compileStatement("INSERT OR REPLACE INTO app_kv (key, value) VALUES (?, ?)")
+                        .use { stmt ->
+                            stmt.bindString(1, QuickLaunchJson.KV_KEY)
+                            stmt.bindString(2, json)
+                            stmt.execute()
+                        }
+                    db.execSQL("DROP TABLE IF EXISTS quick_launch_items")
+                }
             }
         }
 
         private val MIGRATION_14_15 = object : Migration(14, 15) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                val cursor = db.query(
+                db.query(
                     "SELECT packageName, slotPosition, orderInSlot FROM shelf_items ORDER BY slotPosition ASC, orderInSlot ASC",
-                )
-                val json = FavoritesShelfLegacyMigration.buildJsonFromShelfCursor(cursor)
-                val stmt = db.compileStatement("INSERT OR REPLACE INTO app_kv (key, value) VALUES (?, ?)")
-                stmt.bindString(1, FavoritesKv.KEY)
-                stmt.bindString(2, json)
-                stmt.execute()
-                stmt.close()
-                db.execSQL("DROP TABLE IF EXISTS shelf_items")
+                ).use { cursor ->
+                    val json = FavoritesShelfLegacyMigration.buildJsonFromShelfCursor(cursor)
+                    db.compileStatement("INSERT OR REPLACE INTO app_kv (key, value) VALUES (?, ?)")
+                        .use { stmt ->
+                            stmt.bindString(1, FavoritesKv.KEY)
+                            stmt.bindString(2, json)
+                            stmt.execute()
+                        }
+                    db.execSQL("DROP TABLE IF EXISTS shelf_items")
+                }
             }
         }
 
@@ -248,6 +253,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_16_17 = object : Migration(16, 17) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE daily_log_summaries ADD COLUMN tagline TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE daily_log_summaries ADD COLUMN promptVersion INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE daily_log_summaries ADD COLUMN summaryJson TEXT NOT NULL DEFAULT ''")
+                db.query("SELECT day, summary FROM daily_log_summaries").use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val day = cursor.getString(0) ?: continue
+                        val summary = cursor.getString(1) ?: ""
+                        val json = JSONObject().put("summary", summary).put("tagline", "").toString()
+                        db.compileStatement(
+                            "UPDATE daily_log_summaries SET summaryJson = ? WHERE day = ?",
+                        ).use { stmt ->
+                            stmt.bindString(1, json)
+                            stmt.bindString(2, day)
+                            stmt.executeUpdateDelete()
+                        }
+                    }
+                }
+            }
+        }
+
         fun getInstance(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -262,6 +289,7 @@ abstract class AppDatabase : RoomDatabase() {
                         MIGRATION_13_14,
                         MIGRATION_14_15,
                         MIGRATION_15_16,
+                        MIGRATION_16_17,
                     )
                     .build().also { INSTANCE = it }
             }

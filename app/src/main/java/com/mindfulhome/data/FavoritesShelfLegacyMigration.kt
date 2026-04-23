@@ -22,7 +22,6 @@ internal object FavoritesShelfLegacyMigration {
                 ),
             )
         }
-        cursor.close()
         if (rows.isEmpty()) return "[]"
 
         val bySlot = rows.groupBy { it.slot }.toSortedMap()

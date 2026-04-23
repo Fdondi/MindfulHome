@@ -191,9 +191,13 @@ fun NegotiationScreen(
     }
     val backendAuth = remember {
         BackendAuthHelper(
-            signIn = {
+            signInForExchange = {
                 try {
-                    val result = AuthManager.signIn(context)
+                    // Silent first, fall back to interactive. Only the /api/auth/exchange
+                    // call uses this — after exchange the app holds a session JWT and
+                    // doesn't touch Google again until session expiry (~30 days).
+                    val result = AuthManager.signInSilent(context)
+                        ?: AuthManager.signIn(context)
                     if (result?.email != null) {
                         ApiKeyManager.saveSignedInEmail(context, result.email)
                     }
@@ -202,12 +206,12 @@ fun NegotiationScreen(
                     null
                 }
             },
-            getAppToken = { ApiKeyManager.getAppToken(context) },
-            saveAppToken = { token, expiresAtMs ->
-                ApiKeyManager.saveAppToken(context, token, expiresAtMs)
+            getSessionToken = { ApiKeyManager.getSessionToken(context) },
+            saveSessionToken = { token, exp ->
+                ApiKeyManager.saveSessionToken(context, token, exp)
             },
-            clearAppToken = { ApiKeyManager.clearAppToken(context) },
-            getGoogleIdToken = { ApiKeyManager.getGoogleIdToken(context) },
+            clearSessionToken = { ApiKeyManager.clearSessionToken(context) },
+            isSessionExpiringSoon = { ApiKeyManager.isSessionExpiringSoon(context) },
         )
     }
     var negotiationManager by remember {
@@ -406,12 +410,17 @@ fun NegotiationScreen(
         if (sessionUseBackend && !backendAuth.hasToken) {
             modelLabel = sessionSelectedModel
             try {
-                val result = AuthManager.signIn(context)
+                // Prefer a silent refresh (no UI) before falling back to the
+                // interactive bottom sheet. This avoids a visible popup on the
+                // common case where the token just expired and the device
+                // already has an authorized account.
+                val result = AuthManager.signInSilent(context)
+                    ?: AuthManager.signIn(context)
                 if (result != null) {
                     if (result.email != null) {
                         ApiKeyManager.saveSignedInEmail(context, result.email)
                     }
-                    backendAuth.exchangeGoogleToken(result.idToken)
+                    backendAuth.completeBackendSignIn(result.idToken)
                 }
             } catch (e: NoCredentialException) {
                 addMessage(

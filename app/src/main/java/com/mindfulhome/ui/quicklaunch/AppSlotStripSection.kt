@@ -24,7 +24,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.QuickLaunchSlot
-import com.mindfulhome.data.flattenPackages
 import com.mindfulhome.data.placementsByPackage
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog

@@ -29,8 +29,35 @@ object AuthManager {
     data class SignInResult(val idToken: String, val email: String?)
 
     /**
-     * Triggers Google Sign-In and returns a [SignInResult], or null on failure.
-     * Throws [NoCredentialException] when no Google account is available.
+     * Attempts a silent sign-in using a previously authorized account.
+     * Returns null without showing any UI if no authorized account is available.
+     */
+    suspend fun signInSilent(context: Context): SignInResult? {
+        return try {
+            val credentialManager = CredentialManager.create(context)
+            val googleIdOption = GetGoogleIdOption.Builder()
+                .setFilterByAuthorizedAccounts(true)
+                .setServerClientId(WEB_CLIENT_ID)
+                .setAutoSelectEnabled(true)
+                .build()
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(googleIdOption)
+                .build()
+            val result = credentialManager.getCredential(context, request)
+            handleSignIn(result)
+        } catch (e: NoCredentialException) {
+            Log.d(TAG, "No pre-authorized account for silent sign-in")
+            null
+        } catch (e: Exception) {
+            Log.d(TAG, "Silent sign-in failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Triggers an interactive Google Sign-In and returns a [SignInResult], or null on failure.
+     * Throws [NoCredentialException] when no Google account is available on the device.
+     * Use [signInSilent] first for background token refresh.
      */
     suspend fun signIn(
         context: Context,

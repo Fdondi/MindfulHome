@@ -110,6 +110,22 @@ object SettingsManager {
     private const val NUDGE_BANNER_FALLBACK_ARMED_KEY = "nudge_banner_fallback_armed"
     private const val DEVELOPER_LOGS_ENABLED_KEY = "developer_logs_enabled"
 
+    /** Custom instructions for daily log summarization (version bumps when saved). */
+    private const val DAILY_SUMMARY_PROMPT_TEXT_KEY = "daily_summary_prompt_text"
+    private const val DAILY_SUMMARY_PROMPT_VERSION_KEY = "daily_summary_prompt_version"
+
+    /**
+     * Default summarization instructions (editable in Settings). JSON shape is enforced in code.
+     */
+    val DEFAULT_DAILY_SUMMARY_PROMPT_TEXT = """
+You are generating an end-of-day summary for the user's phone usage sessions.
+Highlight what's interesting or notable about what happened today.
+Be concise, with 3-7 bullet points max, and one short concluding sentence.
+""".trimIndent()
+
+    const val MIN_DAILY_SUMMARY_REGENERATE = 0
+    const val MAX_DAILY_SUMMARY_REGENERATE = 30
+
     /** Available Vertex AI models the user can pick from. */
     data class ModelOption(val id: String, val label: String, val description: String)
 
@@ -176,6 +192,46 @@ object SettingsManager {
         prefs(context).edit {
             putBoolean(DEVELOPER_LOGS_ENABLED_KEY, enabled)
         }
+    }
+
+    // ── Daily log summary prompt ───────────────────────────────────────
+
+    /**
+     * Version of the summarization prompt. `0` means only defaults have been used (nothing saved in Settings).
+     * Increments each time the user saves new instructions.
+     */
+    fun getDailySummaryPromptVersion(context: Context): Int =
+        prefs(context).getInt(DAILY_SUMMARY_PROMPT_VERSION_KEY, 0)
+
+    /**
+     * Text shown in Settings and sent to the model (falls back to [DEFAULT_DAILY_SUMMARY_PROMPT_TEXT] when version is 0).
+     */
+    fun getDailySummaryPromptTextForEditing(context: Context): String {
+        val stored = prefs(context).getString(DAILY_SUMMARY_PROMPT_TEXT_KEY, null)
+        if (!stored.isNullOrBlank()) return stored
+        return DEFAULT_DAILY_SUMMARY_PROMPT_TEXT
+    }
+
+    /** Resolved instructions for generation (default when version 0). */
+    fun getDailySummaryPromptTextResolved(context: Context): String {
+        if (getDailySummaryPromptVersion(context) == 0) {
+            return DEFAULT_DAILY_SUMMARY_PROMPT_TEXT
+        }
+        val stored = prefs(context).getString(DAILY_SUMMARY_PROMPT_TEXT_KEY, "") ?: ""
+        return stored.trim().ifBlank { DEFAULT_DAILY_SUMMARY_PROMPT_TEXT }
+    }
+
+    /**
+     * Saves new instructions, bumps the prompt version, and returns the new version number.
+     */
+    fun saveDailySummaryPromptText(context: Context, text: String): Int {
+        val p = prefs(context)
+        val newVersion = p.getInt(DAILY_SUMMARY_PROMPT_VERSION_KEY, 0) + 1
+        p.edit {
+            putString(DAILY_SUMMARY_PROMPT_TEXT_KEY, text.trim())
+            putInt(DAILY_SUMMARY_PROMPT_VERSION_KEY, newVersion)
+        }
+        return newVersion
     }
 
     // ── Last session (resume) ────────────────────────────────────────

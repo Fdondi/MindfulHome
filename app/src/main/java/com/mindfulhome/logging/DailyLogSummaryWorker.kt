@@ -14,9 +14,9 @@ class DailyLogSummaryWorker(
 ) : CoroutineWorker(appContext, params) {
 
     override suspend fun doWork(): Result {
-        val token = ApiKeyManager.getAppToken(applicationContext)
+        val token = ApiKeyManager.getSessionToken(applicationContext)
         if (token.isNullOrBlank()) {
-            Log.d(TAG, "No backend token; skipping daily summary generation")
+            Log.d(TAG, "No backend session; skipping daily summary generation")
             return Result.success()
         }
 

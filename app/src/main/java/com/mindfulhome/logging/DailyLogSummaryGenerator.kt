@@ -5,6 +5,7 @@ import android.util.Log
 import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.data.AppDatabase
 import com.mindfulhome.data.DailyLogSummary
+import com.mindfulhome.settings.SettingsManager
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -26,7 +27,6 @@ enum class DailySummaryGenerateOutcome {
 object DailyLogSummaryGenerator {
 
     private const val TAG = "DailyLogSummaryGen"
-    private const val MODEL_FLASH = "gemini-2.5-flash"
     private const val MAX_EVENTS_PER_SESSION = 250
 
     /**
@@ -38,12 +38,24 @@ object DailyLogSummaryGenerator {
         dayKey: String,
         token: String,
     ): DailySummaryGenerateOutcome {
-        val db = AppDatabase.getInstance(context)
-        val summaryDao = db.dailyLogSummaryDao()
+        val summaryDao = AppDatabase.getInstance(context).dailyLogSummaryDao()
         if (summaryDao.getByDay(dayKey) != null) {
             return DailySummaryGenerateOutcome.AlreadyHad
         }
+        return generateAndPersist(context, dayKey, token)
+    }
 
+    /**
+     * Loads session logs for [dayKey], calls the model, and upserts a row. Overwrites an existing row on success.
+     * On failure, any previous row is left unchanged (caller must not delete beforehand).
+     */
+    private suspend fun generateAndPersist(
+        context: Context,
+        dayKey: String,
+        token: String,
+    ): DailySummaryGenerateOutcome {
+        val db = AppDatabase.getInstance(context)
+        val summaryDao = db.dailyLogSummaryDao()
         val zone = ZoneId.systemDefault()
         val day = LocalDate.parse(dayKey)
         val sessionDao = db.sessionLogDao()
@@ -77,10 +89,20 @@ object DailyLogSummaryGenerator {
             }
         }.trim()
 
+        val instructions = SettingsManager.getDailySummaryPromptTextResolved(context)
+        val promptVersion = SettingsManager.getDailySummaryPromptVersion(context)
+        val model = SettingsManager.getBackendModel(context)
+
         val prompt = buildString {
-            appendLine("You are generating an end-of-day summary for the user's phone usage sessions.")
-            appendLine("Highlight what's interesting or notable about what happened today.")
-            appendLine("Be concise, with 3-7 bullet points max, and one short concluding sentence.")
+            appendLine(instructions.trim())
+            appendLine()
+            appendLine(
+                "Output a single JSON object only (no markdown fences). Use exactly two string keys, " +
+                    "in this order: first \"summary\", then \"tagline\". " +
+                    "The \"summary\" value is the full daily write-up. " +
+                    "The \"tagline\" value must be written last: a very short line used as the collapsed preview " +
+                    "and expanded title (compose it after the full summary is decided).",
+            )
             appendLine()
             appendLine("Day: $dayKey")
             appendLine("Sessions: ${sessions.size}")
@@ -93,7 +115,7 @@ object DailyLogSummaryGenerator {
         return try {
             val response = BackendClient.generate(
                 token = token,
-                model = MODEL_FLASH,
+                model = model,
                 contents = listOf(
                     BackendClient.BackendContent(
                         role = "user",
@@ -102,26 +124,71 @@ object DailyLogSummaryGenerator {
                 ),
                 tools = null,
             )
-            val summary = response.result?.trim().orEmpty()
-            if (summary.isBlank()) {
+            val raw = response.result?.trim().orEmpty()
+            if (raw.isBlank()) {
                 Log.w(TAG, "Backend returned blank summary; skipping persist for $dayKey")
                 return DailySummaryGenerateOutcome.ApiError
             }
+            val parsed = DailyLogSummaryJson.parseModelOutput(raw).getOrElse { e ->
+                Log.w(TAG, "Invalid JSON summary for $dayKey: ${e.message}")
+                return DailySummaryGenerateOutcome.ApiError
+            }
+            val (summaryText, taglineText) = parsed
+            val summaryJson = DailyLogSummaryJson.buildJson(summaryText, taglineText)
             summaryDao.upsert(
                 DailyLogSummary(
                     day = dayKey,
-                    summary = summary,
+                    summary = summaryText,
+                    tagline = taglineText,
+                    summaryJson = summaryJson,
                     generatedAtMs = System.currentTimeMillis(),
                     sessionCount = sessions.size,
                     eventCount = totalEvents,
+                    promptVersion = promptVersion,
                 )
             )
-            Log.i(TAG, "Saved daily summary for $dayKey")
+            Log.i(TAG, "Saved daily summary for $dayKey (promptVersion=$promptVersion)")
             DailySummaryGenerateOutcome.Generated
         } catch (e: Exception) {
             Log.e(TAG, "Daily summary generation failed for $dayKey", e)
             DailySummaryGenerateOutcome.ApiError
         }
+    }
+
+    data class RegenerateSummaryResult(
+        val successCount: Int,
+        /** Days that matched prompt-version criteria (may be 0 if none stored yet). */
+        val candidateDays: Int,
+    )
+
+    /**
+     * Regenerates up to [count] most recent summaries whose [DailyLogSummary.promptVersion]
+     * is strictly less than [newPromptVersion]. Existing rows are **not** deleted until a new summary
+     * is successfully persisted (so API/JSON failures cannot wipe stored summaries).
+     */
+    suspend fun regenerateSummariesWithOlderPrompt(
+        context: Context,
+        token: String,
+        newPromptVersion: Int,
+        count: Int,
+    ): RegenerateSummaryResult {
+        if (count <= 0 || newPromptVersion <= 0) {
+            return RegenerateSummaryResult(0, 0)
+        }
+        val dao = AppDatabase.getInstance(context).dailyLogSummaryDao()
+        val days = dao.getDaysWithPromptVersionBefore(newPromptVersion, count)
+        var generated = 0
+        for (dayKey in days) {
+            when (generateAndPersist(context, dayKey, token)) {
+                DailySummaryGenerateOutcome.Generated -> generated++
+                DailySummaryGenerateOutcome.ApiError ->
+                    Log.w(TAG, "Regenerate failed for $dayKey; keeping previous summary row")
+                DailySummaryGenerateOutcome.NoSessionsToSummarize ->
+                    Log.w(TAG, "Regenerate skipped for $dayKey: no session logs in range")
+                DailySummaryGenerateOutcome.AlreadyHad -> Unit
+            }
+        }
+        return RegenerateSummaryResult(successCount = generated, candidateDays = days.size)
     }
 
     fun dayRangeMs(day: LocalDate, zone: ZoneId): Pair<Long, Long> {

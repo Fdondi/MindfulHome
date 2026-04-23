@@ -14,8 +14,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
-import java.time.Instant
-import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /**
@@ -73,13 +71,18 @@ object BackendClient {
     )
 
     @Serializable
-    data class ExchangeTokenResponse(
-        val token: String,
-        val expiresAt: String,
-    )
+    data class AuthStatusResponse(val status: String)
 
     @Serializable
-    data class AuthStatusResponse(val status: String)
+    data class ExchangeRequest(val google_id_token: String)
+
+    @Serializable
+    data class SessionResponse(
+        val session_token: String,
+        val expires_at: Long,
+        val email: String? = null,
+        val status: String = "active",
+    )
 
     @Serializable
     data class ModelInfo(
@@ -126,27 +129,6 @@ object BackendClient {
         return json.decodeFromString<GenerateResponse>(responseBody)
     }
 
-    fun exchangeToken(googleIdToken: String): ExchangeTokenResponse {
-        val request = Request.Builder()
-            .url("$BASE_URL/api/auth/exchange")
-            .addHeader("Authorization", "Bearer $googleIdToken")
-            .post("".toRequestBody(JSON_MEDIA_TYPE))
-            .build()
-
-        val response = client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: ""
-
-        if (!response.isSuccessful) {
-            throw BackendHttpException(
-                statusCode = response.code,
-                message = parseErrorMessage(responseBody, response.code),
-                code = parseErrorCode(responseBody),
-            )
-        }
-
-        return json.decodeFromString<ExchangeTokenResponse>(responseBody)
-    }
-
     fun checkAuthStatus(token: String) {
         val request = Request.Builder()
             .url("$BASE_URL/api/auth/status")
@@ -164,6 +146,59 @@ object BackendClient {
                 code = parseErrorCode(responseBody),
             )
         }
+    }
+
+    /**
+     * Trades a Google ID token (from Credential Manager) for a backend session JWT.
+     * Called once at first sign-in and again after a sign-out / session-expiry
+     * condition. The returned token goes into [ApiKeyManager.saveSessionToken].
+     *
+     * The server rate-limits this endpoint per source IP, so the app should
+     * avoid calling it in loops — when a call fails, back off rather than retry.
+     */
+    fun exchange(googleIdToken: String): SessionResponse {
+        val body = json.encodeToString(ExchangeRequest(google_id_token = googleIdToken))
+
+        val request = Request.Builder()
+            .url("$BASE_URL/api/auth/exchange")
+            .post(body.toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: ""
+
+        if (!response.isSuccessful) {
+            throw BackendHttpException(
+                statusCode = response.code,
+                message = parseErrorMessage(responseBody, response.code),
+                code = parseErrorCode(responseBody),
+            )
+        }
+        return json.decodeFromString<SessionResponse>(responseBody)
+    }
+
+    /**
+     * Extends an existing (non-expired) session. The returned token replaces
+     * the stored one. Expired sessions must go back through [exchange].
+     */
+    fun refreshSession(sessionToken: String): SessionResponse {
+        val request = Request.Builder()
+            .url("$BASE_URL/api/auth/refresh")
+            .addHeader("Authorization", "Bearer $sessionToken")
+            .post(ByteArray(0).toRequestBody(JSON_MEDIA_TYPE))
+            .build()
+
+        val response = client.newCall(request).execute()
+        val responseBody = response.body?.string() ?: ""
+
+        if (!response.isSuccessful) {
+            throw BackendHttpException(
+                statusCode = response.code,
+                message = parseErrorMessage(responseBody, response.code),
+                code = parseErrorCode(responseBody),
+            )
+        }
+        return json.decodeFromString<SessionResponse>(responseBody)
     }
 
     /**
@@ -187,16 +222,6 @@ object BackendClient {
         }
 
         return json.decodeFromString<ModelsResponse>(responseBody)
-    }
-
-    fun parseExpiresAt(isoString: String): Long {
-        return try {
-            Instant.from(DateTimeFormatter.ISO_DATE_TIME.parse(isoString))
-                .toEpochMilli()
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to parse expiresAt '$isoString', defaulting to 30 days", e)
-            System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000
-        }
     }
 
     // ── Error parsing ────────────────────────────────────────────────

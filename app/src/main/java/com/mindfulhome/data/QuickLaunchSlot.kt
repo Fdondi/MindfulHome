@@ -6,6 +6,7 @@ package com.mindfulhome.data
  */
 sealed class QuickLaunchSlot {
     data class Single(val packageName: String) : QuickLaunchSlot()
+
     /**
      * @param symbolIconName Optional Material Icons name (snake_case, see fonts.google.com/icons)
      *  drawn as a badge over the folder glyph; must exist in [material_icons_outlined.codepoints].
@@ -15,26 +16,31 @@ sealed class QuickLaunchSlot {
         val apps: List<String>,
         val symbolIconName: String? = null,
     ) : QuickLaunchSlot()
+
+    fun flattenPackages(): List<String> = when (this) {
+        is Single -> listOf(packageName)
+        is Folder -> apps
+    }
 }
 
-fun QuickLaunchSlot.flattenPackages(): List<String> = when (this) {
-    is QuickLaunchSlot.Single -> listOf(packageName)
-    is QuickLaunchSlot.Folder -> apps
-}
-
-/** Drops invalid entries; collapses single-app folders to [QuickLaunchSlot.Single]. */
-internal fun normalizeQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<QuickLaunchSlot> =
-    slots.mapNotNull { slot ->
+/**
+ * Removes blank package names and empty folders.
+ * Drops invalid entries; collapses single-app folders to [QuickLaunchSlot.Single].
+ */
+fun normalizeQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<QuickLaunchSlot> {
+    return slots.mapNotNull { slot ->
         when (slot) {
-            is QuickLaunchSlot.Single ->
+            is QuickLaunchSlot.Single -> {
                 if (slot.packageName.isBlank()) null else slot
+            }
             is QuickLaunchSlot.Folder -> {
                 val apps = slot.apps.filter { it.isNotBlank() }.distinct()
                 when (apps.size) {
                     0 -> null
                     1 -> QuickLaunchSlot.Single(apps[0])
-                    else -> QuickLaunchSlot.Folder(slot.name, apps, slot.symbolIconName)
+                    else -> slot.copy(apps = apps)
                 }
             }
         }
     }
+}

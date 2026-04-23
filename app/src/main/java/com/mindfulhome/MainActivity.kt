@@ -2,7 +2,6 @@ package com.mindfulhome
 
 import android.Manifest
 import android.app.AlertDialog
-import android.content.Context
 import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -15,11 +14,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.credentials.exceptions.NoCredentialException
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendAuthHelper
@@ -29,7 +33,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.mindfulhome.data.AppRepository
-import com.mindfulhome.data.flattenPackages
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
@@ -56,13 +59,13 @@ class MainActivity : ComponentActivity() {
     private var navController: NavHostController? = null
 
     // The last timer duration set by the user (persists across navigation)
-    private var lastDurationMinutes by mutableStateOf(5)
+    private var lastDurationMinutes by mutableIntStateOf(5)
 
     // Optional reason provided when starting the timer; consumed by the chat screen
     private var unlockReason by mutableStateOf("")
     private var pendingPrefillMinutes by mutableStateOf<Int?>(null)
     private var pendingPrefillReason by mutableStateOf<String?>(null)
-    private var pendingPrefillToken by mutableStateOf(0L)
+    private var pendingPrefillToken by mutableLongStateOf(0L)
     private var permissionDialogShowing = false
     private var sessionHandle: SessionLogger.SessionHandle? = null
     private var backendAuthPreflightInProgress = false
@@ -115,7 +118,7 @@ class MainActivity : ComponentActivity() {
         // Handle intent on cold launch (onNewIntent is only called for warm launches)
         handleIncomingIntent(intent)
 
-        val prefs = getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+        val prefs = getSharedPreferences("mindfulhome", MODE_PRIVATE)
         val onboardingDone = prefs.getBoolean("onboarding_done", false)
 
         setContent {
@@ -140,10 +143,10 @@ class MainActivity : ComponentActivity() {
                     composable("onboarding") {
                         OnboardingScreen(
                             onComplete = {
-                                prefs.edit()
-                                    .putBoolean("onboarding_done", true)
-                                    .remove("onboarding_step")
-                                    .apply()
+                                prefs.edit {
+                                    putBoolean("onboarding_done", true)
+                                    remove("onboarding_step")
+                                }
                                 shouldShowTimer = false
                                 navCtrl.navigate("default") {
                                     popUpTo("onboarding") { inclusive = true }
@@ -153,6 +156,12 @@ class MainActivity : ComponentActivity() {
                     }
 
                     composable("timer") {
+                        // Timer is the only flow that needs backend auth (AI negotiation
+                        // follows). Refresh the Google ID token silently here so the
+                        // NegotiationScreen doesn't have to prompt mid-conversation.
+                        // Not done on the launcher/default page, so quick-launching apps
+                        // never triggers a sign-in popup.
+                        LaunchedEffect(Unit) { maybePreflightBackendAuth() }
                         TimerScreen(
                             onTimerSet = { durationMinutes, reason, hardDeadlineMinutes, mostUsedAppsToday, mostUsedAppsCapturedAtMs ->
                                 Log.d(
@@ -168,7 +177,7 @@ class MainActivity : ComponentActivity() {
                                     durationMinutes,
                                     reason,
                                 )
-                                if (!mostUsedAppsToday.isNullOrEmpty() && mostUsedAppsCapturedAtMs != null) {
+                                if (mostUsedAppsToday.isNotEmpty() && mostUsedAppsCapturedAtMs != null) {
                                     SettingsManager.saveLastTimerUsageSnapshot(
                                         context = this@MainActivity,
                                         capturedAtMs = mostUsedAppsCapturedAtMs,
@@ -282,7 +291,6 @@ class MainActivity : ComponentActivity() {
                             },
                             onScreenShown = {
                                 ensureQuickLaunchMonitoringAtHome()
-                                maybePreflightBackendAuth()
                             },
                         )
                     }
@@ -482,10 +490,10 @@ class MainActivity : ComponentActivity() {
             // Clear wentToBackground so onResume doesn't also navigate
             wentToBackground = false
             shouldShowTimer = false
-            if (fromUnlock) {
-                sessionHandle = SessionLogger.startSession("Phone unlocked")
-            } else if (forceTimer) {
-                sessionHandle = SessionLogger.startSession("Session resumed from timer alert")
+            sessionHandle = if (fromUnlock) {
+                SessionLogger.startSession("Phone unlocked")
+            } else { // forceTimer
+                SessionLogger.startSession("Session resumed from timer alert")
             }
             lifecycleScope.launch {
                 val destination = if (forceTimer) forceDestination else "default"
@@ -523,7 +531,7 @@ class MainActivity : ComponentActivity() {
         // activity. If we mark that as "went to background", onResume navigates to default and
         // pops the graph — which aborts onboarding and loses step state while onboarding_done
         // is still false. Only track background after onboarding is finished.
-        val onboardingDone = getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+        val onboardingDone = getSharedPreferences("mindfulhome", MODE_PRIVATE)
             .getBoolean("onboarding_done", false)
         if (onboardingDone) {
             wentToBackground = true
@@ -545,7 +553,7 @@ class MainActivity : ComponentActivity() {
         if (wentToBackground) {
             wentToBackground = false
 
-            val onboardingDoneNow = getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+            val onboardingDoneNow = getSharedPreferences("mindfulhome", MODE_PRIVATE)
                 .getBoolean("onboarding_done", false)
             if (!onboardingDoneNow) {
                 Log.d("MainActivity", "onResume: skipping post-background navigation (onboarding in progress)")
@@ -601,7 +609,7 @@ class MainActivity : ComponentActivity() {
     private fun maybePromptForMissingPermission() {
         if (permissionDialogShowing || isFinishing || isDestroyed) return
 
-        val onboardingDone = getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+        val onboardingDone = getSharedPreferences("mindfulhome", MODE_PRIVATE)
             .getBoolean("onboarding_done", false)
         if (!onboardingDone) return
 
@@ -688,7 +696,7 @@ class MainActivity : ComponentActivity() {
                         startActivity(
                             Intent(
                                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                android.net.Uri.parse("package:$packageName"),
+                                "package:$packageName".toUri(),
                             )
                         )
                     }
@@ -790,7 +798,12 @@ class MainActivity : ComponentActivity() {
     private fun maybePreflightBackendAuth() {
         if (backendAuthPreflightInProgress) return
         if (SettingsManager.getAIMode(this) != SettingsManager.AI_MODE_BACKEND) return
-        if (ApiKeyManager.getAppToken(this) != null) return
+
+        val hasSession = ApiKeyManager.getSessionToken(this) != null
+        val sessionNearingExpiry = ApiKeyManager.isSessionExpiringSoon(this)
+        // Fast exit: a healthy session that isn't close to expiry means nothing
+        // to do. No Google round-trip, no network call.
+        if (hasSession && !sessionNearingExpiry) return
 
         val now = System.currentTimeMillis()
         if (now - backendAuthPreflightLastAttemptMs < 15_000L) return
@@ -799,54 +812,56 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
-                val backendAuth = BackendAuthHelper(
-                    signIn = {
-                        val result = AuthManager.signIn(this@MainActivity)
-                        result?.idToken
-                    },
-                    getAppToken = { ApiKeyManager.getAppToken(this@MainActivity) },
-                    saveAppToken = { token, expiresAtMs ->
-                        ApiKeyManager.saveAppToken(this@MainActivity, token, expiresAtMs)
-                    },
-                    clearAppToken = { ApiKeyManager.clearAppToken(this@MainActivity) },
-                    getGoogleIdToken = { ApiKeyManager.getGoogleIdToken(this@MainActivity) },
-                )
+                val backendAuth = buildBackendAuthHelper()
 
-                val signInResult = AuthManager.signIn(this@MainActivity)
-                if (signInResult != null) {
-                    if (signInResult.email != null) {
-                        ApiKeyManager.saveSignedInEmail(this@MainActivity, signInResult.email)
+                if (hasSession && sessionNearingExpiry) {
+                    // Valid session, just close to exp. Extend silently via
+                    // /api/auth/refresh — no Google involved.
+                    if (!backendAuth.refreshIfNeeded()) {
+                        Log.d(
+                            "MainActivity",
+                            "Backend preflight: refresh skipped or failed; will retry later",
+                        )
                     }
-                    val exchanged = backendAuth.exchangeGoogleToken(signInResult.idToken)
-                    if (!exchanged) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Backend authentication failed. Open Settings to retry sign-in.",
-                            Toast.LENGTH_LONG,
-                        ).show()
-                    }
-                } else {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Google Sign-In failed. Open Settings to retry sign-in.",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                    return@launch
                 }
-            } catch (_: NoCredentialException) {
-                Toast.makeText(
-                    this@MainActivity,
-                    "No Google account available. Add one in Android settings.",
-                    Toast.LENGTH_LONG,
-                ).show()
+
+                // No session: try to mint one silently. We never show Google UI
+                // during preflight — the user can sign in explicitly from
+                // Settings or will be prompted on entering the Timer screen.
+                val signInResult = AuthManager.signInSilent(this@MainActivity)
+                if (signInResult == null) {
+                    Log.d("MainActivity", "Backend preflight: no pre-authorized account, skipping")
+                    return@launch
+                }
+                signInResult.email?.let {
+                    ApiKeyManager.saveSignedInEmail(this@MainActivity, it)
+                }
+                val ok = backendAuth.completeBackendSignIn(signInResult.idToken)
+                if (!ok) {
+                    Log.w(
+                        "MainActivity",
+                        "Backend preflight: exchange rejected, will retry on next AI call",
+                    )
+                }
             } catch (_: Exception) {
-                Toast.makeText(
-                    this@MainActivity,
-                    "Remote auth failed. Open Settings to retry sign-in.",
-                    Toast.LENGTH_LONG,
-                ).show()
+                Log.d("MainActivity", "Backend preflight: silent sign-in failed, skipping")
             } finally {
                 backendAuthPreflightInProgress = false
             }
         }
     }
+
+    private fun buildBackendAuthHelper(): BackendAuthHelper = BackendAuthHelper(
+        signInForExchange = {
+            AuthManager.signInSilent(this@MainActivity)?.idToken
+                ?: AuthManager.signIn(this@MainActivity)?.idToken
+        },
+        getSessionToken = { ApiKeyManager.getSessionToken(this@MainActivity) },
+        saveSessionToken = { token, exp ->
+            ApiKeyManager.saveSessionToken(this@MainActivity, token, exp)
+        },
+        clearSessionToken = { ApiKeyManager.clearSessionToken(this@MainActivity) },
+        isSessionExpiringSoon = { ApiKeyManager.isSessionExpiringSoon(this@MainActivity) },
+    )
 }

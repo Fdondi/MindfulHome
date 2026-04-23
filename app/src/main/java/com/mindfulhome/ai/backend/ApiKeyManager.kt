@@ -2,21 +2,48 @@ package com.mindfulhome.ai.backend
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Base64
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import org.json.JSONObject
 
 /**
- * Secure storage for authentication tokens using EncryptedSharedPreferences.
+ * Secure storage for backend authentication credentials.
+ *
+ * Two token kinds live here:
+ *   - **Session token**: long-lived (30 days) backend-issued JWT. Used as the
+ *     Bearer credential for every call to `/api/generate` and similar.
+ *   - **Google ID token**: short-lived (1h) OIDC token. Only used transiently
+ *     during `/api/auth/exchange` to bootstrap or re-establish a session;
+ *     never sent to the `/api/generate` hot path.
+ *
+ * Storing the Google token is mostly vestigial (kept for migration), since in
+ * steady state the app holds only a session token and talks to Google once per
+ * ~30 days (or after sign-out).
  */
 object ApiKeyManager {
 
     private const val TAG = "ApiKeyManager"
     private const val PREFS_NAME = "mindfulhome_auth"
-    private const val KEY_APP_TOKEN = "app_token"
-    private const val KEY_APP_TOKEN_EXPIRES = "app_token_expires"
+    // Legacy Google ID token storage (pre-session architecture). Kept so we can
+    // migrate existing installs — a stale ID token here will be used exactly
+    // once to call /api/auth/exchange, then ignored forever after.
     private const val KEY_GOOGLE_ID_TOKEN = "google_id_token"
+    private const val KEY_GOOGLE_ID_TOKEN_EXPIRES_MS = "google_id_token_expires_ms"
+    private const val KEY_SESSION_TOKEN = "session_token"
+    private const val KEY_SESSION_EXPIRES_MS = "session_expires_ms"
     private const val KEY_SIGNED_IN_EMAIL = "signed_in_email"
+
+    /** Ignore expiry this many ms early so we refresh before the server rejects the token. */
+    private const val EXPIRY_SKEW_MS = 60_000L
+
+    /**
+     * When the session has this much life remaining (or less), proactively call
+     * /api/auth/refresh on the next opportunity to extend it. 7 days is aligned
+     * with the backend's SESSION_REFRESH_WINDOW_DAYS default.
+     */
+    private const val SESSION_REFRESH_WINDOW_MS = 7L * 24L * 3600L * 1000L
 
     private fun prefs(context: Context): SharedPreferences {
         return try {
@@ -34,52 +61,117 @@ object ApiKeyManager {
         }
     }
 
-    // ── App token (long-lived, obtained from backend) ────────────────
+    private fun parseJwtExpiryMs(idToken: String): Long? {
+        val parts = idToken.split(".")
+        if (parts.size < 2) return null
+        val segment = parts[1]
+        val padded = segment + "=".repeat((4 - segment.length % 4) % 4)
+        return try {
+            val json = String(
+                Base64.decode(padded, Base64.URL_SAFE),
+                Charsets.UTF_8,
+            )
+            val expSec = JSONObject(json).optLong("exp", 0L)
+            if (expSec <= 0L) null else expSec * 1000L
+        } catch (_: Exception) {
+            null
+        }
+    }
 
-    fun getAppToken(context: Context): String? {
+    // ── Session token (preferred) ─────────────────────────────────────
+
+    /**
+     * Returns the backend session token if it's present and not past its expiry
+     * (with skew). Returns null otherwise; callers should re-exchange.
+     */
+    fun getSessionToken(context: Context): String? {
         val p = prefs(context)
-        val token = p.getString(KEY_APP_TOKEN, null) ?: return null
-        val expires = p.getLong(KEY_APP_TOKEN_EXPIRES, 0L)
-        if (expires > 0 && System.currentTimeMillis() > expires) {
-            clearAppToken(context)
+        val token = p.getString(KEY_SESSION_TOKEN, null) ?: return null
+        val expiresMs = p.getLong(KEY_SESSION_EXPIRES_MS, 0L)
+        val now = System.currentTimeMillis()
+        if (expiresMs > 0L && now >= expiresMs - EXPIRY_SKEW_MS) {
+            clearSessionToken(context)
             return null
         }
         return token
     }
 
-    fun saveAppToken(context: Context, token: String, expiresAtMs: Long) {
+    /**
+     * Persists a backend session token. [expiresAtUnixSeconds] comes from the
+     * `/api/auth/exchange` response so we don't need to parse our own JWT here.
+     */
+    fun saveSessionToken(context: Context, token: String, expiresAtUnixSeconds: Long) {
         prefs(context).edit()
-            .putString(KEY_APP_TOKEN, token)
-            .putLong(KEY_APP_TOKEN_EXPIRES, expiresAtMs)
+            .putString(KEY_SESSION_TOKEN, token)
+            .putLong(KEY_SESSION_EXPIRES_MS, expiresAtUnixSeconds * 1000L)
             .apply()
     }
 
-    fun clearAppToken(context: Context) {
+    fun clearSessionToken(context: Context) {
         prefs(context).edit()
-            .remove(KEY_APP_TOKEN)
-            .remove(KEY_APP_TOKEN_EXPIRES)
+            .remove(KEY_SESSION_TOKEN)
+            .remove(KEY_SESSION_EXPIRES_MS)
             .apply()
     }
 
-    // ── Google ID token (short-lived, from sign-in) ──────────────────
+    /**
+     * True if a session is stored and its remaining lifetime is under the refresh
+     * window, meaning we should proactively call `/api/auth/refresh` on the next
+     * backend round-trip. Returns false when no session exists (that case needs
+     * a full exchange, not a refresh).
+     */
+    fun isSessionExpiringSoon(context: Context): Boolean {
+        val p = prefs(context)
+        if (p.getString(KEY_SESSION_TOKEN, null) == null) return false
+        val expiresMs = p.getLong(KEY_SESSION_EXPIRES_MS, 0L)
+        if (expiresMs <= 0L) return false
+        return System.currentTimeMillis() >= expiresMs - SESSION_REFRESH_WINDOW_MS
+    }
 
+    // ── Google ID token (bootstrap only) ──────────────────────────────
+
+    /**
+     * Returns a non-expired Google ID token for bootstrapping a session via
+     * `/api/auth/exchange`. Not for use as a Bearer on the hot path.
+     */
     fun getGoogleIdToken(context: Context): String? {
-        return prefs(context).getString(KEY_GOOGLE_ID_TOKEN, null)
+        val p = prefs(context)
+        val token = p.getString(KEY_GOOGLE_ID_TOKEN, null) ?: return null
+        val expiresMs = p.getLong(KEY_GOOGLE_ID_TOKEN_EXPIRES_MS, 0L)
+        val now = System.currentTimeMillis()
+        if (expiresMs > 0L && now >= expiresMs - EXPIRY_SKEW_MS) {
+            clearGoogleIdToken(context)
+            return null
+        }
+        if (expiresMs <= 0L) {
+            val parsed = parseJwtExpiryMs(token)
+            if (parsed != null) {
+                p.edit().putLong(KEY_GOOGLE_ID_TOKEN_EXPIRES_MS, parsed).apply()
+                if (now >= parsed - EXPIRY_SKEW_MS) {
+                    clearGoogleIdToken(context)
+                    return null
+                }
+            }
+        }
+        return token
     }
 
     fun saveGoogleIdToken(context: Context, token: String) {
+        val expMs = parseJwtExpiryMs(token) ?: 0L
         prefs(context).edit()
             .putString(KEY_GOOGLE_ID_TOKEN, token)
+            .putLong(KEY_GOOGLE_ID_TOKEN_EXPIRES_MS, expMs)
             .apply()
     }
 
     fun clearGoogleIdToken(context: Context) {
         prefs(context).edit()
             .remove(KEY_GOOGLE_ID_TOKEN)
+            .remove(KEY_GOOGLE_ID_TOKEN_EXPIRES_MS)
             .apply()
     }
 
-    // ── Signed-in email ────────────────────────────────────────────────
+    // ── Identity / sign-out ───────────────────────────────────────────
 
     fun getSignedInEmail(context: Context): String? =
         prefs(context).getString(KEY_SIGNED_IN_EMAIL, null)
@@ -90,12 +182,10 @@ object ApiKeyManager {
             .apply()
     }
 
-    /** Whether the user has a valid app token from the backend. */
-    fun isSignedIn(context: Context): Boolean {
-        return getAppToken(context) != null
-    }
+    /** Whether the app has a usable backend session (the only thing that matters for API calls). */
+    fun isSignedIn(context: Context): Boolean = getSessionToken(context) != null
 
-    /** Clears all stored tokens. */
+    /** Clears all stored credentials. */
     fun signOut(context: Context) {
         prefs(context).edit().clear().apply()
     }

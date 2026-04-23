@@ -72,7 +72,6 @@ import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.HomeLayoutItem
-import com.mindfulhome.data.flattenPackages
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager

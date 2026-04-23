@@ -59,6 +59,8 @@ private data class SessionEntry(
 private data class DayEntry(
     val day: String, // yyyy-MM-dd
     val summary: String,
+    /** From JSON `tagline`; collapsed preview and expanded title when set. */
+    val tagline: String,
     val sessions: List<SessionEntry>,
 )
 
@@ -74,7 +76,7 @@ fun LogsScreen(
         val zone = ZoneId.systemDefault()
         val db = AppDatabase.getInstance(context)
         val summaries = db.dailyLogSummaryDao().getLatest(60)
-            .associateBy({ it.day }, { it.summary })
+            .associateBy { it.day }
 
         val sessions = SessionLogger.getAllSessions()
             .map { record ->
@@ -94,9 +96,11 @@ fun LogsScreen(
         val built = grouped.entries
             .sortedByDescending { it.key }
             .map { (day, sessionsForDay) ->
+                val row = summaries[day]
                 DayEntry(
                     day = day,
-                    summary = summaries[day].orEmpty(),
+                    summary = row?.summary.orEmpty(),
+                    tagline = row?.tagline.orEmpty(),
                     sessions = sessionsForDay.sortedByDescending { it.startedAtMs },
                 )
             }
@@ -162,8 +166,10 @@ fun LogsScreen(
 @Composable
 private fun DaySummaryCard(entry: DayEntry) {
     var expanded by remember { mutableStateOf(false) }
-    val summaryPreview = remember(entry.summary) {
-        entry.summary.lines().firstOrNull().orEmpty().trim().ifBlank { "No summary yet." }
+    val summaryPreview = remember(entry.summary, entry.tagline) {
+        entry.tagline.trim().ifBlank {
+            entry.summary.lines().firstOrNull().orEmpty().trim()
+        }.ifBlank { "No summary yet." }
     }
 
     Card(
@@ -201,6 +207,15 @@ private fun DaySummaryCard(entry: DayEntry) {
             }
 
             Spacer(modifier = Modifier.height(6.dp))
+            if (expanded && entry.tagline.isNotBlank()) {
+                Text(
+                    text = entry.tagline.trim(),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
             Text(
                 text = if (expanded) entry.summary.ifBlank { "No summary yet." } else summaryPreview,
                 style = MaterialTheme.typography.bodySmall,
