@@ -40,6 +40,7 @@ import kotlinx.coroutines.launch
 import java.util.Date
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.min
 
 class TimerService : Service() {
 
@@ -55,7 +56,7 @@ class TimerService : Service() {
     private var lastQuickLaunchNotificationText: String? = null
     private var quickLaunchFrameSuppressedForSensitiveApp: Boolean = false
     /** Green/yellow/red segment length for the Quick Launch overlay; shorter when the exit app has negative karma. */
-    private var quickLaunchSemaphorePhaseMs: Long = QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL
+    private var quickLaunchSemaphorePhaseMs: Long = 20_000L
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
     private lateinit var overlayManager: OverlayNudgeManager
@@ -69,6 +70,17 @@ class TimerService : Service() {
     private var userAwayOverlayActive: Boolean = false
     private var awayShieldShownForCurrentAwayEpisode: Boolean = false
     private var lastAwayOverlayTapAtMs: Long = 0L
+
+    /**
+     * Wall-clock instant when the active session timer reaches zero. Driven only by this deadline
+     * (not by subtracting fixed ticks), so the last sleep ends exactly at expiry. 0 = no countdown.
+     */
+    @Volatile
+    private var timerEndAtMs: Long = 0L
+
+    /** Matches [TimerState.Counting.totalMs] for the active countdown (updated on extend). */
+    @Volatile
+    private var timerSessionTotalMs: Long = 0L
 
     // Nudge conversation: notification is the single chat surface.
     private var negotiationManager: NegotiationManager? = null
@@ -128,6 +140,8 @@ class TimerService : Service() {
         logSessionHandle = SessionLogger.getActiveSessionHandle()
 
         registerReceiver(screenOffReceiver, IntentFilter(Intent.ACTION_SCREEN_OFF))
+
+        quickLaunchSemaphorePhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -237,6 +251,8 @@ class TimerService : Service() {
         SettingsManager.setTimerRunning(this, true)
         _sessionStartedAtMs.value = System.currentTimeMillis()
         _currentPackage.value = packageName
+        timerSessionTotalMs = durationMs
+        timerEndAtMs = System.currentTimeMillis() + durationMs
         _timerState.value = TimerState.Counting(durationMs, durationMs)
         logSessionEvent(
             "Timer state -> Counting (totalMs=$durationMs, startedAtMs=${_sessionStartedAtMs.value}, package=${packageName.ifBlank { "<none>" }}, hardDeadlineAtMs=${hardDeadlineAtMs ?: 0L})"
@@ -249,14 +265,26 @@ class TimerService : Service() {
 
         timerJob?.cancel()
         timerJob = serviceScope.launch {
-            var remainingMs = durationMs
-            while (remainingMs > 0) {
-                delay(TIMER_TICK_MS)
-                remainingMs = (remainingMs - TIMER_TICK_MS).coerceAtLeast(0L)
-                _timerState.value = TimerState.Counting(remainingMs, durationMs)
-                updateTimerNotification(remainingMs)
+            val tickFloor = 1_000L
+            while (true) {
+                val endAt = timerEndAtMs
+                if (endAt <= 0L) return@launch
+                val now = System.currentTimeMillis()
+                if (now >= endAt) break
+                val remaining = endAt - now
+                _timerState.value = TimerState.Counting(remaining, timerSessionTotalMs)
+                updateTimerNotification(remaining)
+                val tick = SettingsManager.getTimerCountdownTickMs(this@TimerService)
+                    .coerceAtLeast(tickFloor)
+                val untilEnd = endAt - System.currentTimeMillis()
+                if (untilEnd <= 0L) break
+                delay(min(tick, untilEnd).coerceAtLeast(1L))
             }
-            onTimerExpired(packageName)
+            if (timerEndAtMs > 0L && System.currentTimeMillis() >= timerEndAtMs) {
+                _timerState.value = TimerState.Counting(0, timerSessionTotalMs)
+                updateTimerNotification(0)
+                onTimerExpired(packageName)
+            }
         }
     }
 
@@ -301,6 +329,8 @@ class TimerService : Service() {
         }
 
         timerJob?.cancel()
+        timerEndAtMs = 0L
+        timerSessionTotalMs = 0L
         resetNudgesForNewTimer()
         quickLaunchExitResumeByPackage.clear()
         clearQuickLaunchExitCandidate()
@@ -362,11 +392,12 @@ class TimerService : Service() {
             val appLabel = getAppLabel(packageName)
             serviceScope.launch {
                 val k = repository.getKarma(packageName)
+                val normalPhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(this@TimerService)
                 quickLaunchSemaphorePhaseMs =
                     if (!k.isOptedOut && k.karmaScore < 0) {
-                        QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NEGATIVE_KARMA
+                        (normalPhaseMs / 2L).coerceAtLeast(5_000L)
                     } else {
-                        QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL
+                        normalPhaseMs
                     }
                 val resumedStartAtMs = resumedCandidateStartAtMs(packageName, quickLaunchSemaphorePhaseMs, now)
                 if (quickLaunchExitCandidatePackage == packageName && resumedStartAtMs != null) {
@@ -398,7 +429,7 @@ class TimerService : Service() {
         quickLaunchExitCandidatePackage = null
         quickLaunchExitCandidateStartedAtMs = 0L
         quickLaunchExitCandidateLabel = null
-        quickLaunchSemaphorePhaseMs = QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL
+        quickLaunchSemaphorePhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(this)
         refreshQuickLaunchMonitoringNotification()
     }
 
@@ -569,7 +600,7 @@ class TimerService : Service() {
                     maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
                 }
                 evaluateQuickLaunchExitProgress(foregroundPackage)
-                delay(QUICK_LAUNCH_MONITOR_TICK_MS)
+                delay(SettingsManager.getQuickLaunchMonitorMs(this@TimerService))
             }
             Log.d(TAG, "quick-launch monitoring loop ended")
             logSessionEvent("Quick Launch monitor loop ended")
@@ -601,7 +632,10 @@ class TimerService : Service() {
             is TimerState.Counting -> {
                 val newRemaining = state.remainingMs + extraMs
                 val newTotal = state.totalMs + extraMs
+                timerSessionTotalMs = newTotal
+                timerEndAtMs = System.currentTimeMillis() + newRemaining
                 _timerState.value = TimerState.Counting(newRemaining, newTotal)
+                updateTimerNotification(newRemaining)
             }
             is TimerState.Idle -> { }
         }
@@ -609,6 +643,8 @@ class TimerService : Service() {
     }
 
     private fun onTimerExpired(packageName: String) {
+        timerEndAtMs = 0L
+        timerSessionTotalMs = 0L
         _timerState.value = TimerState.Expired(0)
         softDeadlineAtMs = System.currentTimeMillis()
         overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
@@ -659,10 +695,19 @@ class TimerService : Service() {
             var stage = NudgeStage.WAITING_AFTER_NOTIFICATION
             var stageElapsedMs = 0L
             var activeElapsedMs = 0L
+            val nudgeStartedAtMs = System.currentTimeMillis()
 
             while (true) {
-                delay(NUDGE_LOOP_TICK_MS)
+                val nudgeTickMs = SettingsManager.getNudgeLoopTickMs(this@TimerService)
+                    .coerceAtLeast(1_000L)
+                delay(nudgeTickMs)
                 val now = System.currentTimeMillis()
+                if (now - nudgeStartedAtMs >= MAX_NUDGE_LOOP_DURATION_MS) {
+                    logSessionEvent("Nudge loop timed out after ${(MAX_NUDGE_LOOP_DURATION_MS / 60_000L)}m; stopping service")
+                    logWithSession("Nudge session ended after a long overrun — returning to normal")
+                    stopTimer()
+                    return@launch
+                }
                 val detectedActivityAtMs = UsageTracker.getLastUserActivityTimestampMs(
                     context = this@TimerService,
                     lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
@@ -738,8 +783,8 @@ class TimerService : Service() {
                 if (now < nudgePauseUntilMs) {
                     continue
                 }
-                activeElapsedMs += NUDGE_LOOP_TICK_MS
-                stageElapsedMs += NUDGE_LOOP_TICK_MS
+                activeElapsedMs += nudgeTickMs
+                stageElapsedMs += nudgeTickMs
                 overrunMs = activeElapsedMs
                 _timerState.value = TimerState.Expired(overrunMs)
 
@@ -899,6 +944,8 @@ class TimerService : Service() {
         markNotificationInteractionObserved("timer stop")
         logSessionEvent("Stopping timer service workflow")
         timerJob?.cancel()
+        timerEndAtMs = 0L
+        timerSessionTotalMs = 0L
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissAllNudges()
@@ -969,6 +1016,8 @@ class TimerService : Service() {
     private fun suspendForScreenOff() {
         logSessionEvent("Suspending timer workflow due to screen off")
         timerJob?.cancel()
+        timerEndAtMs = 0L
+        timerSessionTotalMs = 0L
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissAllNudges()
@@ -1422,11 +1471,7 @@ class TimerService : Service() {
         notificationInteractionTimeoutJob?.cancel()
         awaitingNotificationInteraction = true
         val timeoutMs = SettingsManager
-            .getNudgeInteractionWatchTimeoutMinutes(this)
-            .coerceIn(
-                SettingsManager.MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
-                SettingsManager.MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
-            ) * 60_000L
+            .getNudgeInteractionWatchTimeoutMinutes(this) * 60_000L
         logSessionEvent(
             "Armed notification interaction watch (source=$source, timeoutMs=$timeoutMs)"
         )
@@ -1593,6 +1638,8 @@ class TimerService : Service() {
             unregisterReceiver(screenOffReceiver)
         } catch (_: IllegalArgumentException) { }
         timerJob?.cancel()
+        timerEndAtMs = 0L
+        timerSessionTotalMs = 0L
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
         clearQuickLaunchExitCandidate()
@@ -1628,17 +1675,11 @@ class TimerService : Service() {
         private const val TIMER_NOTIFICATION_ID = 1001
         private const val NUDGE_NOTIFICATION_ID = 1002
         private const val QUICK_LAUNCH_NOTIFICATION_ID = 1003
-        private const val TIMER_TICK_MS = 20_000L
-        private const val NUDGE_LOOP_TICK_MS = 20_000L
-        /** One semaphore color segment when the exit app does not have negative karma (20s × 3 = 60s to forced return). */
-        private const val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL = 20_000L
-        /** Twice as fast as [QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NORMAL] when karma is negative (10s × 3 = 30s). */
-        private const val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_NEGATIVE_KARMA = 10_000L
         private const val QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES = 3
         private const val QUICK_LAUNCH_EXIT_RESUME_WINDOW_MS = 60 * 60_000L
-        private const val QUICK_LAUNCH_MONITOR_TICK_MS = 1_000L
         private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
         private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
+        private const val MAX_NUDGE_LOOP_DURATION_MS = 30 * 60_000L
         private const val PREDATORY_BIRD_EVERY_N_BIRDS = 10
         private const val DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT =
             "Quick Launch active - monitoring app switches"

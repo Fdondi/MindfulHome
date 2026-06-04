@@ -45,6 +45,7 @@ import com.mindfulhome.ui.logs.LogsScreen
 import com.mindfulhome.ui.negotiation.NegotiationScreen
 import com.mindfulhome.ui.onboarding.OnboardingScreen
 import com.mindfulhome.ui.karma.KarmaScreen
+import com.mindfulhome.ui.settings.IntervalSettingsScreen
 import com.mindfulhome.ui.settings.SettingsScreen
 import com.mindfulhome.ui.theme.MindfulHomeTheme
 import com.mindfulhome.ui.timer.TimerScreen
@@ -432,7 +433,14 @@ class MainActivity : ComponentActivity() {
 
                     composable("settings") {
                         SettingsScreen(
-                            onBack = { navCtrl.popBackStack() }
+                            onBack = { navCtrl.popBackStack() },
+                            onOpenIntervalSettings = { navCtrl.navigate("settings_intervals") },
+                        )
+                    }
+
+                    composable("settings_intervals") {
+                        IntervalSettingsScreen(
+                            onBack = { navCtrl.popBackStack() },
                         )
                     }
 

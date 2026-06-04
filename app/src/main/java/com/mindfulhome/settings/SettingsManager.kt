@@ -50,29 +50,74 @@ object SettingsManager {
     private const val NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_KEY = "nudge_typing_idle_timeout_minutes"
     private const val NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_KEY = "nudge_interaction_watch_timeout_minutes"
 
+    private const val QUICK_LAUNCH_MONITOR_MS_KEY = "quick_launch_monitor_ms"
+    private const val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_KEY = "quick_launch_semaphore_phase_ms"
+    private const val NUDGE_LOOP_TICK_MS_KEY = "nudge_loop_tick_ms"
+    private const val TIMER_COUNTDOWN_TICK_MS_KEY = "timer_countdown_tick_ms"
+    private const val USAGE_FOREGROUND_CACHE_TTL_MS_KEY = "usage_foreground_cache_ttl_ms"
+
     const val DEFAULT_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES = 1
     const val MIN_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES = 0
     const val MAX_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES = 5
 
     const val DEFAULT_NUDGE_BUBBLE_INTERVAL_SECONDS = 20
-    const val MIN_NUDGE_BUBBLE_INTERVAL_SECONDS = 5
-    const val MAX_NUDGE_BUBBLE_INTERVAL_SECONDS = 60
 
     const val DEFAULT_NUDGE_BUBBLES_BEFORE_BANNER = 10
     const val MIN_NUDGE_BUBBLES_BEFORE_BANNER = 1
     const val MAX_NUDGE_BUBBLES_BEFORE_BANNER = 30
 
     const val DEFAULT_NUDGE_BANNER_INTERVAL_MINUTES = 1
-    const val MIN_NUDGE_BANNER_INTERVAL_MINUTES = 1
-    const val MAX_NUDGE_BANNER_INTERVAL_MINUTES = 10
 
     const val DEFAULT_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 1
-    const val MIN_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 1
-    const val MAX_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES = 10
 
     const val DEFAULT_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES = 1
-    const val MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES = 1
-    const val MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES = 10
+
+    /** Exponential-style steps; larger values reduce battery use (less frequent work). */
+    val QUICK_LAUNCH_MONITOR_MS_OPTIONS = longArrayOf(
+        1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 32_000L, 64_000L,
+    )
+    const val DEFAULT_QUICK_LAUNCH_MONITOR_MS = 4_000L
+
+    /** Length of each green / yellow / red segment before forced return (3 segments total). 20s–2min. */
+    val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_OPTIONS = longArrayOf(
+        20_000L, 30_000L, 45_000L, 60_000L, 90_000L, 120_000L,
+    )
+    const val DEFAULT_QUICK_LAUNCH_SEMAPHORE_PHASE_MS = 20_000L
+
+    val NUDGE_LOOP_TICK_MS_OPTIONS = longArrayOf(
+        10_000L, 20_000L, 40_000L, 80_000L, 120_000L, 240_000L, 480_000L,
+    )
+    const val DEFAULT_NUDGE_LOOP_TICK_MS = 20_000L
+
+    val TIMER_COUNTDOWN_TICK_MS_OPTIONS = longArrayOf(
+        10_000L, 20_000L, 40_000L, 60_000L, 120_000L, 300_000L,
+    )
+    const val DEFAULT_TIMER_COUNTDOWN_TICK_MS = 20_000L
+
+    val USAGE_FOREGROUND_CACHE_TTL_MS_OPTIONS = longArrayOf(
+        500L, 1_000L, 2_000L, 4_000L, 8_000L,
+    )
+    const val DEFAULT_USAGE_FOREGROUND_CACHE_TTL_MS = 2_000L
+
+    val NUDGE_BUBBLE_INTERVAL_SECONDS_OPTIONS = intArrayOf(
+        5, 10, 20, 30, 60, 120, 180, 300,
+    )
+
+    val NUDGE_BANNER_INTERVAL_MINUTES_OPTIONS = intArrayOf(
+        1, 2, 4, 8, 16, 32,
+    )
+
+    val NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES_OPTIONS = intArrayOf(
+        0, 1, 2, 3, 4, 5,
+    )
+
+    val NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_OPTIONS = intArrayOf(
+        1, 2, 4, 8, 10,
+    )
+
+    val NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_OPTIONS = intArrayOf(
+        1, 2, 4, 8, 10,
+    )
 
     // Karma hide threshold (number of bad-karma points before the app is hidden)
     private const val HIDE_THRESHOLD_KEY = "karma_hide_threshold"
@@ -511,38 +556,36 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
 
     // ── Nudge stage timing and escalation ───────────────────────────
 
-    fun getNudgeInitialNotificationDelayMinutes(context: Context): Int =
-        prefs(context).getInt(
+    fun getNudgeInitialNotificationDelayMinutes(context: Context): Int {
+        val raw = prefs(context).getInt(
             NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES_KEY,
             DEFAULT_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES,
         )
+        return snapToNearest(raw, NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES_OPTIONS)
+    }
 
     fun setNudgeInitialNotificationDelayMinutes(context: Context, value: Int) {
         prefs(context).edit {
             putInt(
                 NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES_KEY,
-                value.coerceIn(
-                    MIN_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES,
-                    MAX_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES,
-                ),
+                snapToNearest(value, NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES_OPTIONS),
             )
         }
     }
 
-    fun getNudgeBubbleIntervalSeconds(context: Context): Int =
-        prefs(context).getInt(
+    fun getNudgeBubbleIntervalSeconds(context: Context): Int {
+        val raw = prefs(context).getInt(
             NUDGE_BUBBLE_INTERVAL_SECONDS_KEY,
             DEFAULT_NUDGE_BUBBLE_INTERVAL_SECONDS,
         )
+        return snapToNearest(raw, NUDGE_BUBBLE_INTERVAL_SECONDS_OPTIONS)
+    }
 
     fun setNudgeBubbleIntervalSeconds(context: Context, value: Int) {
         prefs(context).edit {
             putInt(
                 NUDGE_BUBBLE_INTERVAL_SECONDS_KEY,
-                value.coerceIn(
-                    MIN_NUDGE_BUBBLE_INTERVAL_SECONDS,
-                    MAX_NUDGE_BUBBLE_INTERVAL_SECONDS,
-                ),
+                snapToNearest(value, NUDGE_BUBBLE_INTERVAL_SECONDS_OPTIONS),
             )
         }
     }
@@ -565,56 +608,131 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         }
     }
 
-    fun getNudgeBannerIntervalMinutes(context: Context): Int =
-        prefs(context).getInt(
+    fun getNudgeBannerIntervalMinutes(context: Context): Int {
+        val raw = prefs(context).getInt(
             NUDGE_BANNER_INTERVAL_MINUTES_KEY,
             DEFAULT_NUDGE_BANNER_INTERVAL_MINUTES,
         )
+        return snapToNearest(raw, NUDGE_BANNER_INTERVAL_MINUTES_OPTIONS)
+    }
 
     fun setNudgeBannerIntervalMinutes(context: Context, value: Int) {
         prefs(context).edit {
             putInt(
                 NUDGE_BANNER_INTERVAL_MINUTES_KEY,
-                value.coerceIn(
-                    MIN_NUDGE_BANNER_INTERVAL_MINUTES,
-                    MAX_NUDGE_BANNER_INTERVAL_MINUTES,
-                ),
+                snapToNearest(value, NUDGE_BANNER_INTERVAL_MINUTES_OPTIONS),
             )
         }
     }
 
-    fun getNudgeTypingIdleTimeoutMinutes(context: Context): Int =
-        prefs(context).getInt(
+    fun getNudgeTypingIdleTimeoutMinutes(context: Context): Int {
+        val raw = prefs(context).getInt(
             NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_KEY,
             DEFAULT_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
         )
+        return snapToNearest(raw, NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_OPTIONS)
+    }
 
     fun setNudgeTypingIdleTimeoutMinutes(context: Context, value: Int) {
         prefs(context).edit {
             putInt(
                 NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_KEY,
-                value.coerceIn(
-                    MIN_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
-                    MAX_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
-                ),
+                snapToNearest(value, NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_OPTIONS),
             )
         }
     }
 
-    fun getNudgeInteractionWatchTimeoutMinutes(context: Context): Int =
-        prefs(context).getInt(
+    fun getNudgeInteractionWatchTimeoutMinutes(context: Context): Int {
+        val raw = prefs(context).getInt(
             NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_KEY,
             DEFAULT_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
         )
+        return snapToNearest(raw, NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_OPTIONS)
+    }
 
     fun setNudgeInteractionWatchTimeoutMinutes(context: Context, value: Int) {
         prefs(context).edit {
             putInt(
                 NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_KEY,
-                value.coerceIn(
-                    MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
-                    MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES,
-                ),
+                snapToNearest(value, NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES_OPTIONS),
+            )
+        }
+    }
+
+    // ── Polling / countdown intervals (battery-sensitive) ───────────
+
+    fun getQuickLaunchMonitorMs(context: Context): Long {
+        val raw = prefs(context).getLong(
+            QUICK_LAUNCH_MONITOR_MS_KEY,
+            DEFAULT_QUICK_LAUNCH_MONITOR_MS,
+        )
+        return snapToNearest(raw, QUICK_LAUNCH_MONITOR_MS_OPTIONS)
+    }
+
+    fun setQuickLaunchMonitorMs(context: Context, ms: Long) {
+        prefs(context).edit {
+            putLong(QUICK_LAUNCH_MONITOR_MS_KEY, snapToNearest(ms, QUICK_LAUNCH_MONITOR_MS_OPTIONS))
+        }
+    }
+
+    fun getQuickLaunchSemaphorePhaseNormalMs(context: Context): Long {
+        val raw = prefs(context).getLong(
+            QUICK_LAUNCH_SEMAPHORE_PHASE_MS_KEY,
+            DEFAULT_QUICK_LAUNCH_SEMAPHORE_PHASE_MS,
+        )
+        return snapToNearest(raw, QUICK_LAUNCH_SEMAPHORE_PHASE_MS_OPTIONS)
+    }
+
+    fun setQuickLaunchSemaphorePhaseNormalMs(context: Context, ms: Long) {
+        prefs(context).edit {
+            putLong(
+                QUICK_LAUNCH_SEMAPHORE_PHASE_MS_KEY,
+                snapToNearest(ms, QUICK_LAUNCH_SEMAPHORE_PHASE_MS_OPTIONS),
+            )
+        }
+    }
+
+    fun getNudgeLoopTickMs(context: Context): Long {
+        val raw = prefs(context).getLong(
+            NUDGE_LOOP_TICK_MS_KEY,
+            DEFAULT_NUDGE_LOOP_TICK_MS,
+        )
+        return snapToNearest(raw, NUDGE_LOOP_TICK_MS_OPTIONS)
+    }
+
+    fun setNudgeLoopTickMs(context: Context, ms: Long) {
+        prefs(context).edit {
+            putLong(NUDGE_LOOP_TICK_MS_KEY, snapToNearest(ms, NUDGE_LOOP_TICK_MS_OPTIONS))
+        }
+    }
+
+    fun getTimerCountdownTickMs(context: Context): Long {
+        val raw = prefs(context).getLong(
+            TIMER_COUNTDOWN_TICK_MS_KEY,
+            DEFAULT_TIMER_COUNTDOWN_TICK_MS,
+        )
+        return snapToNearest(raw, TIMER_COUNTDOWN_TICK_MS_OPTIONS)
+    }
+
+    fun setTimerCountdownTickMs(context: Context, ms: Long) {
+        prefs(context).edit {
+            putLong(TIMER_COUNTDOWN_TICK_MS_KEY, snapToNearest(ms, TIMER_COUNTDOWN_TICK_MS_OPTIONS))
+        }
+    }
+
+    fun getUsageForegroundCacheTtlMs(context: Context): Long {
+        val raw = prefs(context).getLong(
+            USAGE_FOREGROUND_CACHE_TTL_MS_KEY,
+            DEFAULT_USAGE_FOREGROUND_CACHE_TTL_MS,
+        )
+        return snapToNearest(raw, USAGE_FOREGROUND_CACHE_TTL_MS_OPTIONS)
+    }
+
+    fun setUsageForegroundCacheTtlMs(context: Context, ms: Long) {
+        prefs(context).edit {
+            putLong(
+                USAGE_FOREGROUND_CACHE_TTL_MS_KEY,
+                snapToNearest(ms, USAGE_FOREGROUND_CACHE_TTL_MS_OPTIONS),
             )
         }
     }
@@ -711,4 +829,14 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
     }
 
     private const val MINUTES_PER_DAY = 24 * 60
+
+    private fun snapToNearest(value: Long, options: LongArray): Long {
+        if (options.isEmpty()) return value
+        return options.minByOrNull { kotlin.math.abs(it - value) } ?: value
+    }
+
+    private fun snapToNearest(value: Int, options: IntArray): Int {
+        if (options.isEmpty()) return value
+        return options.minByOrNull { kotlin.math.abs(it - value) } ?: value
+    }
 }

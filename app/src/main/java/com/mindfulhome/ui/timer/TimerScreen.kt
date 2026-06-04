@@ -171,11 +171,15 @@ fun TimerScreen(
         }
     }
 
-    // Keep end-time labels current while user is picking a duration.
+    // Keep end-time labels aligned with the clock while picking a duration (wake on minute rollover, not a fixed poll).
     LaunchedEffect(Unit) {
         while (true) {
-            delay(20_000L)
             nowMs = System.currentTimeMillis()
+            val msIntoMinute = nowMs % 60_000L
+            val msToNextMinute = (60_000L - msIntoMinute).let { step ->
+                if (step <= 0L) 60_000L else step
+            }
+            delay(msToNextMinute.coerceAtLeast(1_000L))
         }
     }
 

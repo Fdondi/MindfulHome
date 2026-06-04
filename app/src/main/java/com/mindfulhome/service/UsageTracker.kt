@@ -3,6 +3,7 @@ package com.mindfulhome.service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
+import com.mindfulhome.settings.SettingsManager
 import java.util.Calendar
 
 object UsageTracker {
@@ -13,11 +14,25 @@ object UsageTracker {
         val timeChunksMsDesc: List<Long>,
     )
 
+    private data class ForegroundCache(
+        val packageName: String,
+        val observedAtMs: Long,
+    )
+
+    // Keeps Quick Launch from hammering UsageStatsManager when we poll in short intervals.
+    private var foregroundCache: ForegroundCache? = null
+
     fun getForegroundApp(context: Context): String? {
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
                 as? UsageStatsManager ?: return null
 
         val now = System.currentTimeMillis()
+        val cacheTtlMs = SettingsManager.getUsageForegroundCacheTtlMs(context)
+        val cached = foregroundCache
+        if (cached != null && now - cached.observedAtMs <= cacheTtlMs) {
+            return cached.packageName
+        }
+
         // Prefer UsageEvents for near-real-time foreground transitions (recents/home switches).
         val events = usageStatsManager.queryEvents(now - 15_000, now)
         var latestPackage: String? = null
@@ -33,19 +48,27 @@ object UsageTracker {
                 latestPackage = event.packageName
             }
         }
-        if (!latestPackage.isNullOrBlank()) return latestPackage
+        if (!latestPackage.isNullOrBlank()) {
+            foregroundCache = ForegroundCache(latestPackage!!, now)
+            return latestPackage
+        }
 
         // Fallback for devices where event stream is sparse.
+        // This path is significantly heavier than querying events; keep it rare.
         val stats = usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_DAILY,
             now - 60 * 1000,
             now,
         )
 
-        return stats
+        val fallback = stats
             ?.filter { it.totalTimeInForeground > 0 }
             ?.maxByOrNull { it.lastTimeUsed }
             ?.packageName
+        if (!fallback.isNullOrBlank()) {
+            foregroundCache = ForegroundCache(fallback, now)
+        }
+        return fallback
     }
 
     fun hasUsageStatsPermission(context: Context): Boolean {

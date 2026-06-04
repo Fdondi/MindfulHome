@@ -73,7 +73,8 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    onOpenIntervalSettings: () -> Unit,
 ) {
     val context = LocalContext.current
     val appVersion = AppVersion.versionName
@@ -476,98 +477,27 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            var initialNudgeDelayMinutes by remember {
-                mutableFloatStateOf(
-                    SettingsManager.getNudgeInitialNotificationDelayMinutes(context).toFloat()
-                )
-            }
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Delay Before Bubbles",
+                        text = "Timing & intervals",
                         style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = "After the first notification, wait this long before " +
-                            "starting floating chat bubbles.",
+                        text = "Polling (Quick Launch, usage cache, nudge loop), timer notification refresh, " +
+                            "and all nudge timing intervals. Larger steps save battery.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.padding(top = 4.dp),
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 8.dp)
+                    Button(
+                        onClick = onOpenIntervalSettings,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
                     ) {
-                        Slider(
-                            value = initialNudgeDelayMinutes,
-                            onValueChange = { initialNudgeDelayMinutes = it },
-                            onValueChangeFinished = {
-                                SettingsManager.setNudgeInitialNotificationDelayMinutes(
-                                    context, initialNudgeDelayMinutes.toInt()
-                                )
-                            },
-                            valueRange =
-                                SettingsManager.MIN_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES.toFloat()..
-                                    SettingsManager.MAX_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES.toFloat(),
-                            steps = SettingsManager.MAX_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES -
-                                SettingsManager.MIN_NUDGE_INITIAL_NOTIFICATION_DELAY_MINUTES,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "${initialNudgeDelayMinutes.toInt()} min",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            var bubbleIntervalSeconds by remember {
-                mutableFloatStateOf(
-                    SettingsManager.getNudgeBubbleIntervalSeconds(context).toFloat()
-                )
-            }
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Bubble Interval",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "How often a new chat bubble appears.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 8.dp)
-                    ) {
-                        Slider(
-                            value = bubbleIntervalSeconds,
-                            onValueChange = { bubbleIntervalSeconds = it },
-                            onValueChangeFinished = {
-                                SettingsManager.setNudgeBubbleIntervalSeconds(
-                                    context, bubbleIntervalSeconds.toInt()
-                                )
-                            },
-                            valueRange = SettingsManager.MIN_NUDGE_BUBBLE_INTERVAL_SECONDS.toFloat()..
-                                SettingsManager.MAX_NUDGE_BUBBLE_INTERVAL_SECONDS.toFloat(),
-                            steps = SettingsManager.MAX_NUDGE_BUBBLE_INTERVAL_SECONDS -
-                                SettingsManager.MIN_NUDGE_BUBBLE_INTERVAL_SECONDS,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "${bubbleIntervalSeconds.toInt()} sec",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Text("Open timing & intervals")
                     }
                 }
             }
@@ -613,152 +543,6 @@ fun SettingsScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = "${bubblesBeforeBanner.toInt()} bubbles",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            var bannerIntervalMinutes by remember {
-                mutableFloatStateOf(
-                    SettingsManager.getNudgeBannerIntervalMinutes(context).toFloat()
-                )
-            }
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Banner Interval",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "How often full-width banners are spawned.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 8.dp)
-                    ) {
-                        Slider(
-                            value = bannerIntervalMinutes,
-                            onValueChange = { bannerIntervalMinutes = it },
-                            onValueChangeFinished = {
-                                SettingsManager.setNudgeBannerIntervalMinutes(
-                                    context, bannerIntervalMinutes.toInt()
-                                )
-                            },
-                            valueRange = SettingsManager.MIN_NUDGE_BANNER_INTERVAL_MINUTES.toFloat()..
-                                SettingsManager.MAX_NUDGE_BANNER_INTERVAL_MINUTES.toFloat(),
-                            steps = SettingsManager.MAX_NUDGE_BANNER_INTERVAL_MINUTES -
-                                SettingsManager.MIN_NUDGE_BANNER_INTERVAL_MINUTES,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "${bannerIntervalMinutes.toInt()} min",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            var typingIdleTimeoutMinutes by remember {
-                mutableFloatStateOf(
-                    SettingsManager.getNudgeTypingIdleTimeoutMinutes(context).toFloat()
-                )
-            }
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Typing Pause Timeout",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "While typing (or shortly after), nudge timers pause.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 8.dp)
-                    ) {
-                        Slider(
-                            value = typingIdleTimeoutMinutes,
-                            onValueChange = { typingIdleTimeoutMinutes = it },
-                            onValueChangeFinished = {
-                                SettingsManager.setNudgeTypingIdleTimeoutMinutes(
-                                    context, typingIdleTimeoutMinutes.toInt()
-                                )
-                            },
-                            valueRange = SettingsManager.MIN_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES.toFloat()..
-                                SettingsManager.MAX_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES.toFloat(),
-                            steps = SettingsManager.MAX_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES -
-                                SettingsManager.MIN_NUDGE_TYPING_IDLE_TIMEOUT_MINUTES,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "${typingIdleTimeoutMinutes.toInt()} min",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            var interactionWatchTimeoutMinutes by remember {
-                mutableFloatStateOf(
-                    SettingsManager.getNudgeInteractionWatchTimeoutMinutes(context).toFloat()
-                )
-            }
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Notification Interaction Watch",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Medium
-                    )
-                    Text(
-                        text = "After tapping a bubble, wait this long for user interaction " +
-                            "before arming banner fallback.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 8.dp)
-                    ) {
-                        Slider(
-                            value = interactionWatchTimeoutMinutes,
-                            onValueChange = { interactionWatchTimeoutMinutes = it },
-                            onValueChangeFinished = {
-                                SettingsManager.setNudgeInteractionWatchTimeoutMinutes(
-                                    context, interactionWatchTimeoutMinutes.toInt()
-                                )
-                            },
-                            valueRange =
-                                SettingsManager.MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES.toFloat()..
-                                    SettingsManager.MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES.toFloat(),
-                            steps = SettingsManager.MAX_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES -
-                                SettingsManager.MIN_NUDGE_INTERACTION_WATCH_TIMEOUT_MINUTES - 1,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "${interactionWatchTimeoutMinutes.toInt()} min",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Medium
                         )
