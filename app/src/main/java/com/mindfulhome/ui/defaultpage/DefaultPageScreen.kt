@@ -34,7 +34,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -55,7 +54,7 @@ import androidx.compose.ui.unit.dp
 import com.mindfulhome.AppVersion
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.TodoItem
-import com.mindfulhome.ui.quicklaunch.QuickLaunchSection
+import com.mindfulhome.ui.quicklaunch.MissionIntentSection
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
@@ -134,6 +133,21 @@ fun DefaultPageScreen(
             }
         }
 
+        Text(
+            text = "What is your mission?",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        MissionIntentSection(
+            repository = repository,
+            onQuickLaunchApp = onQuickLaunchApp,
+            onOpenTimerPlain = onOpenTimerPlain,
+            resumeSessionLabel = resumeSessionLabel,
+            resumeSessionMinutes = resumeSessionMinutes,
+            onResumeSession = onResumeSession,
+        )
+
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -200,27 +214,6 @@ fun DefaultPageScreen(
             }
         }
 
-        if (resumeSessionLabel != null && onResumeSession != null && resumeSessionMinutes > 0) {
-            OutlinedButton(
-                onClick = onResumeSession,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-            ) {
-                Text("Resume $resumeSessionLabel (${formatMinutes(resumeSessionMinutes)})")
-            }
-        }
-
-        QuickLaunchSection(
-            repository = repository,
-            onQuickLaunchApp = onQuickLaunchApp,
-        )
-
-        Button(
-            onClick = onOpenTimerPlain,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text("something else?")
-        }
         Spacer(modifier = Modifier.height(12.dp))
     }
 
@@ -359,14 +352,6 @@ private fun next6pmEpochMs(nowMs: Long = System.currentTimeMillis()): Long {
         }
     }
     return cal.timeInMillis
-}
-
-private fun formatMinutes(minutes: Int): String {
-    return when {
-        minutes < 60 -> "${minutes}m"
-        minutes % 60 == 0 -> "${minutes / 60}h"
-        else -> "${minutes / 60}h ${minutes % 60}m"
-    }
 }
 
 private fun pickDateTime(

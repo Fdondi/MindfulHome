@@ -68,10 +68,7 @@ fun MaterialSymbolGlyph(
     }
 }
 
-/**
- * Outlined folder glyph with an optional Material Icons badge (snake_case names match fonts.google.com).
- * The badge uses ~60% of the folder’s linear size so it reads clearly on the tile.
- */
+/** Material symbol glyph only — no generic folder outline. */
 @Composable
 fun MaterialFolderWithSymbolOverlay(
     symbolIconName: String?,
@@ -81,44 +78,12 @@ fun MaterialFolderWithSymbolOverlay(
     tintOnFolder: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
     tintOnBadge: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
 ) {
-    val context = LocalContext.current
-    val fontFamily = remember {
-        FontFamily(Font(R.font.material_icons_outlined))
-    }
-    val folderCp = remember {
-        MaterialIconCatalog.codepoint(context, "folder")
-    }
-    val badgeText = remember(symbolIconName) { resolveSymbolText(symbolIconName, context) }
-    val folderText = folderCp?.let { codepointToString(it) }
-    val semanticsMod = if (contentDescription.isNotBlank()) {
-        Modifier.semantics { this.contentDescription = contentDescription }
-    } else {
-        Modifier.clearAndSetSemantics { }
-    }
-    Box(
-        modifier
-            .size(folderSize)
-            .then(semanticsMod),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (folderText != null) {
-            Text(
-                text = folderText,
-                fontFamily = fontFamily,
-                fontSize = (folderSize.value * 0.95f).sp,
-                color = tintOnFolder,
-                modifier = Modifier.align(Alignment.Center),
-            )
-        }
-        if (badgeText != null) {
-            val badgeSp = (folderSize.value * 0.6f).sp
-            Text(
-                text = badgeText.text,
-                fontFamily = if (badgeText.useMaterialFont) fontFamily else null,
-                fontSize = badgeSp,
-                color = tintOnBadge,
-                modifier = Modifier.align(Alignment.BottomEnd),
-            )
-        }
-    }
+    val token = symbolIconName?.trim()?.takeIf { it.isNotEmpty() } ?: return
+    MaterialSymbolGlyph(
+        symbolIconName = token,
+        modifier = modifier,
+        size = folderSize,
+        tint = tintOnBadge,
+        contentDescription = contentDescription,
+    )
 }

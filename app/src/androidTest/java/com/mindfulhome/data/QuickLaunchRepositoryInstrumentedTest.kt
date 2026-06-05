@@ -53,8 +53,8 @@ class QuickLaunchRepositoryInstrumentedTest {
         repo.removeFromQuickLaunch("a")
         val slots = repo.quickLaunchSlots().first()
         assertEquals(1, slots.size)
-        assertTrue(slots[0] is QuickLaunchSlot.Single)
-        assertEquals("b", (slots[0] as QuickLaunchSlot.Single).packageName)
+        assertTrue(slots[0] is QuickLaunchSlot.Folder)
+        assertEquals(listOf("b"), (slots[0] as QuickLaunchSlot.Folder).apps)
     }
 
     @Test
@@ -63,7 +63,7 @@ class QuickLaunchRepositoryInstrumentedTest {
         repo.addToQuickLaunch("second")
         repo.moveQuickLaunchSlot(fromUiIndex = 0, toUiIndex = 1)
         val slots = repo.quickLaunchSlots().first()
-        assertEquals("second", (slots[0] as QuickLaunchSlot.Single).packageName)
-        assertEquals("first", (slots[1] as QuickLaunchSlot.Single).packageName)
+        assertEquals(listOf("second"), (slots[0] as QuickLaunchSlot.Folder).apps)
+        assertEquals(listOf("first"), (slots[1] as QuickLaunchSlot.Folder).apps)
     }
 }

@@ -38,31 +38,29 @@ class SlotFolderOperationsInstrumentedTest {
     }
 
     @Test
-    fun quickLaunch_removeFromFolder_collapsesToSingle() = runBlocking {
-        repo.addToQuickLaunch("com.a")
-        repo.addToQuickLaunch("com.b")
-        repo.mergeQuickLaunchSlots(fromUiIndex = 1, intoUiIndex = 0)
+    fun quickLaunch_removeFromFolder_keepsNamedFolderWithOneApp() = runBlocking {
+        repo.addIntentFolder("Work", listOf("com.a", "com.b"))
         repo.removeFromQuickLaunch("com.b")
 
         val slots = repo.quickLaunchSlots().first()
         assertEquals(1, slots.size)
-        assertTrue(slots[0] is QuickLaunchSlot.Single)
-        assertEquals("com.a", (slots[0] as QuickLaunchSlot.Single).packageName)
+        assertTrue(slots[0] is QuickLaunchSlot.Folder)
+        val folder = slots[0] as QuickLaunchSlot.Folder
+        assertEquals("Work", folder.name)
+        assertEquals(listOf("com.a"), folder.apps)
     }
 
     @Test
-    fun quickLaunch_extractFromFolder_producesTwoSinglesInOrder() = runBlocking {
-        repo.addToQuickLaunch("com.a")
-        repo.addToQuickLaunch("com.b")
-        repo.mergeQuickLaunchSlots(fromUiIndex = 1, intoUiIndex = 0)
+    fun quickLaunch_extractFromFolder_producesTwoFoldersInOrder() = runBlocking {
+        repo.addIntentFolder("Work", listOf("com.a", "com.b"))
         repo.extractQuickLaunchAppToOwnSlot("com.b")
 
         val slots = repo.quickLaunchSlots().first()
         assertEquals(2, slots.size)
-        assertTrue(slots[0] is QuickLaunchSlot.Single)
-        assertTrue(slots[1] is QuickLaunchSlot.Single)
-        assertEquals("com.a", (slots[0] as QuickLaunchSlot.Single).packageName)
-        assertEquals("com.b", (slots[1] as QuickLaunchSlot.Single).packageName)
+        assertTrue(slots[0] is QuickLaunchSlot.Folder)
+        assertTrue(slots[1] is QuickLaunchSlot.Folder)
+        assertEquals(listOf("com.a"), (slots[0] as QuickLaunchSlot.Folder).apps)
+        assertEquals(listOf("com.b"), (slots[1] as QuickLaunchSlot.Folder).apps)
     }
 
     @Test

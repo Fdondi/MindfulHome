@@ -44,3 +44,24 @@ fun normalizeQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<QuickLaunchSlo
         }
     }
 }
+
+/**
+ * Normalization for mission-intent folders on the default page: keeps named folders even when
+ * empty or holding a single app; legacy singles are wrapped as unnamed folders.
+ */
+fun normalizeIntentQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<QuickLaunchSlot> {
+    return slots.mapNotNull { slot ->
+        when (slot) {
+            is QuickLaunchSlot.Single -> {
+                if (slot.packageName.isBlank()) null
+                else QuickLaunchSlot.Folder(null, listOf(slot.packageName))
+            }
+            is QuickLaunchSlot.Folder -> {
+                val apps = slot.apps.filter { it.isNotBlank() }.distinct()
+                val name = slot.name?.trim()?.takeIf { it.isNotEmpty() }
+                if (apps.isEmpty() && name == null) null
+                else slot.copy(name = name, apps = apps)
+            }
+        }
+    }
+}

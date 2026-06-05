@@ -17,10 +17,24 @@ internal object QuickLaunchJson {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun encode(slots: List<QuickLaunchSlot>): String = buildJsonArray {
+    fun encode(slots: List<QuickLaunchSlot>): String = encodeSlots(slots, intentMode = false)
+
+    fun encodeIntentSlots(slots: List<QuickLaunchSlot>): String = encodeSlots(slots, intentMode = true)
+
+    private fun encodeSlots(slots: List<QuickLaunchSlot>, intentMode: Boolean): String = buildJsonArray {
         for (slot in slots) {
             when (slot) {
-                is QuickLaunchSlot.Single -> add(JsonPrimitive(slot.packageName))
+                is QuickLaunchSlot.Single -> {
+                    if (intentMode) {
+                        add(
+                            buildJsonObject {
+                                put("apps", JsonArray(listOf(JsonPrimitive(slot.packageName))))
+                            },
+                        )
+                    } else {
+                        add(JsonPrimitive(slot.packageName))
+                    }
+                }
                 is QuickLaunchSlot.Folder -> add(
                     buildJsonObject {
                         val n = slot.name?.trim()?.takeIf { it.isNotEmpty() }
@@ -37,7 +51,11 @@ internal object QuickLaunchJson {
         }
     }.toString()
 
-    fun decode(raw: String?): List<QuickLaunchSlot> {
+    fun decode(raw: String?): List<QuickLaunchSlot> = decodeSlots(raw, intentMode = false)
+
+    fun decodeIntentSlots(raw: String?): List<QuickLaunchSlot> = decodeSlots(raw, intentMode = true)
+
+    private fun decodeSlots(raw: String?, intentMode: Boolean): List<QuickLaunchSlot> {
         if (raw.isNullOrBlank()) return emptyList()
         val arr = try {
             json.parseToJsonElement(raw).jsonArray
@@ -51,13 +69,17 @@ internal object QuickLaunchJson {
                 el is JsonObject -> {
                     val apps = el["apps"]?.jsonArray?.map { it.jsonPrimitive.content }
                         ?.filter { it.isNotBlank() }
-                        ?: return@mapNotNull null
-                    if (apps.isEmpty()) return@mapNotNull null
+                        ?.distinct()
+                        ?: emptyList()
                     val name = el["name"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
                     val symbolIcon =
                         el["symbolIcon"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-                    if (apps.size == 1) QuickLaunchSlot.Single(apps[0])
-                    else QuickLaunchSlot.Folder(name, apps, symbolIcon)
+                    when {
+                        apps.isEmpty() && name == null -> return@mapNotNull null
+                        intentMode || apps.size != 1 || name != null ->
+                            QuickLaunchSlot.Folder(name, apps, symbolIcon)
+                        else -> QuickLaunchSlot.Single(apps[0])
+                    }
                 }
                 else -> null
             }

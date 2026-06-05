@@ -32,6 +32,17 @@ class QuickLaunchJsonTest {
     }
 
     @Test
+    fun decodeIntentSlots_folderWithOneApp_staysFolder() {
+        val json = """[{"name":"Search","apps":["only.pkg"]}]"""
+        val slots = QuickLaunchJson.decodeIntentSlots(json)
+        assertEquals(1, slots.size)
+        assertTrue(slots[0] is QuickLaunchSlot.Folder)
+        val folder = slots[0] as QuickLaunchSlot.Folder
+        assertEquals("Search", folder.name)
+        assertEquals(listOf("only.pkg"), folder.apps)
+    }
+
+    @Test
     fun decode_folderWithOneApp_becomesSingle() {
         val json = """[{"name":"Solo","apps":["only.pkg"]}]"""
         val slots = QuickLaunchJson.decode(json)

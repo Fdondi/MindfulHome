@@ -6,6 +6,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
@@ -48,12 +49,14 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.icons.MaterialFolderWithSymbolOverlay
+import com.mindfulhome.ui.icons.MaterialSymbolGlyph
+import androidx.compose.ui.unit.IntOffset
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -72,6 +75,77 @@ data class QuickLaunchFolderOpen(
     val folderName: String?,
     val folderSymbolIconName: String? = null,
 )
+
+enum class QuickLaunchTileContent {
+    AppIcons,
+    IntentLabels,
+}
+
+data class QuickLaunchAuxTile(
+    val label: String,
+    val subtitle: String? = null,
+    val onClick: () -> Unit,
+    val contentDescription: String,
+)
+
+private val IntentTileWidth = 74.dp
+private val IntentTileHeight = 56.dp
+
+@Composable
+fun IntentLabelTile(
+    label: String,
+    subtitle: String? = null,
+    symbolIconName: String? = null,
+    onClick: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+    contentDescription: String = label,
+) {
+    val shape = RoundedCornerShape(12.dp)
+    val background = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+    Box(
+        modifier = modifier
+            .width(IntentTileWidth)
+            .height(IntentTileHeight)
+            .background(background, shape)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(onClick = onClick)
+                } else {
+                    Modifier
+                },
+            )
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            if (!symbolIconName.isNullOrBlank()) {
+                MaterialSymbolGlyph(
+                    symbolIconName = symbolIconName,
+                    size = 22.dp,
+                    contentDescription = label,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+            }
+            Text(
+                text = label,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center,
+            )
+            if (subtitle != null) {
+                Text(
+                    text = subtitle,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
 
 /** Inner ~56% of tile: drop here on another app merges into a folder. */
 internal fun quickLaunchMergeZoneRect(rect: Rect): Rect {
@@ -417,6 +491,7 @@ private data class QuickLaunchGridTile(
     val slotIndex: Int? = null,
     val isAdd: Boolean = false,
     val isPlaceholder: Boolean = false,
+    val auxTile: QuickLaunchAuxTile? = null,
 )
 
 private fun findGapInsertionBarRect(
@@ -474,6 +549,10 @@ fun QuickLaunchWrappedRow(
     /** Reports each app-tile layout in root coordinates for external hit-testing (e.g. grid drag-and-drop). */
     onAppSlotBounds: (slotIndex: Int, topLeft: Offset, size: Size) -> Unit = { _, _, _ -> },
     maxRows: Int? = null,
+    tileContent: QuickLaunchTileContent = QuickLaunchTileContent.AppIcons,
+    leadingAuxTile: QuickLaunchAuxTile? = null,
+    beforeAddAuxTile: QuickLaunchAuxTile? = null,
+    onRemoveSlotAt: ((Int) -> Unit)? = null,
 ) {
     var boxInRoot by remember { mutableStateOf(Offset.Zero) }
     BoxWithConstraints(
@@ -505,18 +584,21 @@ fun QuickLaunchWrappedRow(
         } else {
             0.dp
         }
-        val rowChunks = remember(slots, columns) {
-            val base = (
-                slots.mapIndexed { index, slot ->
-                    QuickLaunchGridTile(
-                        apps = slot.apps,
-                        folderName = slot.folderName,
-                        folderSymbolIconName = slot.folderSymbolIconName,
-                        slotIndex = index,
-                    )
-                } + QuickLaunchGridTile(isAdd = true)
-                ).chunked(columns)
-            base.map { row ->
+        val rowChunks = remember(slots, columns, leadingAuxTile, beforeAddAuxTile) {
+            val base = listOfNotNull(
+                leadingAuxTile?.let { QuickLaunchGridTile(auxTile = it) },
+            ) + slots.mapIndexed { index, slot ->
+                QuickLaunchGridTile(
+                    apps = slot.apps,
+                    folderName = slot.folderName,
+                    folderSymbolIconName = slot.folderSymbolIconName,
+                    slotIndex = index,
+                )
+            } + listOfNotNull(
+                beforeAddAuxTile?.let { QuickLaunchGridTile(auxTile = it) },
+                QuickLaunchGridTile(isAdd = true),
+            )
+            base.chunked(columns).map { row ->
                 if (row.size >= columns) {
                     row
                 } else {
@@ -528,7 +610,6 @@ fun QuickLaunchWrappedRow(
             if (maxRows != null) rowChunks.take(maxRows.coerceAtLeast(1)) else rowChunks
         }
         val draggedApps = draggingIndex?.let { idx -> slots.getOrNull(idx)?.apps }
-        val draggedFolderSymbol = draggingIndex?.let { idx -> slots.getOrNull(idx)?.folderSymbolIconName }
 
         fun updateHoverState() {
             val finger = lastPointerInRoot
@@ -622,9 +703,21 @@ fun QuickLaunchWrappedRow(
                                                 .height(1.dp),
                                         )
                                     }
+                                    tile.auxTile != null -> {
+                                        IntentLabelTile(
+                                            label = tile.auxTile.label,
+                                            subtitle = tile.auxTile.subtitle,
+                                            onClick = tile.auxTile.onClick,
+                                            contentDescription = tile.auxTile.contentDescription,
+                                        )
+                                    }
                                     apps != null && slotIndex != null -> {
                                         val folderLabel = tile.folderName?.takeIf { it.isNotBlank() }
-                                            ?: "Folder (${apps.size})"
+                                            ?: if (tileContent == QuickLaunchTileContent.IntentLabels) {
+                                                "Unnamed"
+                                            } else {
+                                                "Folder (${apps.size})"
+                                            }
                                         val dropHighlight = draggingIndex != null &&
                                             mergeHoverSlot == slotIndex &&
                                             draggingIndex != slotIndex
@@ -713,7 +806,11 @@ fun QuickLaunchWrappedRow(
                                                                         "end from=$from finger=$finger remove=$shouldRemove hoverInto=$intoHover bounds=${slotBounds.keys}",
                                                                     )
                                                                     if (shouldRemove) {
-                                                                        onRemoveSlot(current)
+                                                                        if (onRemoveSlotAt != null) {
+                                                                            onRemoveSlotAt(from)
+                                                                        } else {
+                                                                            onRemoveSlot(current)
+                                                                        }
                                                                         return@detectDragGesturesAfterLongPress
                                                                     }
                                                                     for (row in displayRowChunks) {
@@ -817,12 +914,14 @@ fun QuickLaunchWrappedRow(
                                                             onClick = {
                                                                 if (draggingIndex != null) return@combinedClickable
                                                                 when {
-                                                                    apps.size > 1 -> onOpenFolder(
-                                                                        slotIndex,
-                                                                        apps,
-                                                                        tile.folderName,
-                                                                        tile.folderSymbolIconName,
-                                                                    )
+                                                                    tileContent == QuickLaunchTileContent.IntentLabels ||
+                                                                        apps.size > 1 ->
+                                                                        onOpenFolder(
+                                                                            slotIndex,
+                                                                            apps,
+                                                                            tile.folderName,
+                                                                            tile.folderSymbolIconName,
+                                                                        )
                                                                     else -> onQuickLaunchApp(
                                                                         apps.single().packageName,
                                                                         quickLaunchPackages,
@@ -835,7 +934,14 @@ fun QuickLaunchWrappedRow(
                                                         ),
                                                     horizontalAlignment = Alignment.CenterHorizontally,
                                                 ) {
-                                                    if (apps.size == 1) {
+                                                    if (tileContent == QuickLaunchTileContent.IntentLabels) {
+                                                        IntentLabelTile(
+                                                            label = folderLabel,
+                                                            symbolIconName = tile.folderSymbolIconName,
+                                                            onClick = null,
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                        )
+                                                    } else if (apps.size == 1) {
                                                         val app = apps.single()
                                                         if (app.icon != null) {
                                                             Image(
@@ -852,11 +958,23 @@ fun QuickLaunchWrappedRow(
                                                             style = MaterialTheme.typography.labelSmall,
                                                         )
                                                     } else {
-                                                        MaterialFolderWithSymbolOverlay(
-                                                            symbolIconName = tile.folderSymbolIconName,
-                                                            contentDescription = folderLabel,
-                                                            modifier = Modifier.size(42.dp),
-                                                        )
+                                                        val symbol = tile.folderSymbolIconName
+                                                        if (!symbol.isNullOrBlank()) {
+                                                            MaterialFolderWithSymbolOverlay(
+                                                                symbolIconName = symbol,
+                                                                contentDescription = folderLabel,
+                                                                modifier = Modifier.size(42.dp),
+                                                            )
+                                                        } else {
+                                                            val preview = apps.firstOrNull()
+                                                            if (preview?.icon != null) {
+                                                                Image(
+                                                                    painter = rememberDrawablePainter(preview.icon),
+                                                                    contentDescription = preview.label,
+                                                                    modifier = Modifier.size(42.dp),
+                                                                )
+                                                            }
+                                                        }
                                                         Spacer(modifier = Modifier.height(2.dp))
                                                         Text(
                                                             text = folderLabel,
@@ -870,15 +988,23 @@ fun QuickLaunchWrappedRow(
                                         }
                                     }
                                     tile.isAdd -> {
-                                        OutlinedButton(
-                                            onClick = onAddQuickLaunch,
-                                            border = BorderStroke(
-                                                1.dp,
-                                                MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
-                                            ),
-                                            modifier = Modifier.width(minCellWidth),
-                                        ) {
-                                            Icon(Icons.Default.Add, contentDescription = addTileContentDescription)
+                                        if (tileContent == QuickLaunchTileContent.IntentLabels) {
+                                            IntentLabelTile(
+                                                label = "+",
+                                                onClick = onAddQuickLaunch,
+                                                contentDescription = addTileContentDescription,
+                                            )
+                                        } else {
+                                            OutlinedButton(
+                                                onClick = onAddQuickLaunch,
+                                                border = BorderStroke(
+                                                    1.dp,
+                                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+                                                ),
+                                                modifier = Modifier.width(minCellWidth),
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = addTileContentDescription)
+                                            }
                                         }
                                     }
                                     else -> {}
@@ -940,13 +1066,37 @@ fun QuickLaunchWrappedRow(
                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f), RoundedCornerShape(12.dp)),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (draggedApps.size > 1) {
-                        MaterialFolderWithSymbolOverlay(
-                            symbolIconName = draggedFolderSymbol,
-                            contentDescription = "Folder",
-                            modifier = Modifier.size(36.dp),
-                            folderSize = 36.dp,
+                    if (tileContent == QuickLaunchTileContent.IntentLabels) {
+                        val label = draggingIndex?.let { idx ->
+                            slots.getOrNull(idx)?.folderName?.takeIf { !it.isNullOrBlank() }
+                        } ?: "Intent"
+                        Text(
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(horizontal = 4.dp),
                         )
+                    } else if (draggedApps.size > 1) {
+                        val symbol = draggingIndex?.let { slots.getOrNull(it)?.folderSymbolIconName }
+                        if (!symbol.isNullOrBlank()) {
+                            MaterialFolderWithSymbolOverlay(
+                                symbolIconName = symbol,
+                                contentDescription = "Folder",
+                                modifier = Modifier.size(36.dp),
+                                folderSize = 36.dp,
+                            )
+                        } else {
+                            val app = draggedApps.firstOrNull()
+                            if (app?.icon != null) {
+                                Image(
+                                    painter = rememberDrawablePainter(app.icon),
+                                    contentDescription = app.label,
+                                    modifier = Modifier.size(36.dp),
+                                )
+                            }
+                        }
                     } else {
                         val app = draggedApps.first()
                         if (app.icon != null) {

@@ -34,6 +34,26 @@ class QuickLaunchNormalizationTest {
     }
 
     @Test
+    fun intentFolderWithOneApp_staysFolder() {
+        val out = normalizeIntentQuickLaunchSlots(
+            listOf(QuickLaunchSlot.Folder("Search", listOf("com.chrome"))),
+        )
+        val folder = out.single() as QuickLaunchSlot.Folder
+        assertEquals("Search", folder.name)
+        assertEquals(listOf("com.chrome"), folder.apps)
+    }
+
+    @Test
+    fun intentEmptyNamedFolder_kept() {
+        val out = normalizeIntentQuickLaunchSlots(
+            listOf(QuickLaunchSlot.Folder("Reflect", emptyList())),
+        )
+        val folder = out.single() as QuickLaunchSlot.Folder
+        assertEquals("Reflect", folder.name)
+        assertTrue(folder.apps.isEmpty())
+    }
+
+    @Test
     fun folderDuplicates_distinctPreservesOrder() {
         val out = normalizeQuickLaunchSlots(
             listOf(QuickLaunchSlot.Folder(null, listOf("a", "a", "b"))),

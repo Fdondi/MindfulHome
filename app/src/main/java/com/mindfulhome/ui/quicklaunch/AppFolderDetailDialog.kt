@@ -18,7 +18,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import com.mindfulhome.model.AppInfo
-import com.mindfulhome.ui.icons.MaterialFolderWithSymbolOverlay
 import com.mindfulhome.ui.icons.MaterialSymbolGlyph
 
 /**
@@ -57,13 +56,6 @@ fun AppFolderDetailDialog(
                         symbolIconName = folder.folderSymbolIconName,
                         size = 40.dp,
                         contentDescription = titleLabel,
-                        modifier = Modifier.padding(end = 8.dp),
-                    )
-                } else {
-                    MaterialFolderWithSymbolOverlay(
-                        symbolIconName = null,
-                        contentDescription = "",
-                        folderSize = 40.dp,
                         modifier = Modifier.padding(end = 8.dp),
                     )
                 }
