@@ -572,9 +572,14 @@ fun QuickLaunchWrappedRow(
         var hoveringRemoveZone by remember { mutableStateOf(false) }
         /** Edge reorder preview: (slotIndex, insertBefore) — sticky in middle band to avoid bar jitter. */
         var edgePreviewSticky by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
+        /** Intent tiles: long-press without drag opens folder; with drag reorders. */
+        var pendingIntentLongPressSlot by remember { mutableStateOf<Int?>(null) }
+        var intentLongPressDragActivated by remember { mutableStateOf(false) }
+        var suppressClickSlotIndex by remember { mutableStateOf<Int?>(null) }
 
         val minGapPx = with(LocalDensity.current) { 8.dp.toPx() }
         val barThicknessPx = with(LocalDensity.current) { 4.dp.toPx() }
+        val intentLongPressDragThresholdPx = with(LocalDensity.current) { 10.dp.toPx() }
         val density = LocalDensity.current
 
         val minCellWidth = 74.dp
@@ -751,29 +756,55 @@ fun QuickLaunchWrappedRow(
                                                             onAppSlotBounds(slotIndex, rootPos, sz)
                                                             if (draggingIndex != null) updateHoverState()
                                                         }
-                                                        .pointerInput(slotIndex, slots) {
+                                                        .pointerInput(slotIndex, slots, tileContent) {
+                                                            var longPressAccum = Offset.Zero
                                                             detectDragGesturesAfterLongPress(
                                                                 onDragStart = { startLocal ->
                                                                     edgePreviewSticky = null
-                                                                    draggingIndex = slotIndex
+                                                                    longPressAccum = Offset.Zero
                                                                     val coords = tileCoords[slotIndex]
                                                                     lastPointerInRoot = coords?.localToRoot(startLocal)
                                                                         ?: slotBounds[slotIndex]?.center
                                                                         ?: Offset.Zero
+                                                                    if (tileContent == QuickLaunchTileContent.IntentLabels) {
+                                                                        pendingIntentLongPressSlot = slotIndex
+                                                                        intentLongPressDragActivated = false
+                                                                    } else {
+                                                                        draggingIndex = slotIndex
+                                                                        updateHoverState()
+                                                                    }
                                                                     Log.d(
                                                                         QuickLaunchDragLogTag,
                                                                         "start slot=$slotIndex root=$lastPointerInRoot",
                                                                     )
-                                                                    updateHoverState()
                                                                 },
-                                                                onDrag = { change, _ ->
+                                                                onDrag = { change, dragAmount ->
                                                                     change.consume()
+                                                                    longPressAccum += dragAmount
                                                                     val coords = tileCoords[slotIndex]
                                                                     if (coords != null) {
                                                                         lastPointerInRoot =
                                                                             coords.localToRoot(change.position)
                                                                     }
-                                                                    updateHoverState()
+                                                                    if (tileContent == QuickLaunchTileContent.IntentLabels &&
+                                                                        pendingIntentLongPressSlot == slotIndex
+                                                                    ) {
+                                                                        if (!intentLongPressDragActivated) {
+                                                                            val dist = kotlin.math.hypot(
+                                                                                longPressAccum.x,
+                                                                                longPressAccum.y,
+                                                                            )
+                                                                            if (dist >= intentLongPressDragThresholdPx) {
+                                                                                intentLongPressDragActivated = true
+                                                                                draggingIndex = slotIndex
+                                                                                updateHoverState()
+                                                                            }
+                                                                        } else {
+                                                                            updateHoverState()
+                                                                        }
+                                                                    } else if (draggingIndex != null) {
+                                                                        updateHoverState()
+                                                                    }
                                                                 },
                                                                 onDragCancel = {
                                                                     Log.d(QuickLaunchDragLogTag, "cancel")
@@ -782,8 +813,25 @@ fun QuickLaunchWrappedRow(
                                                                     gapBarRectRoot = null
                                                                     hoveringRemoveZone = false
                                                                     edgePreviewSticky = null
+                                                                    pendingIntentLongPressSlot = null
+                                                                    intentLongPressDragActivated = false
                                                                 },
                                                                 onDragEnd = {
+                                                                    if (tileContent == QuickLaunchTileContent.IntentLabels &&
+                                                                        pendingIntentLongPressSlot == slotIndex &&
+                                                                        !intentLongPressDragActivated
+                                                                    ) {
+                                                                        onOpenFolder(
+                                                                            slotIndex,
+                                                                            apps,
+                                                                            tile.folderName,
+                                                                            tile.folderSymbolIconName,
+                                                                        )
+                                                                        suppressClickSlotIndex = slotIndex
+                                                                        pendingIntentLongPressSlot = null
+                                                                        intentLongPressDragActivated = false
+                                                                        return@detectDragGesturesAfterLongPress
+                                                                    }
                                                                     val from = draggingIndex
                                                                     val finger = lastPointerInRoot
                                                                     val current = from?.let { slots.getOrNull(it)?.apps }
@@ -794,6 +842,8 @@ fun QuickLaunchWrappedRow(
                                                                     gapBarRectRoot = null
                                                                     hoveringRemoveZone = false
                                                                     edgePreviewSticky = null
+                                                                    pendingIntentLongPressSlot = null
+                                                                    intentLongPressDragActivated = false
                                                                     if (from == null || current == null) {
                                                                         Log.d(
                                                                             QuickLaunchDragLogTag,
@@ -913,7 +963,17 @@ fun QuickLaunchWrappedRow(
                                                         .combinedClickable(
                                                             onClick = {
                                                                 if (draggingIndex != null) return@combinedClickable
+                                                                if (suppressClickSlotIndex == slotIndex) {
+                                                                    suppressClickSlotIndex = null
+                                                                    return@combinedClickable
+                                                                }
                                                                 when {
+                                                                    tileContent == QuickLaunchTileContent.IntentLabels &&
+                                                                        apps.size == 1 ->
+                                                                        onQuickLaunchApp(
+                                                                            apps.single().packageName,
+                                                                            quickLaunchPackages,
+                                                                        )
                                                                     tileContent == QuickLaunchTileContent.IntentLabels ||
                                                                         apps.size > 1 ->
                                                                         onOpenFolder(

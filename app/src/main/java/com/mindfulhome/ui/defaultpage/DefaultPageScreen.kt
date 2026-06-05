@@ -133,21 +133,6 @@ fun DefaultPageScreen(
             }
         }
 
-        Text(
-            text = "What is your mission?",
-            style = MaterialTheme.typography.headlineMedium,
-            modifier = Modifier.fillMaxWidth(),
-        )
-
-        MissionIntentSection(
-            repository = repository,
-            onQuickLaunchApp = onQuickLaunchApp,
-            onOpenTimerPlain = onOpenTimerPlain,
-            resumeSessionLabel = resumeSessionLabel,
-            resumeSessionMinutes = resumeSessionMinutes,
-            onResumeSession = onResumeSession,
-        )
-
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
@@ -213,6 +198,21 @@ fun DefaultPageScreen(
                 }
             }
         }
+
+        Text(
+            text = "What is your mission?",
+            style = MaterialTheme.typography.headlineMedium,
+            modifier = Modifier.fillMaxWidth(),
+        )
+
+        MissionIntentSection(
+            repository = repository,
+            onQuickLaunchApp = onQuickLaunchApp,
+            onOpenTimerPlain = onOpenTimerPlain,
+            resumeSessionLabel = resumeSessionLabel,
+            resumeSessionMinutes = resumeSessionMinutes,
+            onResumeSession = onResumeSession,
+        )
 
         Spacer(modifier = Modifier.height(12.dp))
     }
