@@ -46,7 +46,7 @@ object ApiKeyManager {
     private const val SESSION_REFRESH_WINDOW_MS = 7L * 24L * 3600L * 1000L
 
     private fun prefs(context: Context): SharedPreferences {
-        return try {
+        val encryptedPrefs = try {
             val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
             EncryptedSharedPreferences.create(
                 PREFS_NAME,
@@ -56,9 +56,52 @@ object ApiKeyManager {
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
             )
         } catch (e: Exception) {
-            Log.e(TAG, "EncryptedSharedPreferences unavailable, falling back to plain", e)
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            Log.e(TAG, "EncryptedSharedPreferences unavailable, attempting recovery", e)
+            try {
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).edit().clear().apply()
+                val keyStore = java.security.KeyStore.getInstance("AndroidKeyStore")
+                keyStore.load(null)
+                keyStore.deleteEntry("_androidx_security_master_key_")
+
+                val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+                val recovered = EncryptedSharedPreferences.create(
+                    PREFS_NAME,
+                    masterKeyAlias,
+                    context,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                )
+                Log.i(TAG, "EncryptedSharedPreferences recovery successful")
+                recovered
+            } catch (recoveryException: Exception) {
+                Log.e(TAG, "EncryptedSharedPreferences recovery failed, falling back to plain", recoveryException)
+                null
+            }
         }
+
+        if (encryptedPrefs != null) {
+            // Check if we have legacy plain-text data to migrate
+            val plainPrefs = context.getSharedPreferences(PREFS_NAME + "_plain", Context.MODE_PRIVATE)
+            if (plainPrefs.all.isNotEmpty()) {
+                Log.i(TAG, "Migrating plain-text preferences to encrypted storage")
+                val editor = encryptedPrefs.edit()
+                plainPrefs.all.forEach { (key, value) ->
+                    when (value) {
+                        is String -> editor.putString(key, value)
+                        is Long -> editor.putLong(key, value)
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is Float -> editor.putFloat(key, value)
+                    }
+                }
+                editor.apply()
+                plainPrefs.edit().clear().apply()
+            }
+            return encryptedPrefs
+        }
+
+        // Final fallback to a dedicated plain-text file so we don't mix encrypted/unencrypted in the same file
+        return context.getSharedPreferences(PREFS_NAME + "_plain", Context.MODE_PRIVATE)
     }
 
     private fun parseJwtExpiryMs(idToken: String): Long? {
