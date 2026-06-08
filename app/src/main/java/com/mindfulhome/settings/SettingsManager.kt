@@ -53,6 +53,8 @@ object SettingsManager {
 
     private const val QUICK_LAUNCH_MONITOR_MS_KEY = "quick_launch_monitor_ms"
     private const val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_KEY = "quick_launch_semaphore_phase_ms"
+    private const val QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER_KEY = "quick_launch_semaphore_karma_positive_multiplier"
+    private const val QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER_KEY = "quick_launch_semaphore_karma_negative_multiplier"
     private const val NUDGE_LOOP_TICK_MS_KEY = "nudge_loop_tick_ms"
     private const val TIMER_COUNTDOWN_TICK_MS_KEY = "timer_countdown_tick_ms"
     private const val USAGE_FOREGROUND_CACHE_TTL_MS_KEY = "usage_foreground_cache_ttl_ms"
@@ -84,6 +86,16 @@ object SettingsManager {
         20_000L, 30_000L, 45_000L, 60_000L, 90_000L, 120_000L,
     )
     const val DEFAULT_QUICK_LAUNCH_SEMAPHORE_PHASE_MS = 20_000L
+
+    val QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER_OPTIONS = floatArrayOf(
+        1.0f, 1.5f, 2.0f, 3.0f,
+    )
+    const val DEFAULT_QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER = 1.0f
+
+    val QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER_OPTIONS = floatArrayOf(
+        0.25f, 0.5f, 0.75f, 1.0f,
+    )
+    const val DEFAULT_QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER = 0.5f
 
     val NUDGE_LOOP_TICK_MS_OPTIONS = longArrayOf(
         10_000L, 20_000L, 40_000L, 80_000L, 120_000L, 240_000L, 480_000L,
@@ -708,6 +720,40 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         }
     }
 
+    fun getQuickLaunchSemaphoreKarmaPositiveMultiplier(context: Context): Float {
+        val raw = prefs(context).getFloat(
+            QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER_KEY,
+            DEFAULT_QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER,
+        )
+        return snapToNearest(raw, QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER_OPTIONS)
+    }
+
+    fun setQuickLaunchSemaphoreKarmaPositiveMultiplier(context: Context, multiplier: Float) {
+        prefs(context).edit {
+            putFloat(
+                QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER_KEY,
+                snapToNearest(multiplier, QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER_OPTIONS),
+            )
+        }
+    }
+
+    fun getQuickLaunchSemaphoreKarmaNegativeMultiplier(context: Context): Float {
+        val raw = prefs(context).getFloat(
+            QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER_KEY,
+            DEFAULT_QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER,
+        )
+        return snapToNearest(raw, QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER_OPTIONS)
+    }
+
+    fun setQuickLaunchSemaphoreKarmaNegativeMultiplier(context: Context, multiplier: Float) {
+        prefs(context).edit {
+            putFloat(
+                QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER_KEY,
+                snapToNearest(multiplier, QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER_OPTIONS),
+            )
+        }
+    }
+
     fun getNudgeLoopTickMs(context: Context): Long {
         val raw = prefs(context).getLong(
             NUDGE_LOOP_TICK_MS_KEY,
@@ -852,6 +898,11 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
     }
 
     private fun snapToNearest(value: Int, options: IntArray): Int {
+        if (options.isEmpty()) return value
+        return options.minByOrNull { kotlin.math.abs(it - value) } ?: value
+    }
+
+    private fun snapToNearest(value: Float, options: FloatArray): Float {
         if (options.isEmpty()) return value
         return options.minByOrNull { kotlin.math.abs(it - value) } ?: value
     }

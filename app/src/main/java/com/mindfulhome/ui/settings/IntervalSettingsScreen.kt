@@ -25,6 +25,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -49,6 +50,12 @@ fun IntervalSettingsScreen(
     }
     var quickLaunchSemaphorePhaseMs by remember {
         mutableLongStateOf(SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(context))
+    }
+    var positiveKarmaMultiplier by remember {
+        mutableFloatStateOf(SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(context))
+    }
+    var negativeKarmaMultiplier by remember {
+        mutableFloatStateOf(SettingsManager.getQuickLaunchSemaphoreKarmaNegativeMultiplier(context))
     }
     var cacheTtlMs by remember {
         mutableLongStateOf(SettingsManager.getUsageForegroundCacheTtlMs(context))
@@ -78,6 +85,8 @@ fun IntervalSettingsScreen(
     fun reloadFromPrefs() {
         quickLaunchMs = SettingsManager.getQuickLaunchMonitorMs(context)
         quickLaunchSemaphorePhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(context)
+        positiveKarmaMultiplier = SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(context)
+        negativeKarmaMultiplier = SettingsManager.getQuickLaunchSemaphoreKarmaNegativeMultiplier(context)
         cacheTtlMs = SettingsManager.getUsageForegroundCacheTtlMs(context)
         nudgeLoopMs = SettingsManager.getNudgeLoopTickMs(context)
         timerTickMs = SettingsManager.getTimerCountdownTickMs(context)
@@ -137,7 +146,7 @@ fun IntervalSettingsScreen(
             LongOptionCard(
                 title = "Quick Launch semaphore (per color)",
                 description = "Time for each green, yellow, and red border phase before you are sent back to the timer " +
-                    "(three phases total). Apps with negative karma use half this time per phase. Range 20s–2min.",
+                    "(three phases total). Range 20s–2min.",
                 options = SettingsManager.QUICK_LAUNCH_SEMAPHORE_PHASE_MS_OPTIONS,
                 selected = quickLaunchSemaphorePhaseMs,
                 onSelect = {
@@ -145,6 +154,34 @@ fun IntervalSettingsScreen(
                     SettingsManager.setQuickLaunchSemaphorePhaseNormalMs(context, it)
                 },
                 labelFor = ::formatMsCompact,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            FloatOptionCard(
+                title = "Positive karma multiplier",
+                description = "Apps with positive karma get extra time during Quick Launch semaphore phases.",
+                options = SettingsManager.QUICK_LAUNCH_SEMAPHORE_KARMA_POSITIVE_MULTIPLIER_OPTIONS,
+                selected = positiveKarmaMultiplier,
+                onSelect = {
+                    positiveKarmaMultiplier = it
+                    SettingsManager.setQuickLaunchSemaphoreKarmaPositiveMultiplier(context, it)
+                },
+                labelFor = { "${it}x" },
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            FloatOptionCard(
+                title = "Negative karma multiplier",
+                description = "Apps with negative karma get reduced time during Quick Launch semaphore phases.",
+                options = SettingsManager.QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER_OPTIONS,
+                selected = negativeKarmaMultiplier,
+                onSelect = {
+                    negativeKarmaMultiplier = it
+                    SettingsManager.setQuickLaunchSemaphoreKarmaNegativeMultiplier(context, it)
+                },
+                labelFor = { "${it}x" },
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -345,6 +382,51 @@ private fun IntOptionCard(
                 ) {
                     RadioButton(
                         selected = option == selected,
+                        onClick = { onSelect(option) },
+                    )
+                    Text(
+                        text = labelFor(option),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(start = 4.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloatOptionCard(
+    title: String,
+    description: String,
+    options: FloatArray,
+    selected: Float,
+    onSelect: (Float) -> Unit,
+    labelFor: (Float) -> String,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            options.forEach { option ->
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelect(option) }
+                        .padding(top = 6.dp),
+                ) {
+                    RadioButton(
+                        selected = kotlin.math.abs(option - selected) < 0.001f,
                         onClick = { onSelect(option) },
                     )
                     Text(

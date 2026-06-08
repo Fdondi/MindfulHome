@@ -393,12 +393,13 @@ class TimerService : Service() {
             serviceScope.launch {
                 val k = repository.getKarma(packageName)
                 val normalPhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(this@TimerService)
-                quickLaunchSemaphorePhaseMs =
-                    if (!k.isOptedOut && k.karmaScore < 0) {
-                        (normalPhaseMs / 2L).coerceAtLeast(5_000L)
-                    } else {
-                        normalPhaseMs
-                    }
+                val multiplier = when {
+                    k.isOptedOut -> 1.0f
+                    k.karmaScore > 0 -> SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(this@TimerService)
+                    k.karmaScore < 0 -> SettingsManager.getQuickLaunchSemaphoreKarmaNegativeMultiplier(this@TimerService)
+                    else -> 1.0f
+                }
+                quickLaunchSemaphorePhaseMs = (normalPhaseMs * multiplier).toLong().coerceAtLeast(5_000L)
                 val resumedStartAtMs = resumedCandidateStartAtMs(packageName, quickLaunchSemaphorePhaseMs, now)
                 if (quickLaunchExitCandidatePackage == packageName && resumedStartAtMs != null) {
                     quickLaunchExitCandidateStartedAtMs = resumedStartAtMs
