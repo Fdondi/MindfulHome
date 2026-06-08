@@ -303,6 +303,45 @@ class AppRepository(private val database: AppDatabase) {
         }
     }
 
+    suspend fun addShortcutToQuickLaunchFolderAt(uiIndex: Int, shortcut: PinnedShortcut): Boolean {
+        if (shortcut.packageName.isBlank() || shortcut.id.isBlank()) return false
+        val slots = quickLaunchSnapshot().toMutableList()
+        if (uiIndex !in slots.indices) return false
+        val slot = slots[uiIndex] as? QuickLaunchSlot.Folder ?: return false
+        if (slot.shortcuts.any { it.packageName == shortcut.packageName && it.id == shortcut.id }) {
+            return true
+        }
+        slots[uiIndex] = slot.copy(shortcuts = slot.shortcuts + shortcut)
+        persistQuickLaunch(slots)
+        return true
+    }
+
+    suspend fun addShortcutToNewIntentFolder(name: String, shortcut: PinnedShortcut): Boolean {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty() || shortcut.packageName.isBlank() || shortcut.id.isBlank()) return false
+        persistQuickLaunch(
+            quickLaunchSnapshot() + QuickLaunchSlot.Folder(
+                name = trimmed,
+                apps = emptyList(),
+                shortcuts = listOf(shortcut),
+            ),
+        )
+        return true
+    }
+
+    /** Returns the stored shortcut (with [PinnedShortcut.intentUri]) for a synthetic launch key. */
+    suspend fun findPinnedShortcutByLaunchKey(launchKey: String): PinnedShortcut? {
+        val parsed = com.mindfulhome.util.QuickLaunchAppRef.parseShortcut(launchKey) ?: return null
+        for (slot in quickLaunchSnapshot()) {
+            if (slot is QuickLaunchSlot.Folder) {
+                slot.shortcuts.firstOrNull {
+                    it.packageName == parsed.packageName && it.id == parsed.id
+                }?.let { return it }
+            }
+        }
+        return parsed
+    }
+
     suspend fun addIntentFolder(name: String, apps: List<String> = emptyList()) {
         val trimmed = name.trim()
         if (trimmed.isEmpty()) return
@@ -324,10 +363,32 @@ class AppRepository(private val database: AppDatabase) {
         if (uiIndex !in slots.indices) return
         val existing = slots[uiIndex]
         val mergedPkgs = (existing.flattenPackages() + packageName).distinct()
-        val name = (existing as? QuickLaunchSlot.Folder)?.name?.takeIf { !it.isNullOrBlank() }
-        val sym = (existing as? QuickLaunchSlot.Folder)?.symbolIconName?.takeIf { !it.isNullOrBlank() }
-        slots[uiIndex] = QuickLaunchSlot.Folder(name, mergedPkgs, sym)
+        val folder = existing as? QuickLaunchSlot.Folder
+        val name = folder?.name?.takeIf { !it.isNullOrBlank() }
+        val sym = folder?.symbolIconName?.takeIf { !it.isNullOrBlank() }
+        val shortcuts = folder?.shortcuts.orEmpty()
+        slots[uiIndex] = QuickLaunchSlot.Folder(name, mergedPkgs, sym, shortcuts)
         persistQuickLaunch(slots)
+    }
+
+    suspend fun removeLaunchKeyFromQuickLaunch(launchKey: String) {
+        val shortcut = com.mindfulhome.util.QuickLaunchAppRef.parseShortcut(launchKey)
+        if (shortcut != null) {
+            persistQuickLaunch(
+                quickLaunchSnapshot().map { slot ->
+                    when (slot) {
+                        is QuickLaunchSlot.Folder -> slot.copy(
+                            shortcuts = slot.shortcuts.filterNot {
+                                it.packageName == shortcut.packageName && it.id == shortcut.id
+                            },
+                        )
+                        else -> slot
+                    }
+                },
+            )
+        } else {
+            removeFromQuickLaunch(launchKey)
+        }
     }
 
     suspend fun removeFromQuickLaunch(packageName: String) {
@@ -444,8 +505,8 @@ class AppRepository(private val database: AppDatabase) {
                 is QuickLaunchSlot.Folder -> {
                     val apps = slot.apps.filter { it != packageName }
                     val name = slot.name?.trim()?.takeIf { it.isNotEmpty() }
-                    if (apps.isEmpty() && name == null) null
-                    else QuickLaunchSlot.Folder(name, apps, slot.symbolIconName)
+                    if (apps.isEmpty() && slot.shortcuts.isEmpty() && name == null) null
+                    else QuickLaunchSlot.Folder(name, apps, slot.symbolIconName, slot.shortcuts)
                 }
             }
         }
@@ -517,7 +578,15 @@ class AppRepository(private val database: AppDatabase) {
             fromSlot is QuickLaunchSlot.Folder && !fromSlot.symbolIconName.isNullOrBlank() -> fromSlot.symbolIconName
             else -> null
         }
-        slots[intoIndexAfterRemove] = QuickLaunchSlot.Folder(mergedName, mergedApps, mergedSymbolIcon)
+        slots[intoIndexAfterRemove] = QuickLaunchSlot.Folder(
+            mergedName,
+            mergedApps,
+            mergedSymbolIcon,
+            (
+                (intoSlot as? QuickLaunchSlot.Folder)?.shortcuts.orEmpty() +
+                    (fromSlot as? QuickLaunchSlot.Folder)?.shortcuts.orEmpty()
+                ).distinctBy { it.packageName to it.id },
+        )
         return slots
     }
 

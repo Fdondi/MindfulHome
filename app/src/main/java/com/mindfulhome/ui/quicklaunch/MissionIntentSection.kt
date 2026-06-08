@@ -27,6 +27,7 @@ import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog
 import com.mindfulhome.ui.icons.MaterialSymbolPickerDialog
 import com.mindfulhome.util.PackageManagerHelper
+import com.mindfulhome.util.ShortcutUiHelper
 import kotlinx.coroutines.launch
 
 @Composable
@@ -43,7 +44,7 @@ fun MissionIntentSection(
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val rawSlots by repository.quickLaunchSlots().collectAsState(initial = emptyList())
-    val stripPackages = remember(rawSlots) { rawSlots.flatMap { it.flattenPackages() }.toSet() }
+    val stripPackages = remember(rawSlots) { rawSlots.flatMap { it.flattenAllowedPackages() }.toSet() }
     val placementByPackage = remember(rawSlots) { placementsByPackage(rawSlots) }
 
     var installedApps by remember { mutableStateOf(emptyList<AppInfo>()) }
@@ -80,7 +81,8 @@ fun MissionIntentSection(
             is QuickLaunchSlot.Single -> folderToShow = null
             is QuickLaunchSlot.Folder -> {
                 val map = installedApps.associateBy { it.packageName }
-                val apps = slot.apps.mapNotNull { map[it] }
+                val apps = slot.apps.mapNotNull { map[it] } +
+                    slot.shortcuts.map { ShortcutUiHelper.pinnedShortcutToAppInfo(context, it, map) }
                 folderToShow = QuickLaunchFolderOpen(
                     idx,
                     apps,
@@ -97,7 +99,8 @@ fun MissionIntentSection(
             when (slot) {
                 is QuickLaunchSlot.Single -> null
                 is QuickLaunchSlot.Folder -> {
-                    val apps = slot.apps.mapNotNull { map[it] }
+                    val apps = slot.apps.mapNotNull { map[it] } +
+                        slot.shortcuts.map { ShortcutUiHelper.pinnedShortcutToAppInfo(context, it, map) }
                     QuickLaunchSlotUi(
                         apps = apps,
                         folderName = slot.name?.takeIf { it.isNotBlank() } ?: "Unnamed",
@@ -160,7 +163,7 @@ fun MissionIntentSection(
                 scope.launch { repository.mergeQuickLaunchSlots(from, into) }
             },
             onRemoveSlot = { apps ->
-                scope.launch { apps.forEach { repository.removeFromQuickLaunch(it.packageName) } }
+                scope.launch { apps.forEach { repository.removeLaunchKeyFromQuickLaunch(it.packageName) } }
             },
             onRemoveSlotAt = { slotIndex ->
                 scope.launch { repository.removeQuickLaunchSlotAt(slotIndex) }
@@ -276,7 +279,7 @@ fun MissionIntentSection(
                 onQuickLaunchApp(app.packageName, stripPackages)
             },
             onDragRemove = { app ->
-                scope.launch { repository.removeFromQuickLaunch(app.packageName) }
+                scope.launch { repository.removeLaunchKeyFromQuickLaunch(app.packageName) }
                 folderToShow = folderToShow?.let { f ->
                     val next = f.apps.filter { it.packageName != app.packageName }
                     f.copy(apps = next)

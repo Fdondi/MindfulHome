@@ -50,6 +50,7 @@ import com.mindfulhome.ui.settings.SettingsScreen
 import com.mindfulhome.ui.theme.MindfulHomeTheme
 import com.mindfulhome.ui.timer.TimerScreen
 import com.mindfulhome.util.PackageManagerHelper
+import com.mindfulhome.util.QuickLaunchAppRef
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -793,8 +794,9 @@ class MainActivity : ComponentActivity() {
         shouldShowTimer = false
         unlockReason = ""
         val handle = ensureSessionHandle()
+        val ownerPackage = QuickLaunchAppRef.ownerPackage(packageName)
         val quickStartLabel = try {
-            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            val appInfo = packageManager.getApplicationInfo(ownerPackage, 0)
             packageManager.getApplicationLabel(appInfo).toString()
         } catch (_: Exception) {
             packageName
@@ -809,9 +811,13 @@ class MainActivity : ComponentActivity() {
             allowedQuickLaunchPackages = quickLaunchPackages.toList(),
             sessionHandle = handle,
         )
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
-        if (launchIntent != null) {
-            startActivity(launchIntent)
+        if (QuickLaunchAppRef.isShortcutKey(packageName)) {
+            lifecycleScope.launch {
+                val shortcut = repository.findPinnedShortcutByLaunchKey(packageName)
+                PackageManagerHelper.launchApp(this@MainActivity, packageName, shortcut)
+            }
+        } else {
+            PackageManagerHelper.launchApp(this, packageName)
         }
     }
 
@@ -833,7 +839,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             if (TimerService.timerState.value !is TimerState.Idle) return@launch
             val slots = repository.quickLaunchSlots().first()
-            val allowed = slots.flatMap { it.flattenPackages() }.toSet()
+            val allowed = slots.flatMap { it.flattenAllowedPackages() }.toSet()
             TimerService.startQuickLaunchSession(
                 this@MainActivity,
                 initialPackageName = packageName,

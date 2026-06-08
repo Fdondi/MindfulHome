@@ -2,9 +2,12 @@ package com.mindfulhome.util
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.graphics.drawable.Drawable
+import android.os.Build
+import com.mindfulhome.data.PinnedShortcut
 import com.mindfulhome.model.AppInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -99,7 +102,11 @@ object PackageManagerHelper {
         }
     }
 
-    fun launchApp(context: Context, packageName: String): Boolean {
+    fun launchApp(context: Context, packageName: String, shortcut: PinnedShortcut? = null): Boolean {
+        val resolved = shortcut ?: QuickLaunchAppRef.parseShortcut(packageName)
+        if (resolved != null) {
+            return launchPinnedShortcut(context, resolved)
+        }
         val intent = context.packageManager.getLaunchIntentForPackage(packageName)
         return if (intent != null) {
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -107,6 +114,89 @@ object PackageManagerHelper {
             true
         } else {
             false
+        }
+    }
+
+    fun launchPinnedShortcut(context: Context, shortcut: PinnedShortcut): Boolean {
+        if (shortcut.id.startsWith("legacy-")) {
+            return launchShortcutViaStoredIntent(context, shortcut)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+            val launcherApps = context.getSystemService(LauncherApps::class.java)
+            if (launcherApps != null) {
+                val user = android.os.Process.myUserHandle()
+                if (tryStartShortcutById(launcherApps, shortcut, user)) return true
+                if (launchPinnedShortcutViaQuery(context, launcherApps, shortcut, user)) return true
+            }
+        }
+        return launchShortcutViaStoredIntent(context, shortcut)
+    }
+
+    private fun launchShortcutViaStoredIntent(context: Context, shortcut: PinnedShortcut): Boolean {
+        val uri = shortcut.intentUri ?: return false
+        val intent = try {
+            Intent.parseUri(uri, Intent.URI_INTENT_SCHEME)
+        } catch (_: Exception) {
+            return false
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return try {
+            context.startActivity(intent)
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun tryStartShortcutById(
+        launcherApps: LauncherApps,
+        shortcut: PinnedShortcut,
+        user: android.os.UserHandle,
+    ): Boolean {
+        return try {
+            launcherApps.startShortcut(
+                shortcut.packageName,
+                shortcut.id,
+                null,
+                null,
+                user,
+            )
+            true
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun launchPinnedShortcutViaQuery(
+        context: Context,
+        launcherApps: LauncherApps,
+        shortcut: PinnedShortcut,
+        user: android.os.UserHandle,
+    ): Boolean {
+        val info = try {
+            launcherApps.getShortcuts(
+                LauncherApps.ShortcutQuery().apply {
+                    setPackage(shortcut.packageName)
+                    setShortcutIds(listOf(shortcut.id))
+                    setQueryFlags(
+                        LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED or
+                            LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or
+                            LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST,
+                    )
+                },
+                user,
+            )?.firstOrNull()
+        } catch (_: Exception) {
+            null
+        } ?: return false
+        return try {
+            launcherApps.startShortcut(info, null, null)
+            true
+        } catch (_: Exception) {
+            val intent = info.intent ?: return false
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(intent)
+            true
         }
     }
 
@@ -120,6 +210,14 @@ object PackageManagerHelper {
             }
         } catch (e: PackageManager.NameNotFoundException) {
             packageName
+        }
+    }
+
+    fun getAppIcon(context: Context, packageName: String): Drawable? {
+        return try {
+            context.packageManager.getApplicationIcon(packageName)
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
         }
     }
 }

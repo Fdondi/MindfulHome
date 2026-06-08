@@ -43,6 +43,43 @@ class QuickLaunchJsonTest {
     }
 
     @Test
+    fun encodeDecode_folderWithShortcuts_roundTrips() {
+        val original = listOf(
+            QuickLaunchSlot.Folder(
+                "Search",
+                listOf("com.chrome"),
+                "search",
+                listOf(PinnedShortcut("com.chrome", "bookmark-1", "My bookmark")),
+            ),
+        )
+        val json = QuickLaunchJson.encodeIntentSlots(original)
+        val decoded = QuickLaunchJson.decodeIntentSlots(json)
+        assertEquals(original, decoded)
+    }
+
+    @Test
+    fun encodeDecode_folderWithShortcutsAndIntentUri_roundTrips() {
+        val original = listOf(
+            QuickLaunchSlot.Folder(
+                "Search",
+                listOf("com.brave.browser"),
+                "search",
+                listOf(
+                    PinnedShortcut(
+                        "com.brave.browser",
+                        "legacy-12345",
+                        "Example",
+                        "intent://example.com#Intent;scheme=https;end",
+                    ),
+                ),
+            ),
+        )
+        val json = QuickLaunchJson.encodeIntentSlots(original)
+        val decoded = QuickLaunchJson.decodeIntentSlots(json)
+        assertEquals(original, decoded)
+    }
+
+    @Test
     fun decode_folderWithOneApp_becomesSingle() {
         val json = """[{"name":"Solo","apps":["only.pkg"]}]"""
         val slots = QuickLaunchJson.decode(json)

@@ -45,6 +45,21 @@ internal object QuickLaunchJson {
                             "apps",
                             JsonArray(slot.apps.map { JsonPrimitive(it) }),
                         )
+                        if (slot.shortcuts.isNotEmpty()) {
+                            put(
+                                "shortcuts",
+                                JsonArray(
+                                    slot.shortcuts.map { shortcut ->
+                                        buildJsonObject {
+                                            put("pkg", shortcut.packageName)
+                                            put("id", shortcut.id)
+                                            shortcut.label?.trim()?.takeIf { it.isNotEmpty() }?.let { put("label", it) }
+                                            shortcut.intentUri?.trim()?.takeIf { it.isNotEmpty() }?.let { put("intentUri", it) }
+                                        }
+                                    },
+                                ),
+                            )
+                        }
                     },
                 )
             }
@@ -74,10 +89,19 @@ internal object QuickLaunchJson {
                     val name = el["name"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
                     val symbolIcon =
                         el["symbolIcon"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+                    val shortcuts = el["shortcuts"]?.jsonArray?.mapNotNull { shortcutEl ->
+                        val obj = shortcutEl.jsonObject
+                        val pkg = obj["pkg"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                        val id = obj["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                        if (pkg.isBlank() || id.isBlank()) return@mapNotNull null
+                        val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+                        val intentUri = obj["intentUri"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+                        PinnedShortcut(pkg, id, label, intentUri)
+                    } ?: emptyList()
                     when {
-                        apps.isEmpty() && name == null -> return@mapNotNull null
-                        intentMode || apps.size != 1 || name != null ->
-                            QuickLaunchSlot.Folder(name, apps, symbolIcon)
+                        apps.isEmpty() && shortcuts.isEmpty() && name == null -> return@mapNotNull null
+                        intentMode || apps.size != 1 || name != null || shortcuts.isNotEmpty() ->
+                            QuickLaunchSlot.Folder(name, apps, symbolIcon, shortcuts)
                         else -> QuickLaunchSlot.Single(apps[0])
                     }
                 }

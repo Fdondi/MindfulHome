@@ -15,11 +15,28 @@ sealed class QuickLaunchSlot {
         val name: String?,
         val apps: List<String>,
         val symbolIconName: String? = null,
+        val shortcuts: List<PinnedShortcut> = emptyList(),
     ) : QuickLaunchSlot()
+
+    fun flattenAllowedPackages(): List<String> = when (this) {
+        is Single -> listOf(com.mindfulhome.util.QuickLaunchAppRef.ownerPackage(packageName))
+        is Folder -> apps + shortcuts.map { it.packageName }
+    }
+
+    /** Launch keys shown in folder UI (plain packages + encoded shortcuts). */
+    fun flattenLaunchKeys(): List<String> = when (this) {
+        is Single -> listOf(packageName)
+        is Folder -> apps + shortcuts.map { com.mindfulhome.util.QuickLaunchAppRef.shortcutKey(it) }
+    }
 
     fun flattenPackages(): List<String> = when (this) {
         is Single -> listOf(packageName)
         is Folder -> apps
+    }
+
+    fun itemCount(): Int = when (this) {
+        is Single -> 1
+        is Folder -> apps.size + shortcuts.size
     }
 }
 
@@ -35,10 +52,13 @@ fun normalizeQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<QuickLaunchSlo
             }
             is QuickLaunchSlot.Folder -> {
                 val apps = slot.apps.filter { it.isNotBlank() }.distinct()
-                when (apps.size) {
-                    0 -> null
-                    1 -> QuickLaunchSlot.Single(apps[0])
-                    else -> slot.copy(apps = apps)
+                val shortcuts = slot.shortcuts.filter {
+                    it.packageName.isNotBlank() && it.id.isNotBlank()
+                }
+                when {
+                    apps.isEmpty() && shortcuts.isEmpty() -> null
+                    apps.size == 1 && shortcuts.isEmpty() -> QuickLaunchSlot.Single(apps[0])
+                    else -> slot.copy(apps = apps, shortcuts = shortcuts)
                 }
             }
         }
@@ -58,9 +78,12 @@ fun normalizeIntentQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<QuickLau
             }
             is QuickLaunchSlot.Folder -> {
                 val apps = slot.apps.filter { it.isNotBlank() }.distinct()
+                val shortcuts = slot.shortcuts.filter {
+                    it.packageName.isNotBlank() && it.id.isNotBlank()
+                }
                 val name = slot.name?.trim()?.takeIf { it.isNotEmpty() }
-                if (apps.isEmpty() && name == null) null
-                else slot.copy(name = name, apps = apps)
+                if (apps.isEmpty() && shortcuts.isEmpty() && name == null) null
+                else slot.copy(name = name, apps = apps, shortcuts = shortcuts)
             }
         }
     }
