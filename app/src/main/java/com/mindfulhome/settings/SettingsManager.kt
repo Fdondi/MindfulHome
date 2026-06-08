@@ -7,6 +7,7 @@ import com.mindfulhome.service.UsageTracker
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Calendar
+import java.util.Locale
 
 /**
  * Persists user preferences using SharedPreferences.
@@ -541,6 +542,21 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
                 endMinutes = interval.endMinutes,
             )
         }
+    }
+
+    fun describeFocusTimeWindows(context: Context): String {
+        val intervals = getFocusTimeIntervals(context)
+        if (intervals.isEmpty()) return "focus window"
+        return intervals.joinToString("; ") { interval ->
+            "${formatMinutesOfDay(interval.startMinutes)}–${formatMinutesOfDay(interval.endMinutes)}"
+        }
+    }
+
+    private fun formatMinutesOfDay(minutes: Int): String {
+        val normalized = minutes.coerceIn(0, MINUTES_PER_DAY - 1)
+        val hour = normalized / 60
+        val minute = normalized % 60
+        return String.format(Locale.US, "%d:%02d", hour, minute)
     }
 
     // ── Escalation threshold ────────────────────────────────────────

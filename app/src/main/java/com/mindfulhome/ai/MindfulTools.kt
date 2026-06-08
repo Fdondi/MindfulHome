@@ -53,6 +53,27 @@ class GatekeeperTools : ToolSet {
 }
 
 /**
+ * Tools the focus-time gate AI can call to let the user proceed with their session.
+ *
+ * This gate verifies intent to spend time during a focus window. It does not open apps.
+ */
+class FocusGateTools : ToolSet {
+
+    var accessGranted = false
+        private set
+
+    fun reset() {
+        accessGranted = false
+    }
+
+    @Tool(description = "Allow the user to proceed with their timed session during focus time.")
+    fun grantTimeAccess(): Map<String, Any> {
+        accessGranted = true
+        return mapOf("status" to "granted", "message" to "The user may proceed to their session.")
+    }
+}
+
+/**
  * Tools the nudge AI can call to grant a timer extension.
  *
  * When the model calls [grantExtension], the caller checks

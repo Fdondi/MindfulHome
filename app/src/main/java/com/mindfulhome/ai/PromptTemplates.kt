@@ -4,6 +4,14 @@ object PromptTemplates {
 
     const val GENERAL_CHAT_GREETING = "Hi! What do you want to do with your time?"
 
+    fun focusGateSystemPrompt(): String = """
+        The user is in a focus-time window and wants to spend phone time now.
+        Your job is to verify that their stated intent is legitimate and intentional.
+        You do NOT care which app they might use later, and you must NOT launch or discuss specific apps.
+        Call grantTimeAccess when you are satisfied. One sentence replies only. Be casual and friendly.
+        Follow the round-window policy provided in the user context.
+    """.trimIndent()
+
     fun gatekeeperSystemPrompt(): String = """
         The user wants to open a hidden app. You open it by calling grantAccess.
         One sentence replies only. Be casual and friendly.
@@ -49,6 +57,24 @@ object PromptTemplates {
         appendLine("When candidate notes/flags are provided in suggestApps results, treat them as constraints.")
         appendLine("Risky note or needs_extra_confirmation=true -> ask one more confirmation turn or push back before launchApp.")
         append("Never ask for exact package names.")
+    }
+
+    fun buildFocusGateUserContext(
+        durationMinutes: Int,
+        declaredIntent: String,
+        focusWindowDescription: String,
+        minRoundsBeforeGrant: Int,
+        maxRoundsBeforeGrant: Int,
+    ): String {
+        val intentPart = declaredIntent.trim().takeIf { it.isNotBlank() }
+            ?.let { "Declared intent: \"$it\". " }
+            .orEmpty()
+        return "Focus time is active ($focusWindowDescription). " +
+            "User set a $durationMinutes minute session. $intentPart" +
+            "Verify whether spending phone time now is intentional and aligned with that intent. " +
+            "Do not ask about or reference specific apps. " +
+            "Do NOT call grantTimeAccess before round $minRoundsBeforeGrant. " +
+            "Call grantTimeAccess by round $maxRoundsBeforeGrant at the latest."
     }
 
     fun buildGatekeeperUserContext(
@@ -102,6 +128,21 @@ object PromptTemplates {
         nudgeCount: Int
     ): String =
         "Timer expired $overrunMinutes min ago on $appName (karma $karmaScore). Nudge #${nudgeCount + 1}."
+
+    fun fallbackFocusGateResponse(
+        durationMinutes: Int,
+        declaredIntent: String,
+        exchangeCount: Int,
+    ): String {
+        val intentSuffix = declaredIntent.trim().takeIf { it.isNotBlank() }
+            ?.let { " You said: \"$it\"." }
+            .orEmpty()
+        return when (exchangeCount) {
+            0 -> "It's focus time, and you're starting a $durationMinutes minute session.$intentSuffix Is this really how you want to spend it?"
+            1 -> "Got it. Just checking you're being intentional about this window — still want to proceed?"
+            else -> "Alright, go ahead — use the time mindfully."
+        }
+    }
 
     fun fallbackGatekeeperResponse(
         appName: String,

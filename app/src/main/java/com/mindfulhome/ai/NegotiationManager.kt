@@ -27,6 +27,7 @@ import kotlin.math.ln
 
 enum class NegotiationType {
     GATEKEEPER,
+    FOCUS_GATE,
     NUDGE,
     GENERAL,
 }
@@ -61,6 +62,8 @@ class NegotiationManager(
     private val riskConfirmationAskedForPackages = mutableSetOf<String>()
     private var gatekeeperMinRounds = 0
     private var gatekeeperMaxRounds = 0
+    private var focusGateDurationMinutes = 0
+    private var focusGateDeclaredIntent = ""
 
     // Rate limiter: hard cap of 10 messages per 60 seconds
     private val replyTimestamps = ArrayDeque<Long>()
@@ -75,6 +78,7 @@ class NegotiationManager(
     // On-device state (kept for offline fallback)
     private var currentConversation: Conversation? = null
     private var gatekeeperTools: GatekeeperTools? = null
+    private var focusGateTools: FocusGateTools? = null
     private var nudgeTools: NudgeTools? = null
     private var generalChatTools: GeneralChatTools? = null
 
@@ -157,6 +161,76 @@ class NegotiationManager(
         logDeveloper("fallback response used: gatekeeper scripted response (grant=$grant, exchangeCount=$exchangeCount, minRounds=$gatekeeperMinRounds)")
         applyGatekeeperRoundPolicy(
             NegotiationResult(responseText = text, accessGranted = grant)
+        )
+    }
+
+    // ── Focus gate ───────────────────────────────────────────────────
+
+    suspend fun startFocusGateNegotiation(
+        durationMinutes: Int,
+        declaredIntent: String,
+        focusWindowDescription: String,
+    ): NegotiationResult = withContext(Dispatchers.IO) {
+        logDeveloper(
+            "startFocusGateNegotiation(durationMinutes=$durationMinutes, " +
+                "declaredIntent=${quote(declaredIntent)}, focusWindow=$focusWindowDescription)",
+        )
+        currentAppPackage = ""
+        currentType = NegotiationType.FOCUS_GATE
+        exchangeCount = 0
+        focusGateDurationMinutes = durationMinutes
+        focusGateDeclaredIntent = declaredIntent
+
+        gatekeeperMinRounds = 1
+        gatekeeperMaxRounds = 2
+
+        val systemPrompt = PromptTemplates.focusGateSystemPrompt()
+        val userContext = PromptTemplates.buildFocusGateUserContext(
+            durationMinutes = durationMinutes,
+            declaredIntent = declaredIntent,
+            focusWindowDescription = focusWindowDescription,
+            minRoundsBeforeGrant = gatekeeperMinRounds,
+            maxRoundsBeforeGrant = gatekeeperMaxRounds,
+        )
+
+        if (backendAuth != null && backendAuth.hasToken) {
+            try {
+                val result = startBackendConversation(
+                    systemPrompt, userContext, BackendToolDeclarations.FOCUS_GATE_TOOLS,
+                )
+                if (result != null) {
+                    logDeveloper("backend focus gate start succeeded")
+                    return@withContext applyGatekeeperRoundPolicy(result)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Backend focus gate failed, falling back", e)
+                logDeveloper("fallback triggered: backend focus gate failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})")
+                if ((e as? BackendHttpException)?.code == "model_not_found") {
+                    logDeveloper("block triggered: backend model not found ($backendModel)")
+                    return@withContext NegotiationResult(
+                        responseText = "Model '$backendModel' is not available. " +
+                            "Please go to Settings and pick a different model.",
+                    )
+                }
+            }
+        } else {
+            logDeveloper(
+                "fallback reason: backend path unavailable " +
+                    "(backendAuthPresent=${backendAuth != null}, hasToken=${backendAuth?.hasToken == true}); " +
+                    "using scripted focus gate fallback",
+            )
+        }
+
+        exchangeCount++
+        val text = PromptTemplates.fallbackFocusGateResponse(
+            durationMinutes = durationMinutes,
+            declaredIntent = declaredIntent,
+            exchangeCount = exchangeCount - 1,
+        )
+        val grant = exchangeCount >= gatekeeperMinRounds
+        logDeveloper("fallback response used: focus gate scripted response (grant=$grant, exchangeCount=$exchangeCount)")
+        applyGatekeeperRoundPolicy(
+            NegotiationResult(responseText = text, accessGranted = grant),
         )
     }
 
@@ -402,6 +476,7 @@ class NegotiationManager(
         if (conversation != null && lmManager.modelReady) {
             try {
                 gatekeeperTools?.reset()
+                focusGateTools?.reset()
                 nudgeTools?.reset()
                 generalChatTools?.reset()
 
@@ -413,6 +488,10 @@ class NegotiationManager(
                     NegotiationType.GATEKEEPER -> NegotiationResult(
                         responseText = response,
                         accessGranted = gatekeeperTools?.accessGranted == true,
+                    )
+                    NegotiationType.FOCUS_GATE -> NegotiationResult(
+                        responseText = response,
+                        accessGranted = focusGateTools?.accessGranted == true,
                     )
                     NegotiationType.NUDGE -> {
                         val ext = nudgeTools?.extensionMinutes ?: 0
@@ -456,6 +535,18 @@ class NegotiationManager(
                     NegotiationResult(responseText = text, accessGranted = grant)
                 )
             }
+            NegotiationType.FOCUS_GATE -> {
+                val text = PromptTemplates.fallbackFocusGateResponse(
+                    durationMinutes = focusGateDurationMinutes,
+                    declaredIntent = focusGateDeclaredIntent,
+                    exchangeCount = exchangeCount - 1,
+                )
+                val grant = exchangeCount >= gatekeeperMinRounds
+                logDeveloper("fallback response used: focus gate scripted reply in ongoing chat (grant=$grant, exchangeCount=$exchangeCount)")
+                applyGatekeeperRoundPolicy(
+                    NegotiationResult(responseText = text, accessGranted = grant)
+                )
+            }
             NegotiationType.NUDGE -> {
                 val appName = currentAppPackage.substringAfterLast('.')
                 val text = PromptTemplates.fallbackNudgeResponse(appName, exchangeCount - 1)
@@ -484,10 +575,13 @@ class NegotiationManager(
         exchangeCount = 0
         currentAppPackage = ""
         gatekeeperTools = null
+        focusGateTools = null
         nudgeTools = null
         generalChatTools = null
         gatekeeperMinRounds = 0
         gatekeeperMaxRounds = 0
+        focusGateDurationMinutes = 0
+        focusGateDeclaredIntent = ""
         usingBackend = false
         backendHistory.clear()
         backendTools = null
@@ -542,6 +636,10 @@ class NegotiationManager(
                     responseText = text.ifBlank { "Opening the app for you." },
                     accessGranted = true,
                 )
+                "grantTimeAccess" -> return NegotiationResult(
+                    responseText = text.ifBlank { "Go ahead — use your time mindfully." },
+                    accessGranted = true,
+                )
                 "grantExtension" -> {
                     val minutes = fc.args["minutes"]?.jsonPrimitive?.int ?: 10
                     logDeveloper("tool params parsed: grantExtension(minutes=$minutes)")
@@ -590,6 +688,7 @@ class NegotiationManager(
 
         return when (currentType) {
             NegotiationType.GATEKEEPER -> NegotiationResult(responseText = text)
+            NegotiationType.FOCUS_GATE -> NegotiationResult(responseText = text)
             NegotiationType.NUDGE -> NegotiationResult(responseText = text)
             NegotiationType.GENERAL -> NegotiationResult(responseText = text)
             null -> NegotiationResult(responseText = text)
@@ -688,16 +787,21 @@ class NegotiationManager(
     }
 
     private fun applyGatekeeperRoundPolicy(result: NegotiationResult): NegotiationResult {
-        if (currentType != NegotiationType.GATEKEEPER) return result
+        if (currentType != NegotiationType.GATEKEEPER && currentType != NegotiationType.FOCUS_GATE) return result
 
         val minRounds = gatekeeperMinRounds.coerceAtLeast(0)
         val maxRounds = gatekeeperMaxRounds.coerceAtLeast(minRounds)
+        val isFocusGate = currentType == NegotiationType.FOCUS_GATE
         if (exchangeCount < minRounds) {
             if (!result.accessGranted) return result
             logDeveloper("override triggered: gatekeeper grant blocked until min rounds(exchangeCount=$exchangeCount, minRounds=$minRounds)")
             return result.copy(
                 responseText = result.responseText +
-                    "\n\nOne more quick reflection before I open it.",
+                    if (isFocusGate) {
+                        "\n\nOne more quick reflection before I let you proceed."
+                    } else {
+                        "\n\nOne more quick reflection before I open it."
+                    },
                 accessGranted = false,
             )
         }
@@ -706,7 +810,11 @@ class NegotiationManager(
             logDeveloper("override triggered: gatekeeper auto-grant at max rounds(exchangeCount=$exchangeCount, maxRounds=$maxRounds)")
             return result.copy(
                 responseText = result.responseText +
-                    "\n\nAlright, you've stayed with this. Go ahead.",
+                    if (isFocusGate) {
+                        "\n\nAlright, you've stayed with this. Go use your time mindfully."
+                    } else {
+                        "\n\nAlright, you've stayed with this. Go ahead."
+                    },
                 accessGranted = true,
             )
         }

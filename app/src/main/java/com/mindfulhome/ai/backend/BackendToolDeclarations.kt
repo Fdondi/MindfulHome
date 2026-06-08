@@ -39,6 +39,16 @@ object BackendToolDeclarations {
         )
     )
 
+    /** Tools for the focus-time gate (verify intent to spend time, not app access). */
+    val FOCUS_GATE_TOOLS: List<Map<String, JsonElement>> = listOf(
+        buildToolsObject(
+            function(
+                name = "grantTimeAccess",
+                description = "Allow the user to proceed with their timed session during focus time. Call when their stated intent is legitimate.",
+            ),
+        )
+    )
+
     /** Tools for the nudge flow (timer expiry). */
     val NUDGE_TOOLS: List<Map<String, JsonElement>> = listOf(
         buildToolsObject(

@@ -155,6 +155,7 @@ fun NegotiationScreen(
     val focusModeActive = remember {
         SettingsManager.isFocusTimeActiveNow(context)
     }
+    val isFocusGate = packageName.isEmpty() && focusModeActive
 
     val messages = remember { mutableStateListOf<ChatMessage>() }
     var userInput by remember { mutableStateOf("") }
@@ -490,6 +491,21 @@ fun NegotiationScreen(
                 accessGranted = true
                 logDevDecision("gatekeeper_result access_granted_immediately=true")
             }
+        } else if (isFocusGate) {
+            SessionLogger.log(sessionHandle, "Focus time gate started via $modelLabel")
+            isWaitingForAi = true
+            val result = negotiationManager.startFocusGateNegotiation(
+                durationMinutes = durationMinutes,
+                declaredIntent = unlockReason,
+                focusWindowDescription = SettingsManager.describeFocusTimeWindows(context),
+            )
+            logDevBoundary("chat_to_app focus_gate_start_result ${summarizeResult(result)}")
+            addMessage(result.responseText, isFromUser = false)
+            isWaitingForAi = false
+            if (result.accessGranted) {
+                accessGranted = true
+                logDevDecision("focus_gate_result access_granted_immediately=true")
+            }
         } else {
             // General chat
             SessionLogger.log(sessionHandle, "AI assistant opened via $modelLabel")
@@ -556,10 +572,16 @@ fun NegotiationScreen(
         }
     }
 
-    // Launch the app when access is granted (gatekeeper flow)
+    // Launch the app when access is granted (app gatekeeper flow)
     LaunchedEffect(accessGranted) {
-        if (accessGranted && packageName.isNotEmpty()) {
+        if (!accessGranted) return@LaunchedEffect
+        if (packageName.isNotEmpty()) {
             PackageManagerHelper.launchApp(context, packageName)
+            negotiationManager.endConversation()
+            lmManager.shutdown()
+            onAppGranted()
+        } else if (isFocusGate) {
+            SessionLogger.log(sessionHandle, "Focus time gate passed — proceeding to session")
             negotiationManager.endConversation()
             lmManager.shutdown()
             onAppGranted()
@@ -657,7 +679,11 @@ fun NegotiationScreen(
             title = {
                 Column {
                     Text(
-                        text = if (packageName.isNotEmpty()) "Opening $appLabel" else "AI Assistant",
+                        text = when {
+                            packageName.isNotEmpty() -> "Opening $appLabel"
+                            isFocusGate -> "Focus time check"
+                            else -> "AI Assistant"
+                        },
                         fontWeight = FontWeight.SemiBold
                     )
                     Text(
@@ -708,7 +734,7 @@ fun NegotiationScreen(
                 }
             }
 
-            if (showLaunchSuggestions) {
+            if (showLaunchSuggestions && !isFocusGate) {
                 item {
                     LaunchSuggestionsBubble(
                         apps = suggestedLaunchApps,
@@ -764,18 +790,28 @@ fun NegotiationScreen(
                                 isWaitingForAi = true
                                 val firstResult = negotiationManager.reply(input)
                                 logDevBoundary("chat_to_app payload reply_result ${summarizeResult(firstResult)}")
-                                val result = resolveSuggestedAppsTool(firstResult)
+                                val result = if (isFocusGate) {
+                                    firstResult
+                                } else {
+                                    resolveSuggestedAppsTool(firstResult)
+                                }
                                 addMessage(result.responseText, isFromUser = false)
                                 isWaitingForAi = false
-                                if (result.suggestedQuery.isNotBlank()) {
+                                if (result.suggestedQuery.isNotBlank() && !isFocusGate) {
                                     lastLaunchRequestText = result.suggestedQuery
                                 }
 
                                 if (result.accessGranted) {
-                                    SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
+                                    if (packageName.isNotEmpty()) {
+                                        SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
+                                        logDevDecision("gatekeeper_result access_granted=true")
+                                    } else if (isFocusGate) {
+                                        SessionLogger.log(sessionHandle, "Focus time gate passed")
+                                        logDevDecision("focus_gate_result access_granted=true")
+                                    }
                                     accessGranted = true
-                                    logDevDecision("gatekeeper_result access_granted=true")
                                 }
+                                if (isFocusGate) return@launch
                                 if (result.launchedPackage.isNotEmpty()) {
                                     val label = PackageManagerHelper.getAppLabel(
                                         context, result.launchedPackage
