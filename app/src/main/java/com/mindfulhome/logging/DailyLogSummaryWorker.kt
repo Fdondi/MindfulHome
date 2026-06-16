@@ -31,6 +31,7 @@ class DailyLogSummaryWorker(
             ) {
                 DailySummaryGenerateOutcome.ApiError -> return Result.retry()
                 DailySummaryGenerateOutcome.AlreadyHad,
+                DailySummaryGenerateOutcome.DayNotConcluded,
                 DailySummaryGenerateOutcome.NoSessionsToSummarize,
                 DailySummaryGenerateOutcome.Generated -> Unit
             }

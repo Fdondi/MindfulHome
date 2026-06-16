@@ -38,6 +38,7 @@ object DailyLogSummaryStartupBackfill {
                 DailySummaryGenerateOutcome.ApiError ->
                     Log.w(TAG, "API error for $dayKey; continuing with other days")
                 DailySummaryGenerateOutcome.AlreadyHad,
+                DailySummaryGenerateOutcome.DayNotConcluded,
                 DailySummaryGenerateOutcome.NoSessionsToSummarize,
                 DailySummaryGenerateOutcome.Generated -> Unit
             }

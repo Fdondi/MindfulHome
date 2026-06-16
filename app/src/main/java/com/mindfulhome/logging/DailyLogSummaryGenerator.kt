@@ -14,6 +14,9 @@ enum class DailySummaryGenerateOutcome {
     /** Row was already present. */
     AlreadyHad,
 
+    /** Local calendar day has not ended yet; summaries run only for past days. */
+    DayNotConcluded,
+
     /** Nothing to summarize (no sessions with events in range). */
     NoSessionsToSummarize,
 
@@ -31,7 +34,8 @@ object DailyLogSummaryGenerator {
 
     /**
      * Ensures a daily summary exists for [dayKey] (yyyy-MM-dd) when there is log data for that day.
-     * Does nothing if a summary already exists or there are no sessions with events in that local day.
+     * Does nothing if a summary already exists, the local calendar day has not finished yet,
+     * or there are no sessions with events in that local day.
      */
     suspend fun generateIfMissing(
         context: Context,
@@ -58,6 +62,10 @@ object DailyLogSummaryGenerator {
         val summaryDao = db.dailyLogSummaryDao()
         val zone = ZoneId.systemDefault()
         val day = LocalDate.parse(dayKey)
+        val today = LocalDate.now(zone)
+        if (!day.isBefore(today)) {
+            return DailySummaryGenerateOutcome.DayNotConcluded
+        }
         val sessionDao = db.sessionLogDao()
         val (startMs, endMs) = dayRangeMs(day, zone)
         val sessions = sessionDao.getSessionsWithCountsInRange(startMs, endMs)
