@@ -193,6 +193,8 @@ object DailyLogSummaryGenerator {
                     Log.w(TAG, "Regenerate failed for $dayKey; keeping previous summary row")
                 DailySummaryGenerateOutcome.NoSessionsToSummarize ->
                     Log.w(TAG, "Regenerate skipped for $dayKey: no session logs in range")
+                DailySummaryGenerateOutcome.DayNotConcluded ->
+                    Log.w(TAG, "Regenerate skipped for $dayKey: day not concluded")
                 DailySummaryGenerateOutcome.AlreadyHad -> Unit
             }
         }
