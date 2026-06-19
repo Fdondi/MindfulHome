@@ -89,7 +89,7 @@ private const val MOST_USED_VISIBLE_ITEMS = 3
 private const val MOST_USED_MAX_ITEMS = 15
 private const val MOST_USED_ROW_HEIGHT_DP = 44
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun TimerScreen(
     onTimerSet: (

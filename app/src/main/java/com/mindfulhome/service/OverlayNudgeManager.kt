@@ -857,7 +857,7 @@ class OverlayNudgeManager(private val context: Context) {
             replyInput?.requestFocus()
             if (requestInputFocus) {
                 replyInput?.post {
-                    imm?.showSoftInput(replyInput, InputMethodManager.SHOW_IMPLICIT)
+                    imm?.showSoftInput(replyInput, 0)
                 }
             }
         } else {

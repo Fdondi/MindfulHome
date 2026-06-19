@@ -41,15 +41,14 @@ object UsageTracker {
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             val isForegroundEvent =
-                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
-                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
             if (isForegroundEvent && event.packageName != null && event.timeStamp >= latestTimestamp) {
                 latestTimestamp = event.timeStamp
                 latestPackage = event.packageName
             }
         }
         if (!latestPackage.isNullOrBlank()) {
-            foregroundCache = ForegroundCache(latestPackage!!, now)
+            foregroundCache = ForegroundCache(latestPackage, now)
             return latestPackage
         }
 
@@ -73,7 +72,7 @@ object UsageTracker {
 
     fun hasUsageStatsPermission(context: Context): Boolean {
         val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager ?: return false
-        val mode = appOps.unsafeCheckOpNoThrow(
+        val mode = appOps.checkOpNoThrow(
             android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
             android.os.Process.myUid(),
             context.packageName
@@ -101,10 +100,7 @@ object UsageTracker {
                 event.eventType == UsageEvents.Event.USER_INTERACTION ||
                     (
                         includeForegroundTransitions &&
-                            (
-                                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
-                                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
-                                )
+                            event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
                         )
             if (isUserActivityEvent && event.timeStamp > latestTimestamp) {
                 latestTimestamp = event.timeStamp

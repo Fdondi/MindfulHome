@@ -225,7 +225,7 @@ fun HomeScreen(
                 }
 
                 result.target is DropTarget.OnFavoriteSlot && draggedItem is HomeGridItem.AppEntry -> {
-                    val favoriteSlot = result.target as DropTarget.OnFavoriteSlot
+                    val favoriteSlot = result.target
                     repository.mergePackageIntoFavoritesAt(
                         favoriteSlot.slot,
                         draggedItem.appInfo.packageName,

@@ -408,7 +408,7 @@ fun NegotiationScreen(
 
         // If remote is configured but no token is present, trigger sign-in now.
         // AuthManager uses the Credential Manager bottom sheet — no navigation side effects.
-        if (sessionUseBackend && !backendAuth.hasToken) {
+        if (sessionUseBackend && !backendAuth.hasToken()) {
             modelLabel = sessionSelectedModel
             try {
                 // Prefer a silent refresh (no UI) before falling back to the
@@ -430,7 +430,7 @@ fun NegotiationScreen(
                 )
                 return@LaunchedEffect
             }
-            if (!backendAuth.hasToken) {
+            if (!backendAuth.hasToken()) {
                 addMessage(
                     "Sign-in was cancelled or failed. You can retry from Settings.",
                     isFromUser = false
@@ -440,7 +440,7 @@ fun NegotiationScreen(
         }
 
         // Determine which model will actually be used
-        val usingRemote = sessionUseBackend && backendAuth.hasToken
+        val usingRemote = sessionUseBackend && backendAuth.hasToken()
         val signedInEmail = if (usingRemote) ApiKeyManager.getSignedInEmail(context) else null
         modelLabel = if (usingRemote) {
             val emailSuffix = if (signedInEmail != null) " · $signedInEmail" else ""

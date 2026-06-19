@@ -19,7 +19,7 @@ object ShortcutUiHelper {
         val icon = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
             try {
                 val launcherApps = context.getSystemService(LauncherApps::class.java)
-                val info = launcherApps?.getShortcuts(
+                val info = launcherApps.getShortcuts(
                     LauncherApps.ShortcutQuery().apply {
                         setPackage(shortcut.packageName)
                         setShortcutIds(listOf(shortcut.id))
@@ -31,7 +31,7 @@ object ShortcutUiHelper {
                     },
                     android.os.Process.myUserHandle(),
                 )?.firstOrNull()
-                info?.let { launcherApps?.getShortcutIconDrawable(it, 0) }
+                info?.let { launcherApps.getShortcutIconDrawable(it, 0) }
             } catch (_: Exception) {
                 null
             }

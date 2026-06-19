@@ -853,12 +853,6 @@ class MainActivity : ComponentActivity() {
         if (backendAuthPreflightInProgress) return
         if (SettingsManager.getAIMode(this) != SettingsManager.AI_MODE_BACKEND) return
 
-        val hasSession = ApiKeyManager.getSessionToken(this) != null
-        val sessionNearingExpiry = ApiKeyManager.isSessionExpiringSoon(this)
-        // Fast exit: a healthy session that isn't close to expiry means nothing
-        // to do. No Google round-trip, no network call.
-        if (hasSession && !sessionNearingExpiry) return
-
         val now = System.currentTimeMillis()
         if (now - backendAuthPreflightLastAttemptMs < 15_000L) return
         backendAuthPreflightLastAttemptMs = now
@@ -866,6 +860,15 @@ class MainActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             try {
+                val hasSession = ApiKeyManager.getSessionToken(this@MainActivity) != null
+                val sessionNearingExpiry = ApiKeyManager.isSessionExpiringSoon(this@MainActivity)
+                // Fast exit: a healthy session that isn't close to expiry means nothing
+                // to do. No Google round-trip, no network call.
+                if (hasSession && !sessionNearingExpiry) {
+                    backendAuthPreflightInProgress = false
+                    return@launch
+                }
+
                 val backendAuth = buildBackendAuthHelper()
 
                 if (hasSession && sessionNearingExpiry) {

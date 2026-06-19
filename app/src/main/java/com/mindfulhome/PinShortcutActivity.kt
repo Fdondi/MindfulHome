@@ -208,7 +208,7 @@ class PinShortcutActivity : ComponentActivity() {
     private fun shortcutLabel(shortcutInfo: ShortcutInfo): String {
         return shortcutInfo.shortLabel?.toString()?.takeIf { it.isNotBlank() }
             ?: shortcutInfo.longLabel?.toString()?.takeIf { it.isNotBlank() }
-            ?: shortcutInfo.`package`?.toString().orEmpty().ifBlank { "Shortcut" }
+            ?: shortcutInfo.`package`.ifBlank { "Shortcut" }
     }
 
     private fun pinnedShortcutFrom(shortcutInfo: ShortcutInfo, label: String): PinnedShortcut {

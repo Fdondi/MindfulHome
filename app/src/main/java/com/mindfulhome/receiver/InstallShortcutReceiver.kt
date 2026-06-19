@@ -39,12 +39,14 @@ class InstallShortcutReceiver : BroadcastReceiver() {
     }
 
     private fun readShortcutIntent(intent: Intent): Intent? {
+        @Suppress("DEPRECATION")
         intent.getParcelableExtra(Intent.EXTRA_SHORTCUT_INTENT, Intent::class.java)?.let { return it }
         @Suppress("DEPRECATION")
         return intent.getParcelableExtra(EXTRA_SHORTCUT_INTENT_LEGACY)
     }
 
     private fun readShortcutName(intent: Intent): String {
+        @Suppress("DEPRECATION")
         return intent.getStringExtra(Intent.EXTRA_SHORTCUT_NAME)
             ?: intent.getStringExtra(EXTRA_SHORTCUT_NAME_LEGACY)
             .orEmpty()

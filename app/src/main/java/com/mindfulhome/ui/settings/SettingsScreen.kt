@@ -125,8 +125,8 @@ fun SettingsScreen(
 
     var aiMode by remember { mutableStateOf(SettingsManager.getAIMode(context)) }
     var backendModel by remember { mutableStateOf(SettingsManager.getBackendModel(context)) }
-    var isSignedIn by remember { mutableStateOf(ApiKeyManager.isSignedIn(context)) }
-    var signedInEmail by remember { mutableStateOf(ApiKeyManager.getSignedInEmail(context)) }
+    var isSignedIn by remember { mutableStateOf(false) }
+    var signedInEmail by remember { mutableStateOf<String?>(null) }
     var signInInProgress by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
 
@@ -149,8 +149,11 @@ fun SettingsScreen(
         skippedOverlayPrompt = SettingsManager.isPermissionPromptSuppressed(
             context, SettingsManager.PermissionPrompt.OVERLAY
         )
-        isSignedIn = ApiKeyManager.isSignedIn(context)
-        signedInEmail = ApiKeyManager.getSignedInEmail(context)
+        
+        coroutineScope.launch {
+            isSignedIn = ApiKeyManager.isSignedIn(context)
+            signedInEmail = ApiKeyManager.getSignedInEmail(context)
+        }
 
         dailySummaryPromptVersion = SettingsManager.getDailySummaryPromptVersion(context)
         dailySummaryPromptText = SettingsManager.getDailySummaryPromptTextForEditing(context)
@@ -727,9 +730,11 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             TextButton(onClick = {
-                                ApiKeyManager.signOut(context)
-                                isSignedIn = false
-                                signedInEmail = null
+                                coroutineScope.launch {
+                                    ApiKeyManager.signOut(context)
+                                    isSignedIn = false
+                                    signedInEmail = null
+                                }
                             }) {
                                 Text("Sign out")
                             }

@@ -141,7 +141,7 @@ object IntentFolderPresets {
     fun migrateLegacySlots(
         slots: List<QuickLaunchSlot>,
         installedPackages: Set<String>,
-    ): List<QuickLaunchSlot> {
+    ): List<QuickLaunchSlot.Folder> {
         val presetSlots = buildInitialSlots(installedPackages).associateBy { it.name!! }.toMutableMap()
         val utilApps = mutableListOf<String>()
 

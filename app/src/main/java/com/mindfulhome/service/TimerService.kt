@@ -1335,7 +1335,6 @@ class TimerService : Service() {
             is TimerState.Counting -> state.remainingMs
             is TimerState.Expired -> 0L
             is TimerState.Idle -> return null
-            else -> return null
         }
         val projected = now + remainingMs + extraMinutes.coerceAtLeast(0) * 60_000L
         val hardDeadline = hardDeadlineAtMs

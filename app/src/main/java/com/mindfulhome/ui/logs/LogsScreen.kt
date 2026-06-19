@@ -1,5 +1,6 @@
 package com.mindfulhome.ui.logs
 
+import android.content.ClipData
 import android.widget.Toast
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.clickable
@@ -238,6 +239,7 @@ private fun DaySummaryCard(entry: DayEntry) {
 @Composable
 private fun SessionCard(entry: SessionEntry, onCopy: String) {
     var expanded by remember { mutableStateOf(false) }
+    @Suppress("DEPRECATION")
     val clipboardManager = LocalClipboardManager.current
     val context = LocalContext.current
 
@@ -294,6 +296,7 @@ private fun SessionCard(entry: SessionEntry, onCopy: String) {
                 }
                 if (expanded) {
                     IconButton(onClick = {
+                        @Suppress("DEPRECATION")
                         clipboardManager.setText(AnnotatedString(onCopy))
                         Toast.makeText(context, "Session log copied", Toast.LENGTH_SHORT).show()
                     }) {

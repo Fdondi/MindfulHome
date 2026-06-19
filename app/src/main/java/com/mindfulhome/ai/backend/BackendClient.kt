@@ -116,7 +116,7 @@ object BackendClient {
             .build()
 
         val response = client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: ""
+        val responseBody = response.body.string()
 
         if (!response.isSuccessful) {
             throw BackendHttpException(
@@ -137,7 +137,7 @@ object BackendClient {
             .build()
 
         val response = client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: ""
+        val responseBody = response.body.string()
 
         if (!response.isSuccessful) {
             throw BackendHttpException(
@@ -165,7 +165,7 @@ object BackendClient {
             .build()
 
         val response = client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: ""
+        val responseBody = response.body.string()
 
         if (!response.isSuccessful) {
             throw BackendHttpException(
@@ -189,7 +189,7 @@ object BackendClient {
             .build()
 
         val response = client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: ""
+        val responseBody = response.body.string()
 
         if (!response.isSuccessful) {
             throw BackendHttpException(
@@ -211,7 +211,7 @@ object BackendClient {
             .build()
 
         val response = client.newCall(request).execute()
-        val responseBody = response.body?.string() ?: ""
+        val responseBody = response.body.string()
 
         if (!response.isSuccessful) {
             throw BackendHttpException(

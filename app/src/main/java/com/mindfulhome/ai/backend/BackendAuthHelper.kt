@@ -30,10 +30,10 @@ class BackendAuthHelper(
      * available.
      */
     private val signInForExchange: suspend () -> String?,
-    private val getSessionToken: () -> String?,
-    private val saveSessionToken: (token: String, expiresAtUnixSeconds: Long) -> Unit,
-    private val clearSessionToken: () -> Unit,
-    private val isSessionExpiringSoon: () -> Boolean = { false },
+    private val getSessionToken: suspend () -> String?,
+    private val saveSessionToken: suspend (token: String, expiresAtUnixSeconds: Long) -> Unit,
+    private val clearSessionToken: suspend () -> Unit,
+    private val isSessionExpiringSoon: suspend () -> Boolean = { false },
     private val exchangeGoogleToken: suspend (String) -> BackendClient.SessionResponse = { idToken ->
         withContext(Dispatchers.IO) { BackendClient.exchange(idToken) }
     },
@@ -50,7 +50,7 @@ class BackendAuthHelper(
     }
 
     /** True if a non-expired session is currently stored. */
-    val hasToken: Boolean get() = getSessionToken() != null
+    suspend fun hasToken(): Boolean = getSessionToken() != null
 
     /**
      * Exchanges a Google ID token (freshly obtained from Credential Manager)

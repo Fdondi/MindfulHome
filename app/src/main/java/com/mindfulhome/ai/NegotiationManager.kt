@@ -122,7 +122,7 @@ class NegotiationManager(
         )
 
         // Try backend first
-        if (backendAuth != null && backendAuth.hasToken) {
+        if (backendAuth != null && backendAuth.hasToken()) {
             try {
                 val result = startBackendConversation(
                     systemPrompt, userContext, BackendToolDeclarations.GATEKEEPER_TOOLS,
@@ -145,7 +145,7 @@ class NegotiationManager(
         } else {
             logDeveloper(
                 "fallback reason: backend path unavailable " +
-                    "(backendAuthPresent=${backendAuth != null}, hasToken=${backendAuth?.hasToken == true}); " +
+                    "(backendAuthPresent=${backendAuth != null}, hasToken=${if (backendAuth != null) "suspend-check" else "false"}); " +
                     "using scripted gatekeeper fallback"
             )
         }
@@ -193,7 +193,7 @@ class NegotiationManager(
             maxRoundsBeforeGrant = gatekeeperMaxRounds,
         )
 
-        if (backendAuth != null && backendAuth.hasToken) {
+        if (backendAuth != null && backendAuth.hasToken()) {
             try {
                 val result = startBackendConversation(
                     systemPrompt, userContext, BackendToolDeclarations.FOCUS_GATE_TOOLS,
@@ -216,7 +216,7 @@ class NegotiationManager(
         } else {
             logDeveloper(
                 "fallback reason: backend path unavailable " +
-                    "(backendAuthPresent=${backendAuth != null}, hasToken=${backendAuth?.hasToken == true}); " +
+                    "(backendAuthPresent=${backendAuth != null}, hasToken=${if (backendAuth != null) "suspend-check" else "false"}); " +
                     "using scripted focus gate fallback",
             )
         }
@@ -257,7 +257,7 @@ class NegotiationManager(
             nudgeCount = nudgeCount,
         )
 
-        if (backendAuth != null && backendAuth.hasToken) {
+        if (backendAuth != null && backendAuth.hasToken()) {
             try {
                 val result = startBackendConversation(
                     systemPrompt, userContext, BackendToolDeclarations.NUDGE_TOOLS,
@@ -280,7 +280,7 @@ class NegotiationManager(
         } else {
             logDeveloper(
                 "fallback reason: backend path unavailable " +
-                    "(backendAuthPresent=${backendAuth != null}, hasToken=${backendAuth?.hasToken == true}); " +
+                    "(backendAuthPresent=${backendAuth != null}, hasToken=${if (backendAuth != null) "suspend-check" else "false"}); " +
                     "using scripted nudge fallback"
             )
         }
@@ -369,7 +369,7 @@ class NegotiationManager(
             }.trim()
         }
 
-        if (backendAuth != null && backendAuth.hasToken) {
+        if (backendAuth != null && backendAuth.hasToken()) {
             usingBackend = true
             backendHistory.clear()
             backendTools = BackendToolDeclarations.GENERAL_CHAT_TOOLS
@@ -382,7 +382,7 @@ class NegotiationManager(
         } else {
             logDeveloper(
                 "fallback reason: general chat backend disabled " +
-                    "(backendAuthPresent=${backendAuth != null}, hasToken=${backendAuth?.hasToken == true})"
+                    "(backendAuthPresent=${backendAuth != null}, hasToken=${if (backendAuth != null) "suspend-check" else "false"})"
             )
         }
 
