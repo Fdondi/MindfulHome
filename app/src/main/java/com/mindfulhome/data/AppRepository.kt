@@ -79,6 +79,16 @@ class AppRepository(private val database: AppDatabase) {
         }
     }
 
+    suspend fun setKarmaScore(
+        packageName: String,
+        karmaScore: Int,
+        hideThreshold: Int = DEFAULT_HIDE_THRESHOLD,
+    ) {
+        mutateKarma(packageName, hideThreshold, allowWhenOptedOut = true) { current ->
+            current.copy(karmaScore = karmaScore)
+        }
+    }
+
     suspend fun setOptedOut(packageName: String, optedOut: Boolean) {
         val current = getKarma(packageName) // ensure the row exists before updating
         val updated = if (optedOut) {

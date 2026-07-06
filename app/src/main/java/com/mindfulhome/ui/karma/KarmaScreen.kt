@@ -22,9 +22,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,7 +55,9 @@ import androidx.compose.ui.unit.dp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.data.AppKarma
 import com.mindfulhome.data.AppRepository
+import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
+import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.util.PackageManagerHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -77,9 +81,13 @@ fun KarmaScreen(
     var optedOutExpanded by remember { mutableStateOf(false) }
     var positiveExpanded by remember { mutableStateOf(false) }
     var zeroExpanded by remember { mutableStateOf(false) }
+    var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    var showPickAppDialog by remember { mutableStateOf(false) }
+    var setKarmaTarget by remember { mutableStateOf<Pair<String, Int>?>(null) }
 
     LaunchedEffect(Unit) {
         val apps = PackageManagerHelper.getInstalledApps(context)
+        allApps = apps
         appLabels = apps.associate { it.packageName to it.label }
         appIcons = apps.associate { it.packageName to it.icon }
         appsLoaded = true
@@ -132,6 +140,13 @@ fun KarmaScreen(
             .sortedBy { appLabels[it.packageName] ?: it.packageName }
     }
 
+    val karmaByPackage = remember(allKarma) { allKarma.associateBy { it.packageName } }
+
+    fun openSetKarma(packageName: String) {
+        val current = karmaByPackage[packageName]?.karmaScore ?: 0
+        setKarmaTarget = packageName to current
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -144,7 +159,12 @@ fun KarmaScreen(
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                 }
-            }
+            },
+            actions = {
+                IconButton(onClick = { showPickAppDialog = true }) {
+                    Icon(Icons.Default.Add, contentDescription = "Set karma for app")
+                }
+            },
         )
 
         if (trackedApps.isEmpty()) {
@@ -162,7 +182,7 @@ fun KarmaScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "Karma and notes appear here after the app has a metadata row.",
+                    text = "Tap + to set karma for any installed app and test Quick Launch timing.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -189,6 +209,7 @@ fun KarmaScreen(
                         onToggleOptOut = { packageName, optedOut ->
                             scope.launch { karmaManager.setOptedOut(packageName, optedOut) }
                         },
+                        onSetKarma = { packageName -> openSetKarma(packageName) },
                     )
                 }
                 item {
@@ -204,6 +225,7 @@ fun KarmaScreen(
                         onToggleOptOut = { packageName, optedOut ->
                             scope.launch { karmaManager.setOptedOut(packageName, optedOut) }
                         },
+                        onSetKarma = { packageName -> openSetKarma(packageName) },
                     )
                 }
                 item {
@@ -219,6 +241,7 @@ fun KarmaScreen(
                         onToggleOptOut = { packageName, optedOut ->
                             scope.launch { karmaManager.setOptedOut(packageName, optedOut) }
                         },
+                        onSetKarma = { packageName -> openSetKarma(packageName) },
                     )
                 }
                 item {
@@ -234,12 +257,38 @@ fun KarmaScreen(
                         onToggleOptOut = { packageName, optedOut ->
                             scope.launch { karmaManager.setOptedOut(packageName, optedOut) }
                         },
+                        onSetKarma = { packageName -> openSetKarma(packageName) },
                     )
                 }
 
                 item { Spacer(modifier = Modifier.height(8.dp)) }
             }
         }
+    }
+
+    if (showPickAppDialog) {
+        PickAppForKarmaDialog(
+            apps = allApps,
+            onDismiss = { showPickAppDialog = false },
+            onPick = { packageName ->
+                showPickAppDialog = false
+                openSetKarma(packageName)
+            },
+        )
+    }
+
+    setKarmaTarget?.let { (packageName, currentScore) ->
+        SetKarmaDialog(
+            appLabel = appLabels[packageName] ?: packageName,
+            initialScore = currentScore,
+            onDismiss = { setKarmaTarget = null },
+            onSave = { score ->
+                scope.launch {
+                    karmaManager.setKarmaScore(packageName, score)
+                    setKarmaTarget = null
+                }
+            },
+        )
     }
 }
 
@@ -254,6 +303,7 @@ private fun KarmaSection(
     onForgive: (String) -> Unit,
     onSaveNote: (String, String?) -> Unit,
     onToggleOptOut: (String, Boolean) -> Unit,
+    onSetKarma: (String) -> Unit,
 ) {
     Card(
         modifier = Modifier
@@ -301,6 +351,7 @@ private fun KarmaSection(
             onForgive = { onForgive(karma.packageName) },
             onSaveNote = { note -> onSaveNote(karma.packageName, note) },
             onToggleOptOut = { optedOut -> onToggleOptOut(karma.packageName, optedOut) },
+            onSetKarma = { onSetKarma(karma.packageName) },
         )
     }
 }
@@ -312,7 +363,8 @@ private fun KarmaCard(
     icon: Drawable?,
     onForgive: () -> Unit,
     onSaveNote: (String?) -> Unit,
-    onToggleOptOut: (Boolean) -> Unit
+    onToggleOptOut: (Boolean) -> Unit,
+    onSetKarma: () -> Unit,
 ) {
     var isEditingNote by remember(karma.packageName) { mutableStateOf(false) }
     var noteDraft by remember(karma.packageName, karma.appNote) { mutableStateOf(karma.appNote.orEmpty()) }
@@ -411,12 +463,28 @@ private fun KarmaCard(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (karma.isOptedOut) "Karma: --" else "Karma: ${karma.karmaScore}",
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = scoreColor,
-                    )
+                    TextButton(
+                        onClick = onSetKarma,
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            horizontal = 4.dp,
+                            vertical = 0.dp,
+                        ),
+                        modifier = Modifier.height(36.dp),
+                    ) {
+                        Text(
+                            text = if (karma.isOptedOut) "Set karma" else "${karma.karmaScore}",
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = scoreColor,
+                        )
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = "Set karma",
+                            modifier = Modifier.size(14.dp),
+                            tint = scoreColor,
+                        )
+                    }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
@@ -498,4 +566,135 @@ private fun KarmaCard(
             }
         }
     }
+}
+
+@Composable
+private fun SetKarmaDialog(
+    appLabel: String,
+    initialScore: Int,
+    onDismiss: () -> Unit,
+    onSave: (Int) -> Unit,
+) {
+    val context = LocalContext.current
+    val baseGraceMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(context) * 3L
+    var scoreText by remember(appLabel, initialScore) { mutableStateOf(initialScore.toString()) }
+    val parsedScore = scoreText.toIntOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Set karma for $appLabel") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = scoreText,
+                    onValueChange = { raw ->
+                        scoreText = raw.filter { it == '-' || it.isDigit() }.take(5)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Karma score") },
+                    placeholder = { Text("e.g. -10") },
+                    singleLine = true,
+                )
+                if (parsedScore != null) {
+                    val stayMs = KarmaManager.quickLaunchAllowedStayMs(parsedScore, baseGraceMs)
+                    val cheatMs = KarmaManager.cheatScreenDurationMs(parsedScore)
+                    Text(
+                        text = buildString {
+                            append("Quick Launch grace: ${stayMs / 1_000}s")
+                            if (cheatMs != null) append(" · cheat screen: ${cheatMs / 1_000}s")
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(0, -1, -3, -10, -15).forEach { preset ->
+                        TextButton(onClick = { scoreText = preset.toString() }) {
+                            Text(preset.toString())
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { parsedScore?.let(onSave) },
+                enabled = parsedScore != null,
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        },
+    )
+}
+
+@Composable
+private fun PickAppForKarmaDialog(
+    apps: List<AppInfo>,
+    onDismiss: () -> Unit,
+    onPick: (String) -> Unit,
+) {
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(apps, query) {
+        val normalized = query.trim().lowercase()
+        if (normalized.isEmpty()) {
+            apps.take(40)
+        } else {
+            apps.filter { app ->
+                app.label.lowercase().contains(normalized) ||
+                    app.packageName.lowercase().contains(normalized)
+            }.take(40)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pick app") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Search apps") },
+                    singleLine = true,
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    items(filtered.size) { index ->
+                        val app = filtered[index]
+                        TextButton(
+                            onClick = { onPick(app.packageName) },
+                            modifier = Modifier.fillMaxWidth(),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                                horizontal = 8.dp,
+                                vertical = 4.dp,
+                            ),
+                        ) {
+                            Text(
+                                text = app.label,
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        },
+    )
 }

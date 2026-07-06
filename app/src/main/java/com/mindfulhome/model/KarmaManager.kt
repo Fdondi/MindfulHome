@@ -84,6 +84,10 @@ class KarmaManager(private val context: Context, private val repository: AppRepo
         repository.forgiveApp(packageName)
     }
 
+    suspend fun setKarmaScore(packageName: String, karmaScore: Int) {
+        repository.setKarmaScore(packageName, karmaScore, hideThreshold())
+    }
+
     suspend fun setOptedOut(packageName: String, optedOut: Boolean) {
         repository.setOptedOut(packageName, optedOut)
     }
