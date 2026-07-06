@@ -37,6 +37,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.Date
 import kotlin.math.abs
 import kotlin.math.max
@@ -48,8 +49,10 @@ class TimerService : Service() {
     private var timerJob: Job? = null
     private var nudgeJob: Job? = null
     private var quickLaunchMonitorJob: Job? = null
+    private var quickLaunchExitDeadlineJob: Job? = null
     private var notificationInteractionTimeoutJob: Job? = null
     private var quickLaunchExitCandidatePackage: String? = null
+    private var quickLaunchLastSeenPackage: String = ""
     private var quickLaunchExitCandidateStartedAtMs: Long = 0L
     private var quickLaunchExitCandidateLabel: String? = null
     private var quickLaunchExitDeadlineMs: Long = 0L
@@ -202,9 +205,25 @@ class TimerService : Service() {
                     logSessionEvent("Ignoring quick-launch resume: session not active")
                 }
             }
+            ACTION_PROBE_QUICK_LAUNCH_FOREGROUND -> {
+                val reason = intent.getStringExtra(EXTRA_PROBE_REASON) ?: "probe"
+                logSessionEvent("ACTION_PROBE_QUICK_LAUNCH_FOREGROUND requested (reason=$reason)")
+                runQuickLaunchForegroundProbe(reason)
+                if (reason == "launcher-background") {
+                    serviceScope.launch {
+                        delay(500L)
+                        runQuickLaunchForegroundProbe("launcher-background+500ms")
+                        delay(1_000L)
+                        runQuickLaunchForegroundProbe("launcher-background+1500ms")
+                        delay(1_500L)
+                        runQuickLaunchForegroundProbe("launcher-background+3000ms")
+                    }
+                }
+            }
             ACTION_TRACK_APP -> {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
                 Log.d(TAG, "track app package=$packageName")
+                UsageTracker.invalidateForegroundCache()
                 if (packageName.isNotBlank() && packageName != _currentPackage.value) {
                     val appLabel = getAppLabel(packageName)
                     logWithSession("Foreground app detected: **$appLabel** (`$packageName`)")
@@ -366,6 +385,7 @@ class TimerService : Service() {
         refreshQuickLaunchMonitoringNotification()
         quickLaunchFrameSuppressedForSensitiveApp = false
         updateQuickLaunchFrameVisibility(initialPackageName, System.currentTimeMillis())
+        maybeForceTimerForQuickLaunchSwitch(initialPackageName)
         startQuickLaunchMonitoringLoop()
     }
 
@@ -391,17 +411,11 @@ class TimerService : Service() {
             rememberQuickLaunchExitProgress(now)
             quickLaunchExitCandidatePackage = packageName
             quickLaunchExitCandidateLabel = getAppLabel(packageName)
+            quickLaunchExitDeadlineMs = 0L
+            cancelQuickLaunchExitDeadlineJob()
             val appLabel = quickLaunchExitCandidateLabel ?: packageName
             serviceScope.launch {
                 configureQuickLaunchExitGrace(packageName, now)
-                if (quickLaunchExitCandidatePackage == packageName &&
-                    quickLaunchExitDeadlineMs > 0L &&
-                    System.currentTimeMillis() >= quickLaunchExitDeadlineMs
-                ) {
-                    triggerQuickLaunchExit(packageName)
-                } else {
-                    refreshQuickLaunchMonitoringNotification()
-                }
             }
             logWithSession(
                 "Quick Launch switch observed: **$appLabel** — green → yellow → red, then return to timer"
@@ -412,6 +426,7 @@ class TimerService : Service() {
             refreshQuickLaunchMonitoringNotification()
             return
         }
+        enforceQuickLaunchExitIfDue(now)
     }
 
     private suspend fun configureQuickLaunchExitGrace(packageName: String, nowMs: Long) {
@@ -438,25 +453,69 @@ class TimerService : Service() {
         quickLaunchExitCandidateKarmaScore = k.karmaScore
 
         val existingSnapshot = quickLaunchExitResumeByPackage[packageName]
-        if (existingSnapshot != null && existingSnapshot.deadlineMs > nowMs) {
+        if (existingSnapshot != null) {
+            if (existingSnapshot.deadlineMs > nowMs) {
+                quickLaunchExitDeadlineMs = existingSnapshot.deadlineMs
+                quickLaunchSemaphorePhaseMs = existingSnapshot.phaseMs
+                quickLaunchExitCandidateKarmaScore = existingSnapshot.karmaScore
+                quickLaunchExitCandidateStartedAtMs =
+                    existingSnapshot.deadlineMs - (existingSnapshot.phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES)
+                logSessionEvent(
+                    "Quick Launch grace resumed for package=$packageName (wall-clock deadline preserved)"
+                )
+                scheduleQuickLaunchExitEnforcement(packageName)
+                refreshQuickLaunchMonitoringNotification()
+                return
+            }
+            logSessionEvent(
+                "Quick Launch grace expired for package=$packageName while away — enforcing exit"
+            )
             quickLaunchExitDeadlineMs = existingSnapshot.deadlineMs
             quickLaunchSemaphorePhaseMs = existingSnapshot.phaseMs
             quickLaunchExitCandidateKarmaScore = existingSnapshot.karmaScore
             quickLaunchExitCandidateStartedAtMs =
                 existingSnapshot.deadlineMs - (existingSnapshot.phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES)
-            logSessionEvent(
-                "Quick Launch grace resumed for package=$packageName (wall-clock deadline preserved)"
-            )
+            quickLaunchExitResumeByPackage.remove(packageName)
+            triggerQuickLaunchExit(packageName)
             return
         }
 
-        quickLaunchExitDeadlineMs = nowMs + graceMs
-        quickLaunchExitCandidateStartedAtMs = nowMs
+        val configuredAtMs = System.currentTimeMillis()
+        quickLaunchExitDeadlineMs = configuredAtMs + graceMs
+        quickLaunchExitCandidateStartedAtMs = configuredAtMs
         quickLaunchExitResumeByPackage[packageName] = QuickLaunchExitSnapshot(
             deadlineMs = quickLaunchExitDeadlineMs,
             phaseMs = phaseMs,
             karmaScore = k.karmaScore,
         )
+        scheduleQuickLaunchExitEnforcement(packageName)
+        refreshQuickLaunchMonitoringNotification()
+    }
+
+    private fun scheduleQuickLaunchExitEnforcement(packageName: String) {
+        quickLaunchExitDeadlineJob?.cancel()
+        val deadlineMs = quickLaunchExitDeadlineMs
+        if (deadlineMs <= 0L || packageName.isBlank()) return
+        val delayMs = (deadlineMs - System.currentTimeMillis()).coerceAtLeast(0L)
+        quickLaunchExitDeadlineJob = serviceScope.launch {
+            if (delayMs > 0L) delay(delayMs)
+            if (quickLaunchExitDeadlineMs != deadlineMs || quickLaunchExitDeadlineMs <= 0L) return@launch
+            enforceQuickLaunchExitIfDue()
+        }
+    }
+
+    private fun enforceQuickLaunchExitIfDue(nowMs: Long = System.currentTimeMillis()) {
+        if (!SettingsManager.isQuickLaunchSessionActive(this)) return
+        val candidatePackage = quickLaunchExitCandidatePackage ?: return
+        if (quickLaunchExitDeadlineMs <= 0L) return
+        if (nowMs < quickLaunchExitDeadlineMs) return
+        logSessionEvent("Quick Launch grace expired for package=$candidatePackage — enforcing exit")
+        triggerQuickLaunchExit(candidatePackage)
+    }
+
+    private fun cancelQuickLaunchExitDeadlineJob() {
+        quickLaunchExitDeadlineJob?.cancel()
+        quickLaunchExitDeadlineJob = null
     }
 
     private fun clearQuickLaunchExitCandidate(
@@ -468,6 +527,7 @@ class TimerService : Service() {
         } else {
             quickLaunchExitCandidatePackage?.let { quickLaunchExitResumeByPackage.remove(it) }
         }
+        cancelQuickLaunchExitDeadlineJob()
         quickLaunchExitCandidatePackage = null
         quickLaunchExitCandidateStartedAtMs = 0L
         quickLaunchExitCandidateLabel = null
@@ -587,16 +647,12 @@ class TimerService : Service() {
             return
         }
         updateQuickLaunchFrameVisibility(foregroundPackage, nowMs)
-        val candidatePackage = quickLaunchExitCandidatePackage ?: return
-        if (candidatePackage != foregroundPackage) return
-        if (quickLaunchExitDeadlineMs <= 0L) return
-
-        if (nowMs < quickLaunchExitDeadlineMs) return
-
-        triggerQuickLaunchExit(foregroundPackage)
+        enforceQuickLaunchExitIfDue(nowMs)
     }
 
     private fun triggerQuickLaunchExit(foregroundPackage: String) {
+        if (quickLaunchExitCandidatePackage == null) return
+        cancelQuickLaunchExitDeadlineJob()
         val karmaScore = quickLaunchExitCandidateKarmaScore
         val appLabel = getAppLabel(foregroundPackage)
         Log.d(TAG, "non-quick app still active after grace: $foregroundPackage")
@@ -620,23 +676,38 @@ class TimerService : Service() {
 
     private fun startQuickLaunchMonitoringLoop() {
         quickLaunchMonitorJob?.cancel()
+        quickLaunchLastSeenPackage = _currentPackage.value
         Log.d(TAG, "startQuickLaunchMonitoringLoop")
         logSessionEvent("Quick Launch monitor loop started")
-        quickLaunchMonitorJob = serviceScope.launch {
-            var lastSeenPackage = _currentPackage.value
+        quickLaunchMonitorJob = serviceScope.launch(Dispatchers.Default) {
             while (SettingsManager.isQuickLaunchSessionActive(this@TimerService)) {
-                val foregroundPackage = UsageTracker.getForegroundApp(this@TimerService) ?: lastSeenPackage
-                if (foregroundPackage.isNotBlank() && foregroundPackage != lastSeenPackage) {
-                    Log.d(TAG, "foreground changed: $lastSeenPackage -> $foregroundPackage")
-                    lastSeenPackage = foregroundPackage
-                    _currentPackage.value = foregroundPackage
-                    maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
+                withContext(Dispatchers.Main) {
+                    runQuickLaunchForegroundProbe("poll")
                 }
-                evaluateQuickLaunchExitProgress(foregroundPackage)
                 delay(SettingsManager.getQuickLaunchMonitorMs(this@TimerService))
             }
-            Log.d(TAG, "quick-launch monitoring loop ended")
-            logSessionEvent("Quick Launch monitor loop ended")
+            withContext(Dispatchers.Main) {
+                Log.d(TAG, "quick-launch monitoring loop ended")
+                logSessionEvent("Quick Launch monitor loop ended")
+            }
+        }
+    }
+
+    private fun runQuickLaunchForegroundProbe(reason: String) {
+        if (!SettingsManager.isQuickLaunchSessionActive(this)) return
+        UsageTracker.invalidateForegroundCache()
+        val foregroundPackage = UsageTracker.getForegroundAppForQuickLaunchMonitor(this)
+            ?: quickLaunchLastSeenPackage.ifBlank { _currentPackage.value }
+        if (foregroundPackage.isBlank()) return
+        if (foregroundPackage != quickLaunchLastSeenPackage) {
+            Log.d(TAG, "foreground changed ($reason): $quickLaunchLastSeenPackage -> $foregroundPackage")
+            quickLaunchLastSeenPackage = foregroundPackage
+            _currentPackage.value = foregroundPackage
+            maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
+        }
+        evaluateQuickLaunchExitProgress(foregroundPackage)
+        if (quickLaunchExitCandidatePackage != null) {
+            refreshQuickLaunchMonitoringNotification()
         }
     }
 
@@ -1053,6 +1124,7 @@ class TimerService : Service() {
         timerSessionTotalMs = 0L
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
+        cancelQuickLaunchExitDeadlineJob()
         overlayManager.dismissAllNudges()
         overlayManager.dismissQuickLaunchFrame()
 
@@ -1126,10 +1198,19 @@ class TimerService : Service() {
             QUICK_LAUNCH_NOTIFICATION_ID,
             buildQuickLaunchMonitoringNotification(),
         )
-        val currentForeground = UsageTracker.getForegroundApp(this)
+        UsageTracker.invalidateForegroundCache()
+        val currentForeground = UsageTracker.getForegroundAppForQuickLaunchMonitor(this)
             ?: _currentPackage.value
         logSessionEvent("Restoring quick-launch monitoring (reason=$reason foreground=${currentForeground.ifBlank { "<none>" }})")
-        evaluateQuickLaunchExitProgress(currentForeground)
+        if (currentForeground.isNotBlank()) {
+            maybeForceTimerForQuickLaunchSwitch(currentForeground)
+        }
+        enforceQuickLaunchExitIfDue()
+        quickLaunchExitCandidatePackage?.let { candidate ->
+            if (quickLaunchExitDeadlineMs > System.currentTimeMillis()) {
+                scheduleQuickLaunchExitEnforcement(candidate)
+            }
+        }
         startQuickLaunchMonitoringLoop()
     }
 
@@ -1633,8 +1714,14 @@ class TimerService : Service() {
             elapsedMs < phaseMs * 2 -> "yellow"
             else -> "red"
         }
-        val remainingSeconds = ((quickLaunchExitDeadlineMs - System.currentTimeMillis()).coerceAtLeast(0L) / 1_000L)
-        return "Detected $candidateLabel. Phase $phase, forcing home in ${remainingSeconds}s."
+        val remainingMs = (quickLaunchExitDeadlineMs - System.currentTimeMillis()).coerceAtLeast(0L)
+        val remainingSeconds = (remainingMs + 999L) / 1_000L
+        val countdownLabel = if (remainingMs <= 0L) {
+            "redirecting now"
+        } else {
+            "forcing home in ${remainingSeconds}s"
+        }
+        return "Detected $candidateLabel. Phase $phase, $countdownLabel."
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
@@ -1767,6 +1854,7 @@ class TimerService : Service() {
         const val ACTION_START = "com.mindfulhome.ACTION_START_TIMER"
         const val ACTION_START_QUICK_LAUNCH_SESSION = "com.mindfulhome.ACTION_START_QUICK_LAUNCH_SESSION"
         const val ACTION_RESUME_QUICK_LAUNCH_MONITORING = "com.mindfulhome.ACTION_RESUME_QUICK_LAUNCH_MONITORING"
+        const val ACTION_PROBE_QUICK_LAUNCH_FOREGROUND = "com.mindfulhome.ACTION_PROBE_QUICK_LAUNCH_FOREGROUND"
         const val ACTION_TRACK_APP = "com.mindfulhome.ACTION_TRACK_APP"
         const val ACTION_EXTEND = "com.mindfulhome.ACTION_EXTEND_TIMER"
         const val ACTION_STOP = "com.mindfulhome.ACTION_STOP_TIMER"
@@ -1776,6 +1864,7 @@ class TimerService : Service() {
         const val EXTRA_DURATION_MS = "duration_ms"
         const val EXTRA_HARD_DEADLINE_AT_MS = "hard_deadline_at_ms"
         const val EXTRA_PACKAGE_NAME = "package_name"
+        const val EXTRA_PROBE_REASON = "probe_reason"
         const val EXTRA_ALLOWED_PACKAGES = "allowed_packages"
         const val EXTRA_SESSION_TOKEN = "session_token"
 
@@ -1851,7 +1940,20 @@ class TimerService : Service() {
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
                 attachSession(sessionHandle)
             }
-            context.startService(intent)
+            context.startForegroundService(intent)
+        }
+
+        fun probeQuickLaunchForeground(
+            context: Context,
+            reason: String,
+            sessionHandle: SessionLogger.SessionHandle? = null,
+        ) {
+            val intent = Intent(context, TimerService::class.java).apply {
+                action = ACTION_PROBE_QUICK_LAUNCH_FOREGROUND
+                putExtra(EXTRA_PROBE_REASON, reason)
+                attachSession(sessionHandle)
+            }
+            context.startForegroundService(intent)
         }
 
         fun startQuickLaunchSession(

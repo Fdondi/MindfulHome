@@ -22,26 +22,43 @@ object UsageTracker {
     // Keeps Quick Launch from hammering UsageStatsManager when we poll in short intervals.
     private var foregroundCache: ForegroundCache? = null
 
-    fun getForegroundApp(context: Context): String? {
+    private const val QUICK_LAUNCH_FOREGROUND_LOOKBACK_MS = 60_000L
+    private const val DEFAULT_FOREGROUND_LOOKBACK_MS = 15_000L
+
+    fun invalidateForegroundCache() {
+        foregroundCache = null
+    }
+
+    fun getForegroundApp(
+        context: Context,
+        bypassCache: Boolean = false,
+        lookbackMs: Long = DEFAULT_FOREGROUND_LOOKBACK_MS,
+    ): String? {
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
                 as? UsageStatsManager ?: return null
 
         val now = System.currentTimeMillis()
-        val cacheTtlMs = SettingsManager.getUsageForegroundCacheTtlMs(context)
-        val cached = foregroundCache
-        if (cached != null && now - cached.observedAtMs <= cacheTtlMs) {
-            return cached.packageName
+        if (!bypassCache) {
+            val cacheTtlMs = SettingsManager.getUsageForegroundCacheTtlMs(context)
+            val cached = foregroundCache
+            if (cached != null && now - cached.observedAtMs <= cacheTtlMs) {
+                return cached.packageName
+            }
         }
 
         // Prefer UsageEvents for near-real-time foreground transitions (recents/home switches).
-        val events = usageStatsManager.queryEvents(now - 15_000, now)
+        val events = usageStatsManager.queryEvents(
+            now - lookbackMs.coerceAtLeast(DEFAULT_FOREGROUND_LOOKBACK_MS),
+            now,
+        )
         var latestPackage: String? = null
         var latestTimestamp = 0L
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
             val isForegroundEvent =
-                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
+                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
+                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
             if (isForegroundEvent && event.packageName != null && event.timeStamp >= latestTimestamp) {
                 latestTimestamp = event.timeStamp
                 latestPackage = event.packageName
@@ -68,6 +85,14 @@ object UsageTracker {
             foregroundCache = ForegroundCache(fallback, now)
         }
         return fallback
+    }
+
+    fun getForegroundAppForQuickLaunchMonitor(context: Context): String? {
+        return getForegroundApp(
+            context = context,
+            bypassCache = true,
+            lookbackMs = QUICK_LAUNCH_FOREGROUND_LOOKBACK_MS,
+        )
     }
 
     fun hasUsageStatsPermission(context: Context): Boolean {

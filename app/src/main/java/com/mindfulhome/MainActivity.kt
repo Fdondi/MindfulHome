@@ -582,6 +582,13 @@ class MainActivity : ComponentActivity() {
         if (onboardingDone) {
             wentToBackground = true
             backgroundTimestampMs = System.currentTimeMillis()
+            if (SettingsManager.isQuickLaunchSessionActive(this)) {
+                TimerService.probeQuickLaunchForeground(
+                    this,
+                    reason = "launcher-background",
+                    sessionHandle = ensureSessionHandle(),
+                )
+            }
         }
         shouldShowTimer = false
     }
@@ -811,6 +818,7 @@ class MainActivity : ComponentActivity() {
             allowedQuickLaunchPackages = quickLaunchPackages.toList(),
             sessionHandle = handle,
         )
+        TimerService.trackApp(this, ownerPackage, handle)
         if (QuickLaunchAppRef.isShortcutKey(packageName)) {
             lifecycleScope.launch {
                 val shortcut = repository.findPinnedShortcutByLaunchKey(packageName)

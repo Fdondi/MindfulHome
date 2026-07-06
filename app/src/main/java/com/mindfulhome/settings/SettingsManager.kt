@@ -80,7 +80,7 @@ object SettingsManager {
     val QUICK_LAUNCH_MONITOR_MS_OPTIONS = longArrayOf(
         1_000L, 2_000L, 4_000L, 8_000L, 16_000L, 32_000L, 64_000L,
     )
-    const val DEFAULT_QUICK_LAUNCH_MONITOR_MS = 4_000L
+    const val DEFAULT_QUICK_LAUNCH_MONITOR_MS = 1_000L
 
     /** Length of each green / yellow / red segment before forced return (3 segments total). 20s–2min. */
     val QUICK_LAUNCH_SEMAPHORE_PHASE_MS_OPTIONS = longArrayOf(

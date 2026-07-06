@@ -29,5 +29,6 @@ class KarmaManagerQuickLaunchTest {
         assertNull(KarmaManager.cheatScreenDurationMs(-10))
         assertEquals(1_000L, KarmaManager.cheatScreenDurationMs(-11))
         assertEquals(5_000L, KarmaManager.cheatScreenDurationMs(-15))
+        assertEquals(120_000L, KarmaManager.cheatScreenDurationMs(-200))
     }
 }
