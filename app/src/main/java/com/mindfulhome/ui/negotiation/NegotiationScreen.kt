@@ -123,6 +123,12 @@ private fun extractLaunchQuery(rawText: String): String {
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+/**
+ * Chat UI for AI gates (focus time + app gatekeeper) and general assistant.
+ *
+ * @see docs.gates.md Goals, Proceed button, round rules.
+ * @see docs.navigation-map.md Entry: `assistant` or `negotiate/{packageName}`.
+ */
 @Composable
 fun NegotiationScreen(
     packageName: String,

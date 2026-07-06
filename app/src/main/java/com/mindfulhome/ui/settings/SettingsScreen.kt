@@ -59,6 +59,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.mindfulhome.AppVersion
 import com.mindfulhome.ai.LiteRtLmManager
+import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendClient
@@ -120,6 +121,24 @@ fun SettingsScreen(
     }
     var dailySummaryRegenerateN by remember { mutableStateOf("0") }
     var dailySummarySaveBusy by remember { mutableStateOf(false) }
+    var gatekeeperSystemPrompt by remember {
+        mutableStateOf(SettingsManager.getGatekeeperSystemPromptForEditing(context))
+    }
+    var gatekeeperContextTemplate by remember {
+        mutableStateOf(SettingsManager.getGatekeeperContextTemplateForEditing(context))
+    }
+    var focusGateSystemPrompt by remember {
+        mutableStateOf(SettingsManager.getFocusGateSystemPromptForEditing(context))
+    }
+    var focusGateContextTemplate by remember {
+        mutableStateOf(SettingsManager.getFocusGateContextTemplateForEditing(context))
+    }
+    var gatekeeperPromptsCustom by remember {
+        mutableStateOf(SettingsManager.hasCustomGatekeeperPrompts(context))
+    }
+    var focusGatePromptsCustom by remember {
+        mutableStateOf(SettingsManager.hasCustomFocusGatePrompts(context))
+    }
 
     val hasModel = remember { LiteRtLmManager.hasModel(context) }
 
@@ -157,6 +176,12 @@ fun SettingsScreen(
 
         dailySummaryPromptVersion = SettingsManager.getDailySummaryPromptVersion(context)
         dailySummaryPromptText = SettingsManager.getDailySummaryPromptTextForEditing(context)
+        gatekeeperSystemPrompt = SettingsManager.getGatekeeperSystemPromptForEditing(context)
+        gatekeeperContextTemplate = SettingsManager.getGatekeeperContextTemplateForEditing(context)
+        focusGateSystemPrompt = SettingsManager.getFocusGateSystemPromptForEditing(context)
+        focusGateContextTemplate = SettingsManager.getFocusGateContextTemplateForEditing(context)
+        gatekeeperPromptsCustom = SettingsManager.hasCustomGatekeeperPrompts(context)
+        focusGatePromptsCustom = SettingsManager.hasCustomFocusGatePrompts(context)
     }
 
     // Fetch available models from backend, fall back to hardcoded list
@@ -885,6 +910,66 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(24.dp))
 
+            SectionHeader("Gate prompts")
+
+            GatePromptEditorCard(
+                title = "App gatekeeper",
+                usingCustom = gatekeeperPromptsCustom,
+                systemPrompt = gatekeeperSystemPrompt,
+                onSystemPromptChange = { gatekeeperSystemPrompt = it },
+                contextTemplate = gatekeeperContextTemplate,
+                onContextTemplateChange = { gatekeeperContextTemplate = it },
+                contextPlaceholderHelp = PromptTemplates.CONTEXT_TEMPLATE_SYNTAX_HELP + "\n" +
+                    PromptTemplates.GATEKEEPER_CONTEXT_PLACEHOLDERS,
+                onSave = {
+                    SettingsManager.saveGatekeeperPrompts(
+                        context,
+                        gatekeeperSystemPrompt,
+                        gatekeeperContextTemplate,
+                    )
+                    gatekeeperPromptsCustom = SettingsManager.hasCustomGatekeeperPrompts(context)
+                    Toast.makeText(context, "Gatekeeper prompts saved", Toast.LENGTH_SHORT).show()
+                },
+                onReset = {
+                    SettingsManager.resetGatekeeperPrompts(context)
+                    gatekeeperSystemPrompt = PromptTemplates.DEFAULT_GATEKEEPER_SYSTEM_PROMPT
+                    gatekeeperContextTemplate = PromptTemplates.DEFAULT_GATEKEEPER_CONTEXT_TEMPLATE
+                    gatekeeperPromptsCustom = false
+                    Toast.makeText(context, "Gatekeeper prompts reset to default", Toast.LENGTH_SHORT).show()
+                },
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            GatePromptEditorCard(
+                title = "Focus time gate",
+                usingCustom = focusGatePromptsCustom,
+                systemPrompt = focusGateSystemPrompt,
+                onSystemPromptChange = { focusGateSystemPrompt = it },
+                contextTemplate = focusGateContextTemplate,
+                onContextTemplateChange = { focusGateContextTemplate = it },
+                contextPlaceholderHelp = PromptTemplates.CONTEXT_TEMPLATE_SYNTAX_HELP + "\n" +
+                    PromptTemplates.FOCUS_GATE_CONTEXT_PLACEHOLDERS,
+                onSave = {
+                    SettingsManager.saveFocusGatePrompts(
+                        context,
+                        focusGateSystemPrompt,
+                        focusGateContextTemplate,
+                    )
+                    focusGatePromptsCustom = SettingsManager.hasCustomFocusGatePrompts(context)
+                    Toast.makeText(context, "Focus gate prompts saved", Toast.LENGTH_SHORT).show()
+                },
+                onReset = {
+                    SettingsManager.resetFocusGatePrompts(context)
+                    focusGateSystemPrompt = PromptTemplates.DEFAULT_FOCUS_GATE_SYSTEM_PROMPT
+                    focusGateContextTemplate = PromptTemplates.DEFAULT_FOCUS_GATE_CONTEXT_TEMPLATE
+                    focusGatePromptsCustom = false
+                    Toast.makeText(context, "Focus gate prompts reset to default", Toast.LENGTH_SHORT).show()
+                },
+            )
+
+            Spacer(modifier = Modifier.height(24.dp))
+
             SectionHeader("Daily log summaries")
 
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -1063,6 +1148,74 @@ private fun SettingsCard(
                     modifier = Modifier.padding(top = 4.dp)
                 ) {
                     Text(actionLabel)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GatePromptEditorCard(
+    title: String,
+    usingCustom: Boolean,
+    systemPrompt: String,
+    onSystemPromptChange: (String) -> Unit,
+    contextTemplate: String,
+    onContextTemplateChange: (String) -> Unit,
+    contextPlaceholderHelp: String,
+    onSave: () -> Unit,
+    onReset: () -> Unit,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = if (usingCustom) {
+                    "Using your saved prompts."
+                } else {
+                    "Showing defaults. Save to keep edits."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp),
+            )
+            OutlinedTextField(
+                value = systemPrompt,
+                onValueChange = onSystemPromptChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(160.dp),
+                label = { Text("System prompt") },
+                minLines = 5,
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedTextField(
+                value = contextTemplate,
+                onValueChange = onContextTemplateChange,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp),
+                label = { Text("Context template") },
+                supportingText = {
+                    Text(
+                        text = contextPlaceholderHelp,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                },
+                minLines = 6,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = onSave) {
+                    Text("Save")
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = onReset) {
+                    Text("Reset to default")
                 }
             }
         }

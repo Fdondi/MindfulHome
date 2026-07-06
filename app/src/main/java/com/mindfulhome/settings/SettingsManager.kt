@@ -3,6 +3,7 @@ package com.mindfulhome.settings
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.service.UsageTracker
 import org.json.JSONArray
 import org.json.JSONObject
@@ -172,6 +173,11 @@ object SettingsManager {
     private const val DAILY_SUMMARY_PROMPT_TEXT_KEY = "daily_summary_prompt_text"
     private const val DAILY_SUMMARY_PROMPT_VERSION_KEY = "daily_summary_prompt_version"
 
+    private const val GATEKEEPER_SYSTEM_PROMPT_KEY = "gatekeeper_system_prompt"
+    private const val GATEKEEPER_CONTEXT_TEMPLATE_KEY = "gatekeeper_context_template"
+    private const val FOCUS_GATE_SYSTEM_PROMPT_KEY = "focus_gate_system_prompt"
+    private const val FOCUS_GATE_CONTEXT_TEMPLATE_KEY = "focus_gate_context_template"
+
     /**
      * Default summarization instructions (editable in Settings). JSON shape is enforced in code.
      */
@@ -290,6 +296,77 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
             putInt(DAILY_SUMMARY_PROMPT_VERSION_KEY, newVersion)
         }
         return newVersion
+    }
+
+    // ── Gate prompts (editable in Settings; see docs/gates.md) ───────
+
+    fun getGatekeeperSystemPromptForEditing(context: Context): String =
+        resolveStoredPrompt(context, GATEKEEPER_SYSTEM_PROMPT_KEY, PromptTemplates.DEFAULT_GATEKEEPER_SYSTEM_PROMPT)
+
+    fun getGatekeeperSystemPromptResolved(context: Context): String =
+        resolveStoredPrompt(context, GATEKEEPER_SYSTEM_PROMPT_KEY, PromptTemplates.DEFAULT_GATEKEEPER_SYSTEM_PROMPT)
+
+    fun getGatekeeperContextTemplateForEditing(context: Context): String =
+        resolveStoredPrompt(context, GATEKEEPER_CONTEXT_TEMPLATE_KEY, PromptTemplates.DEFAULT_GATEKEEPER_CONTEXT_TEMPLATE)
+
+    fun getGatekeeperContextTemplateResolved(context: Context): String =
+        resolveStoredPrompt(context, GATEKEEPER_CONTEXT_TEMPLATE_KEY, PromptTemplates.DEFAULT_GATEKEEPER_CONTEXT_TEMPLATE)
+
+    fun getFocusGateSystemPromptForEditing(context: Context): String =
+        resolveStoredPrompt(context, FOCUS_GATE_SYSTEM_PROMPT_KEY, PromptTemplates.DEFAULT_FOCUS_GATE_SYSTEM_PROMPT)
+
+    fun getFocusGateSystemPromptResolved(context: Context): String =
+        resolveStoredPrompt(context, FOCUS_GATE_SYSTEM_PROMPT_KEY, PromptTemplates.DEFAULT_FOCUS_GATE_SYSTEM_PROMPT)
+
+    fun getFocusGateContextTemplateForEditing(context: Context): String =
+        resolveStoredPrompt(context, FOCUS_GATE_CONTEXT_TEMPLATE_KEY, PromptTemplates.DEFAULT_FOCUS_GATE_CONTEXT_TEMPLATE)
+
+    fun getFocusGateContextTemplateResolved(context: Context): String =
+        resolveStoredPrompt(context, FOCUS_GATE_CONTEXT_TEMPLATE_KEY, PromptTemplates.DEFAULT_FOCUS_GATE_CONTEXT_TEMPLATE)
+
+    fun saveGatekeeperPrompts(context: Context, systemPrompt: String, contextTemplate: String) {
+        prefs(context).edit {
+            putString(GATEKEEPER_SYSTEM_PROMPT_KEY, systemPrompt.trim())
+            putString(GATEKEEPER_CONTEXT_TEMPLATE_KEY, contextTemplate.trim())
+        }
+    }
+
+    fun saveFocusGatePrompts(context: Context, systemPrompt: String, contextTemplate: String) {
+        prefs(context).edit {
+            putString(FOCUS_GATE_SYSTEM_PROMPT_KEY, systemPrompt.trim())
+            putString(FOCUS_GATE_CONTEXT_TEMPLATE_KEY, contextTemplate.trim())
+        }
+    }
+
+    fun resetGatekeeperPrompts(context: Context) {
+        prefs(context).edit {
+            remove(GATEKEEPER_SYSTEM_PROMPT_KEY)
+            remove(GATEKEEPER_CONTEXT_TEMPLATE_KEY)
+        }
+    }
+
+    fun resetFocusGatePrompts(context: Context) {
+        prefs(context).edit {
+            remove(FOCUS_GATE_SYSTEM_PROMPT_KEY)
+            remove(FOCUS_GATE_CONTEXT_TEMPLATE_KEY)
+        }
+    }
+
+    fun hasCustomGatekeeperPrompts(context: Context): Boolean {
+        val p = prefs(context)
+        return !p.getString(GATEKEEPER_SYSTEM_PROMPT_KEY, null).isNullOrBlank() ||
+            !p.getString(GATEKEEPER_CONTEXT_TEMPLATE_KEY, null).isNullOrBlank()
+    }
+
+    fun hasCustomFocusGatePrompts(context: Context): Boolean {
+        val p = prefs(context)
+        return !p.getString(FOCUS_GATE_SYSTEM_PROMPT_KEY, null).isNullOrBlank() ||
+            !p.getString(FOCUS_GATE_CONTEXT_TEMPLATE_KEY, null).isNullOrBlank()
+    }
+
+    private fun resolveStoredPrompt(context: Context, key: String, default: String): String {
+        val stored = prefs(context).getString(key, null)
+        return stored?.trim()?.takeIf { it.isNotBlank() } ?: default
     }
 
     // ── Last session (resume) ────────────────────────────────────────

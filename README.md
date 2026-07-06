@@ -10,7 +10,7 @@ MindfulHome helps you use your phone more intentionally through soft nudges, not
 - **Default page first**: Land on a customizable default page with widgets and QuickLaunch, then jump to timer when needed
 - **Karma system**: Apps earn negative karma when you overrun your timer; positive karma recovers when you stick to it
 - **Graduated hiding**: Apps with sustained poor karma disappear from the home screen
-- **AI gatekeeper**: Hidden apps can only be accessed by talking to an on-device AI that gently pushes back, but always ultimately relents
+- **AI gatekeeper**: Hidden apps and focus-time sessions go through a short reflective chat before you can proceed. See [docs/gates.md](docs/gates.md) for goals, round limits, Proceed behavior, and editable prompts.
 - **No force**: You are always in control
 
 ## Development Environment
@@ -54,6 +54,7 @@ Open the project in Android Studio. It will sync Gradle automatically. Use Run/D
   - a bottom `something else?` button that opens the timer without prefill.
 - QuickLaunch pull-tab on the timer page has been removed.
 - Navigation map: see `docs/navigation-map.md` for route/state transitions and unlock flow behavior.
+- AI gates (focus time + hidden apps): see `docs/gates.md` for conversation rules, round limits, and prompt customization.
 
 ### AI Model (Optional)
 

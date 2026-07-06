@@ -48,6 +48,12 @@ data class GatekeeperUsageConfrontation(
     val longestSessionsMsDesc: List<Long>,
 )
 
+/**
+ * AI gate conversations (focus time + hidden apps): round limits, grant tools, prompt assembly.
+ *
+ * @see docs.gates.md Project doc: goals, round mechanics, Proceed UX, editable prompts.
+ * @see docs.navigation-map.md Routes: `assistant` (focus gate), `negotiate/{packageName}` (gatekeeper).
+ */
 class NegotiationManager(
     private val context: Context,
     private val lmManager: LiteRtLmManager,
@@ -106,15 +112,15 @@ class NegotiationManager(
         gatekeeperMaxRounds = (gatekeeperMinRounds * 2).coerceAtLeast(gatekeeperMinRounds)
         val confrontationBrief = usageConfrontation?.let { buildConfrontationBrief(it) }
 
-        val systemPrompt = PromptTemplates.gatekeeperSystemPrompt()
+        val systemPrompt = PromptTemplates.gatekeeperSystemPrompt(context)
         val userContext = PromptTemplates.buildGatekeeperUserContext(
+            context = context,
             appName = appName,
             karmaScore = karma.karmaScore,
             totalOpens = karma.totalOpens,
             totalOverruns = karma.totalOverruns,
             timesRequestedToday = 0,
             minRoundsBeforeGrant = gatekeeperMinRounds,
-            maxRoundsBeforeGrant = gatekeeperMaxRounds,
             focusModeActive = focusModeActive,
             appNote = appNote,
             requiresExtraConfirmation = extraRiskConfirmation,
@@ -156,7 +162,7 @@ class NegotiationManager(
             exchangeCount = exchangeCount,
             confrontationBrief = confrontationBrief,
         )
-        val grant = exchangeCount >= gatekeeperMinRounds
+        val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
         logDeveloper("fallback response used: gatekeeper scripted response (grant=$grant, exchangeCount=$exchangeCount, minRounds=$gatekeeperMinRounds)")
         applyGatekeeperRoundPolicy(
             NegotiationResult(responseText = text, accessGranted = grant)
@@ -180,16 +186,16 @@ class NegotiationManager(
         focusGateDurationMinutes = durationMinutes
         focusGateDeclaredIntent = declaredIntent
 
-        gatekeeperMinRounds = 1
-        gatekeeperMaxRounds = 2
+        gatekeeperMinRounds = 2
+        gatekeeperMaxRounds = 4
 
-        val systemPrompt = PromptTemplates.focusGateSystemPrompt()
+        val systemPrompt = PromptTemplates.focusGateSystemPrompt(context)
         val userContext = PromptTemplates.buildFocusGateUserContext(
+            context = context,
             durationMinutes = durationMinutes,
             declaredIntent = declaredIntent,
             focusWindowDescription = focusWindowDescription,
             minRoundsBeforeGrant = gatekeeperMinRounds,
-            maxRoundsBeforeGrant = gatekeeperMaxRounds,
         )
 
         if (backendAuth != null && backendAuth.hasToken()) {
@@ -225,7 +231,7 @@ class NegotiationManager(
             declaredIntent = declaredIntent,
             exchangeCount = exchangeCount,
         )
-        val grant = exchangeCount >= gatekeeperMinRounds
+        val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
         logDeveloper("fallback response used: focus gate scripted response (grant=$grant, exchangeCount=$exchangeCount)")
         applyGatekeeperRoundPolicy(
             NegotiationResult(responseText = text, accessGranted = grant),
@@ -534,7 +540,7 @@ class NegotiationManager(
             NegotiationType.GATEKEEPER -> {
                 val appName = currentAppPackage.substringAfterLast('.')
                 val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount)
-                val grant = exchangeCount >= gatekeeperMinRounds
+                val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
                 logDeveloper("fallback response used: gatekeeper scripted reply in ongoing chat (grant=$grant, exchangeCount=$exchangeCount, minRounds=$gatekeeperMinRounds)")
                 applyGatekeeperRoundPolicy(
                     NegotiationResult(responseText = text, accessGranted = grant)
@@ -546,7 +552,7 @@ class NegotiationManager(
                     declaredIntent = focusGateDeclaredIntent,
                     exchangeCount = exchangeCount,
                 )
-                val grant = exchangeCount >= gatekeeperMinRounds
+                val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
                 logDeveloper("fallback response used: focus gate scripted reply in ongoing chat (grant=$grant, exchangeCount=$exchangeCount)")
                 applyGatekeeperRoundPolicy(
                     NegotiationResult(responseText = text, accessGranted = grant)

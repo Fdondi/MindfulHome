@@ -1,26 +1,71 @@
 package com.mindfulhome.ai
 
+import android.content.Context
+import com.mindfulhome.settings.SettingsManager
+
+/**
+ * Default and user-editable AI prompts. Gate context templates use `{placeholders}` and `[[optional blocks]]`.
+ *
+ * @see docs.gates.md Syntax, placeholders, and gate behavior.
+ */
 object PromptTemplates {
 
     const val GENERAL_CHAT_GREETING = "Hi! What do you want to do with your time?"
 
-    fun focusGateSystemPrompt(): String = """
+    val DEFAULT_FOCUS_GATE_SYSTEM_PROMPT = """
         The user is in a focus-time window and wants to spend phone time now.
         Your job is to verify that their stated intent is legitimate and intentional.
         You do NOT care which app they might use later, and you must NOT launch or discuss specific apps.
-        Call grantTimeAccess when you are satisfied. One sentence replies only. Be casual and friendly.
-        Follow the round-window policy provided in the user context.
+        Call grantTimeAccess only when you are genuinely satisfied with their answers.
+        Never grant before the minimum round count in the user context.
+        One sentence replies only. Be casual and friendly.
+        Follow the round policy provided in the user context.
     """.trimIndent()
 
-    fun gatekeeperSystemPrompt(): String = """
+    val DEFAULT_GATEKEEPER_SYSTEM_PROMPT = """
         The user wants to open a hidden app. You open it by calling grantAccess.
         One sentence replies only. Be casual and friendly.
 
         Ask why they need it and gently push for intentional use.
+        Call grantAccess only when you are genuinely satisfied with their reason.
+        Never grant before the minimum round count in the user context.
         If you need more context, you may call queryRecentUsageSessions(limit) to inspect recent behavior before deciding.
         If the user context includes confrontation evidence, your first reply must confront them with that exact evidence first.
-        Follow the round-window policy provided in the user context.
+        Follow the round policy provided in the user context.
     """.trimIndent()
+
+    val DEFAULT_FOCUS_GATE_CONTEXT_TEMPLATE = """
+        Focus time is active ({focusWindowDescription}).
+        User set a {durationMinutes} minute session. [[Declared intent: "{declaredIntent}". ]]
+        Verify whether spending phone time now is intentional and aligned with that intent.
+        Do not ask about or reference specific apps.
+        Do NOT call grantTimeAccess before round {minRounds}.
+        Only call grantTimeAccess when you are genuinely satisfied — never grant before round {minRounds}.
+    """.trimIndent()
+
+    val DEFAULT_GATEKEEPER_CONTEXT_TEMPLATE = """
+        User wants to open {appName} (karma {karmaScore}, opened {totalOpens} times, overran {totalOverruns} times, requested today {timesRequestedToday}).
+        [[The user has this to say about the app: "{appNote}". ]][[{cautionGate}That note contains cautionary language — take it seriously and push back before granting. ]]Focus mode active: {focusModeActive}.
+        [[Recent usage evidence: {confrontationBrief} ]]Do NOT call grantAccess before round {minRounds}.
+        Only call grantAccess when you are genuinely satisfied — never grant before round {minRounds}.
+    """.trimIndent()
+
+    const val CONTEXT_TEMPLATE_SYNTAX_HELP =
+        "Use {name} for values. Optional text: [[...]] is omitted when any {name} inside it is empty (not set)."
+
+    val GATEKEEPER_CONTEXT_PLACEHOLDERS =
+        "{appName}, {karmaScore}, {totalOpens}, {totalOverruns}, {timesRequestedToday}, {minRounds}, " +
+            "{focusModeActive}, {appNote} (per-app note from Karma), {confrontationBrief} (usage from last timer), " +
+            "{cautionGate} (auto: non-empty when the note matches caution keywords — use only to gate a [[...]] block)"
+
+    val FOCUS_GATE_CONTEXT_PLACEHOLDERS =
+        "{durationMinutes}, {declaredIntent}, {focusWindowDescription}, {minRounds}"
+
+    fun focusGateSystemPrompt(context: Context): String =
+        SettingsManager.getFocusGateSystemPromptResolved(context)
+
+    fun gatekeeperSystemPrompt(context: Context): String =
+        SettingsManager.getGatekeeperSystemPromptResolved(context)
 
     fun nudgeSystemPrompt(): String = """
         The user's timer expired. Gently suggest wrapping up. One sentence only.
@@ -60,46 +105,76 @@ object PromptTemplates {
     }
 
     fun buildFocusGateUserContext(
+        context: Context,
         durationMinutes: Int,
         declaredIntent: String,
         focusWindowDescription: String,
         minRoundsBeforeGrant: Int,
-        maxRoundsBeforeGrant: Int,
     ): String {
-        val intentPart = declaredIntent.trim().takeIf { it.isNotBlank() }
-            ?.let { "Declared intent: \"$it\". " }
-            .orEmpty()
-        return "Focus time is active ($focusWindowDescription). " +
-            "User set a $durationMinutes minute session. $intentPart" +
-            "Verify whether spending phone time now is intentional and aligned with that intent. " +
-            "Do not ask about or reference specific apps. " +
-            "Do NOT call grantTimeAccess before round $minRoundsBeforeGrant. " +
-            "Call grantTimeAccess by round $maxRoundsBeforeGrant at the latest."
+        val template = SettingsManager.getFocusGateContextTemplateResolved(context)
+        return applyTemplate(
+            template,
+            mapOf(
+                "durationMinutes" to durationMinutes.toString(),
+                "declaredIntent" to declaredIntent.trim(),
+                "focusWindowDescription" to focusWindowDescription,
+                "minRounds" to minRoundsBeforeGrant.toString(),
+            ),
+        )
     }
 
     fun buildGatekeeperUserContext(
+        context: Context,
         appName: String,
         karmaScore: Int,
         totalOpens: Int,
         totalOverruns: Int,
         timesRequestedToday: Int,
         minRoundsBeforeGrant: Int,
-        maxRoundsBeforeGrant: Int,
         focusModeActive: Boolean,
         appNote: String?,
         requiresExtraConfirmation: Boolean,
         confrontationBrief: String? = null,
-    ): String =
-        "User wants to open $appName (karma $karmaScore, opened $totalOpens times, " +
-            "overran $totalOverruns times, requested today $timesRequestedToday). " +
-            appNote?.trim()?.takeIf { it.isNotBlank() }?.let { "App note: \"$it\". " }.orEmpty() +
-            "Worrying note flag: $requiresExtraConfirmation. " +
-            "Focus mode active: $focusModeActive. " +
-            confrontationBrief?.trim()?.takeIf { it.isNotBlank() }?.let {
-                "Confrontation evidence: $it "
-            }.orEmpty() +
-            "Do NOT call grantAccess before round $minRoundsBeforeGrant. " +
-            "Call grantAccess by round $maxRoundsBeforeGrant at the latest."
+    ): String {
+        val trimmedNote = appNote?.trim().orEmpty()
+        val template = SettingsManager.getGatekeeperContextTemplateResolved(context)
+        return applyTemplate(
+            template,
+            mapOf(
+                "appName" to appName,
+                "karmaScore" to karmaScore.toString(),
+                "totalOpens" to totalOpens.toString(),
+                "totalOverruns" to totalOverruns.toString(),
+                "timesRequestedToday" to timesRequestedToday.toString(),
+                "minRounds" to minRoundsBeforeGrant.toString(),
+                "focusModeActive" to focusModeActive.toString(),
+                "appNote" to trimmedNote,
+                "confrontationBrief" to confrontationBrief?.trim().orEmpty(),
+                "cautionGate" to if (requiresExtraConfirmation && trimmedNote.isNotBlank()) " " else "",
+            ),
+        )
+    }
+
+    internal fun applyTemplate(template: String, values: Map<String, String>): String {
+        var result = resolveOptionalBlocks(template, values)
+        for ((key, value) in values) {
+            result = result.replace("{$key}", value)
+        }
+        return result
+            .replace(Regex("[ \t]{2,}"), " ")
+            .replace(Regex(" ?\n ?"), "\n")
+            .trim()
+    }
+
+    private fun resolveOptionalBlocks(template: String, values: Map<String, String>): String {
+        val pattern = Regex("\\[\\[(.*?)\\]\\]", RegexOption.DOT_MATCHES_ALL)
+        return pattern.replace(template) { match ->
+            val inner = match.groupValues[1]
+            val keys = Regex("\\{([^}]+)\\}").findAll(inner).map { it.groupValues[1] }.toSet()
+            val include = keys.all { key -> !values[key].isNullOrEmpty() }
+            if (include) inner else ""
+        }
+    }
 
     fun requiresExtraConfirmation(note: String?): Boolean {
         val normalized = note?.trim()?.lowercase().orEmpty()
@@ -139,8 +214,8 @@ object PromptTemplates {
             .orEmpty()
         return when (exchangeCount) {
             0 -> "It's focus time, and you're starting a $durationMinutes minute session.$intentSuffix Is this really how you want to spend it?"
-            1 -> "Got it. Just checking you're being intentional about this window — still want to proceed?"
-            else -> "Alright, go ahead — use the time mindfully."
+            1 -> "Got it. What would intentional use of this window look like for you?"
+            else -> "If you're still sure, tap Proceed when you're ready — use the time mindfully."
         }
     }
 
@@ -154,12 +229,12 @@ object PromptTemplates {
                 "Before we open $appName: $confrontationBrief What's your concrete reason for opening it now?"
             exchangeCount == 0 ->
                 "Hey, you're about to open $appName. It's been a bit of a time sink lately. What do you need it for right now?"
-            exchangeCount == 1 -> "I hear you. Just want to make sure you're being intentional about it. Still want to go ahead?"
-            else -> "Alright, go ahead. Just try to keep it mindful!"
+            exchangeCount == 1 -> "I hear you. What would intentional use look like for the next few minutes?"
+            else -> "I still want you to be deliberate about this — if you're sure, tap Proceed when you're ready."
         }
     }
 
-    /** Whether the fallback at this exchange count should grant access. */
+    /** Whether the offline fallback should allow access at this completed round count. */
     fun fallbackShouldGrantAccess(exchangeCount: Int): Boolean = exchangeCount >= 2
 
     fun fallbackNudgeResponse(appName: String, nudgeCount: Int): String {

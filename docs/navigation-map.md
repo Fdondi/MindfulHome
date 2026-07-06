@@ -8,8 +8,8 @@ This document maps how the app moves between launcher states and pages.
 - `default` - default landing page with Todo widget, resume action, QuickLaunch, and plain timer entry.
 - `timer` - timer setup page.
 - `home` - app selection page after timer starts.
-- `assistant` - AI negotiation entry page (used during focus time mode).
-- `negotiate/{packageName}` - AI negotiation for a specific app.
+- `assistant` - focus time gate ([gates.md](gates.md)); `NegotiationScreen` with no target app.
+- `negotiate/{packageName}` - app gatekeeper ([gates.md](gates.md)); `NegotiationScreen` for a hidden app.
 - `karma`, `settings`, `logs` - auxiliary pages.
 
 ## Startup and unlock entry
@@ -53,6 +53,10 @@ When `MainActivity` handles `EXTRA_FROM_UNLOCK`, it navigates to `default` (not 
 - `home` -> `timer` via timer button.
 - `assistant` / `negotiate/{packageName}` -> `timer` via timer button.
 - `home`, `assistant`, `negotiate/*` can open `karma`, `settings`, and `logs`.
+
+## AI gates
+
+Focus time and hidden-app opens use `NegotiationScreen` with different prompts (no `packageName` = focus gate). Both require at least one user reply before **Proceed** can appear; access may be granted by the AI or auto-granted at max rounds. Full behavior and editable prompts: [gates.md](gates.md).
 
 ## Background/return behavior (`onResume`)
 
