@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -156,11 +157,13 @@ fun NegotiationScreen(
         SettingsManager.isFocusTimeActiveNow(context)
     }
     val isFocusGate = packageName.isEmpty() && focusModeActive
+    val isGateFlow = packageName.isNotEmpty() || isFocusGate
 
     val messages = remember { mutableStateListOf<ChatMessage>() }
     var userInput by remember { mutableStateOf("") }
     var isWaitingForAi by remember { mutableStateOf(false) }
     var accessGranted by remember { mutableStateOf(false) }
+    val canProceedFromGate = isGateFlow && accessGranted
     var launchTarget by remember { mutableStateOf("") }
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
     var showSearchOverlay by remember { mutableStateOf(false) }
@@ -253,6 +256,20 @@ fun NegotiationScreen(
         messages.add(ChatMessage(text, isFromUser = isFromUser))
         val prefix = if (isFromUser) "User" else "AI"
         SessionLogger.log(sessionHandle, "$prefix: ${text.take(120)}")
+    }
+
+    fun proceedAfterGate() {
+        if (packageName.isNotEmpty()) {
+            SessionLogger.log(sessionHandle, "User proceeded to **$appLabel**")
+            PackageManagerHelper.launchApp(context, packageName)
+        } else if (isFocusGate) {
+            SessionLogger.log(sessionHandle, "Focus time gate passed — proceeding to session")
+        } else {
+            return
+        }
+        negotiationManager.endConversation()
+        lmManager.shutdown()
+        onAppGranted()
     }
 
     suspend fun showQuickLaunchBar(queryText: String) {
@@ -572,22 +589,6 @@ fun NegotiationScreen(
         }
     }
 
-    // Launch the app when access is granted (app gatekeeper flow)
-    LaunchedEffect(accessGranted) {
-        if (!accessGranted) return@LaunchedEffect
-        if (packageName.isNotEmpty()) {
-            PackageManagerHelper.launchApp(context, packageName)
-            negotiationManager.endConversation()
-            lmManager.shutdown()
-            onAppGranted()
-        } else if (isFocusGate) {
-            SessionLogger.log(sessionHandle, "Focus time gate passed — proceeding to session")
-            negotiationManager.endConversation()
-            lmManager.shutdown()
-            onAppGranted()
-        }
-    }
-
     // Launch the app from general chat (launchApp tool)
     LaunchedEffect(launchTarget) {
         if (launchTarget.isNotEmpty()) {
@@ -749,108 +750,125 @@ fun NegotiationScreen(
             }
         }
 
-        // Input bar
-        if (!accessGranted && launchTarget.isEmpty()) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextField(
-                    value = userInput,
-                    onValueChange = { userInput = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Type your response...") },
-                    singleLine = false,
-                    maxLines = 3,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                        focusedIndicatorColor = Color.Transparent,
-                        unfocusedIndicatorColor = Color.Transparent,
-                    ),
-                    shape = RoundedCornerShape(24.dp),
-                    enabled = !isWaitingForAi
-                )
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (canProceedFromGate) {
+                Button(
+                    onClick = { proceedAfterGate() },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                ) {
+                    Text(
+                        text = if (packageName.isNotEmpty()) "Proceed to $appLabel" else "Proceed",
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
 
-                Spacer(modifier = Modifier.width(8.dp))
+            if (launchTarget.isEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextField(
+                        value = userInput,
+                        onValueChange = { userInput = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Type your response...") },
+                        singleLine = false,
+                        maxLines = 3,
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                        ),
+                        shape = RoundedCornerShape(24.dp),
+                        enabled = !isWaitingForAi
+                    )
 
-                IconButton(
-                    onClick = {
-                        if (userInput.isNotBlank() && !isWaitingForAi) {
-                            val input = userInput.trim()
-                            userInput = ""
-                            showLaunchSuggestions = false
-                            suggestedLaunchApps = emptyList()
-                            lastLaunchRequestText = extractLaunchQuery(input)
-                            addMessage(input, isFromUser = true)
+                    Spacer(modifier = Modifier.width(8.dp))
 
-                            scope.launch {
-                                isWaitingForAi = true
-                                val firstResult = negotiationManager.reply(input)
-                                logDevBoundary("chat_to_app payload reply_result ${summarizeResult(firstResult)}")
-                                val result = if (isFocusGate) {
-                                    firstResult
-                                } else {
-                                    resolveSuggestedAppsTool(firstResult)
-                                }
-                                addMessage(result.responseText, isFromUser = false)
-                                isWaitingForAi = false
-                                if (result.suggestedQuery.isNotBlank() && !isFocusGate) {
-                                    lastLaunchRequestText = result.suggestedQuery
-                                }
+                    IconButton(
+                        onClick = {
+                            if (userInput.isNotBlank() && !isWaitingForAi) {
+                                val input = userInput.trim()
+                                userInput = ""
+                                showLaunchSuggestions = false
+                                suggestedLaunchApps = emptyList()
+                                lastLaunchRequestText = extractLaunchQuery(input)
+                                addMessage(input, isFromUser = true)
 
-                                if (result.accessGranted) {
-                                    if (packageName.isNotEmpty()) {
-                                        SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
-                                        logDevDecision("gatekeeper_result access_granted=true")
-                                    } else if (isFocusGate) {
-                                        SessionLogger.log(sessionHandle, "Focus time gate passed")
-                                        logDevDecision("focus_gate_result access_granted=true")
+                                scope.launch {
+                                    isWaitingForAi = true
+                                    val firstResult = negotiationManager.reply(input)
+                                    logDevBoundary("chat_to_app payload reply_result ${summarizeResult(firstResult)}")
+                                    val result = if (isFocusGate) {
+                                        firstResult
+                                    } else {
+                                        resolveSuggestedAppsTool(firstResult)
                                     }
-                                    accessGranted = true
-                                }
-                                if (isFocusGate) return@launch
-                                if (result.launchedPackage.isNotEmpty()) {
-                                    val label = PackageManagerHelper.getAppLabel(
-                                        context, result.launchedPackage
-                                    )
-                                    SessionLogger.log(sessionHandle, "Launched **$label**")
-                                    launchTarget = result.launchedPackage
-                                    logDevDecision("launch_strategy=direct_from_chat_tool target=${result.launchedPackage}")
-                                } else if (packageName.isEmpty() && result.showSuggestions) {
-                                    logDevDecision("launch_strategy=chooser_ui_from_chat reason=model_called_presentSuggestions")
-                                    showQuickLaunchBar(
-                                        result.suggestedQuery.ifBlank { lastLaunchRequestText }
-                                    )
-                                } else if (packageName.isEmpty()) {
-                                    logDevDecision("launch_strategy=continue_chat_from_model reason=no_action_tool_called")
+                                    addMessage(result.responseText, isFromUser = false)
+                                    isWaitingForAi = false
+                                    if (result.suggestedQuery.isNotBlank() && !isFocusGate) {
+                                        lastLaunchRequestText = result.suggestedQuery
+                                    }
+
+                                    if (result.accessGranted) {
+                                        if (packageName.isNotEmpty()) {
+                                            SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
+                                            logDevDecision("gatekeeper_result access_granted=true")
+                                        } else if (isFocusGate) {
+                                            SessionLogger.log(sessionHandle, "Focus time gate passed")
+                                            logDevDecision("focus_gate_result access_granted=true")
+                                        }
+                                        accessGranted = true
+                                    }
+                                    if (isFocusGate) return@launch
+                                    if (result.launchedPackage.isNotEmpty()) {
+                                        val label = PackageManagerHelper.getAppLabel(
+                                            context, result.launchedPackage
+                                        )
+                                        SessionLogger.log(sessionHandle, "Launched **$label**")
+                                        launchTarget = result.launchedPackage
+                                        logDevDecision("launch_strategy=direct_from_chat_tool target=${result.launchedPackage}")
+                                    } else if (packageName.isEmpty() && result.showSuggestions) {
+                                        logDevDecision("launch_strategy=chooser_ui_from_chat reason=model_called_presentSuggestions")
+                                        showQuickLaunchBar(
+                                            result.suggestedQuery.ifBlank { lastLaunchRequestText }
+                                        )
+                                    } else if (packageName.isEmpty()) {
+                                        logDevDecision("launch_strategy=continue_chat_from_model reason=no_action_tool_called")
+                                    }
                                 }
                             }
-                        }
-                    },
-                    enabled = userInput.isNotBlank() && !isWaitingForAi,
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (userInput.isNotBlank() && !isWaitingForAi) {
-                                MaterialTheme.colorScheme.primary
+                        },
+                        enabled = userInput.isNotBlank() && !isWaitingForAi,
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (userInput.isNotBlank() && !isWaitingForAi) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant
+                                }
+                            )
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Send",
+                            tint = if (userInput.isNotBlank() && !isWaitingForAi) {
+                                MaterialTheme.colorScheme.onPrimary
                             } else {
-                                MaterialTheme.colorScheme.surfaceVariant
+                                MaterialTheme.colorScheme.onSurfaceVariant
                             }
                         )
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.Send,
-                        contentDescription = "Send",
-                        tint = if (userInput.isNotBlank() && !isWaitingForAi) {
-                            MaterialTheme.colorScheme.onPrimary
-                        } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        }
-                    )
+                    }
                 }
             }
         }

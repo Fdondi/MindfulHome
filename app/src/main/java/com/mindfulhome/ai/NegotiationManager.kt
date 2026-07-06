@@ -102,7 +102,7 @@ class NegotiationManager(
         val baseMinRounds = ceil(ln(1.0 + negativeKarma.toDouble())).toInt()
         val riskBonus = if (extraRiskConfirmation) 1 else 0
         val focusRoundsBonus = if (focusModeActive) 1 else 0
-        gatekeeperMinRounds = (baseMinRounds + focusRoundsBonus + riskBonus).coerceAtLeast(0)
+        gatekeeperMinRounds = (baseMinRounds + focusRoundsBonus + riskBonus).coerceAtLeast(1)
         gatekeeperMaxRounds = (gatekeeperMinRounds * 2).coerceAtLeast(gatekeeperMinRounds)
         val confrontationBrief = usageConfrontation?.let { buildConfrontationBrief(it) }
 
@@ -151,10 +151,9 @@ class NegotiationManager(
         }
 
         // Fallback: hardcoded responses (on-device LLM can't do tool calling)
-        exchangeCount++
         val text = PromptTemplates.fallbackGatekeeperResponse(
             appName = appName,
-            exchangeCount = exchangeCount - 1,
+            exchangeCount = exchangeCount,
             confrontationBrief = confrontationBrief,
         )
         val grant = exchangeCount >= gatekeeperMinRounds
@@ -221,11 +220,10 @@ class NegotiationManager(
             )
         }
 
-        exchangeCount++
         val text = PromptTemplates.fallbackFocusGateResponse(
             durationMinutes = durationMinutes,
             declaredIntent = declaredIntent,
-            exchangeCount = exchangeCount - 1,
+            exchangeCount = exchangeCount,
         )
         val grant = exchangeCount >= gatekeeperMinRounds
         logDeveloper("fallback response used: focus gate scripted response (grant=$grant, exchangeCount=$exchangeCount)")
@@ -425,6 +423,10 @@ class NegotiationManager(
         }
         replyTimestamps.addLast(now)
 
+        if (currentType == NegotiationType.GATEKEEPER || currentType == NegotiationType.FOCUS_GATE) {
+            exchangeCount++
+        }
+
         // ── Backend path ─────────────────────────────────────────────
         if (usingBackend && backendAuth != null) {
             try {
@@ -434,7 +436,9 @@ class NegotiationManager(
                     contents = backendHistory,
                     tools = backendTools,
                 )
-                exchangeCount++
+                if (currentType != NegotiationType.GATEKEEPER && currentType != NegotiationType.FOCUS_GATE) {
+                    exchangeCount++
+                }
                 logDeveloper("backend chat response received(model=$backendModel, text=${quote(response.result ?: "")}, functionCalls=${formatFunctionCalls(response.function_calls)})")
 
                 val text = response.result ?: ""
@@ -481,7 +485,9 @@ class NegotiationManager(
                 generalChatTools?.reset()
 
                 val response = lmManager.sendMessage(conversation, userMessage)
-                exchangeCount++
+                if (currentType != NegotiationType.GATEKEEPER && currentType != NegotiationType.FOCUS_GATE) {
+                    exchangeCount++
+                }
                 logDeveloper("on-device chat response received(text=${quote(response)})")
 
                 val parsed = when (currentType) {
@@ -524,11 +530,10 @@ class NegotiationManager(
         }
 
         // ── Hardcoded fallback ───────────────────────────────────────
-        exchangeCount++
         when (currentType) {
             NegotiationType.GATEKEEPER -> {
                 val appName = currentAppPackage.substringAfterLast('.')
-                val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount - 1)
+                val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount)
                 val grant = exchangeCount >= gatekeeperMinRounds
                 logDeveloper("fallback response used: gatekeeper scripted reply in ongoing chat (grant=$grant, exchangeCount=$exchangeCount, minRounds=$gatekeeperMinRounds)")
                 applyGatekeeperRoundPolicy(
@@ -539,7 +544,7 @@ class NegotiationManager(
                 val text = PromptTemplates.fallbackFocusGateResponse(
                     durationMinutes = focusGateDurationMinutes,
                     declaredIntent = focusGateDeclaredIntent,
-                    exchangeCount = exchangeCount - 1,
+                    exchangeCount = exchangeCount,
                 )
                 val grant = exchangeCount >= gatekeeperMinRounds
                 logDeveloper("fallback response used: focus gate scripted reply in ongoing chat (grant=$grant, exchangeCount=$exchangeCount)")
@@ -548,6 +553,7 @@ class NegotiationManager(
                 )
             }
             NegotiationType.NUDGE -> {
+                exchangeCount++
                 val appName = currentAppPackage.substringAfterLast('.')
                 val text = PromptTemplates.fallbackNudgeResponse(appName, exchangeCount - 1)
                 logDeveloper("fallback response used: nudge scripted reply in ongoing chat (exchangeCount=$exchangeCount)")
@@ -613,7 +619,9 @@ class NegotiationManager(
             contents = backendHistory,
             tools = tools,
         )
-        exchangeCount++
+        if (currentType == NegotiationType.NUDGE) {
+            exchangeCount++
+        }
         logDeveloper("backend response for start conversation(model=$backendModel, text=${quote(response.result ?: "")}, functionCalls=${formatFunctionCalls(response.function_calls)})")
 
         val text = response.result ?: ""
