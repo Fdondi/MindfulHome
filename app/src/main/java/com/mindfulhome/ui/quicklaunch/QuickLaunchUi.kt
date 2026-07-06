@@ -550,8 +550,7 @@ fun QuickLaunchWrappedRow(
     onAppSlotBounds: (slotIndex: Int, topLeft: Offset, size: Size) -> Unit = { _, _, _ -> },
     maxRows: Int? = null,
     tileContent: QuickLaunchTileContent = QuickLaunchTileContent.AppIcons,
-    leadingAuxTile: QuickLaunchAuxTile? = null,
-    beforeAddAuxTile: QuickLaunchAuxTile? = null,
+    beforeAddAuxTiles: List<QuickLaunchAuxTile> = emptyList(),
     onRemoveSlotAt: ((Int) -> Unit)? = null,
 ) {
     var boxInRoot by remember { mutableStateOf(Offset.Zero) }
@@ -589,18 +588,15 @@ fun QuickLaunchWrappedRow(
         } else {
             0.dp
         }
-        val rowChunks = remember(slots, columns, leadingAuxTile, beforeAddAuxTile) {
-            val base = listOfNotNull(
-                leadingAuxTile?.let { QuickLaunchGridTile(auxTile = it) },
-            ) + slots.mapIndexed { index, slot ->
+        val rowChunks = remember(slots, columns, beforeAddAuxTiles) {
+            val base = slots.mapIndexed { index, slot ->
                 QuickLaunchGridTile(
                     apps = slot.apps,
                     folderName = slot.folderName,
                     folderSymbolIconName = slot.folderSymbolIconName,
                     slotIndex = index,
                 )
-            } + listOfNotNull(
-                beforeAddAuxTile?.let { QuickLaunchGridTile(auxTile = it) },
+            } + beforeAddAuxTiles.map { QuickLaunchGridTile(auxTile = it) } + listOf(
                 QuickLaunchGridTile(isAdd = true),
             )
             base.chunked(columns).map { row ->

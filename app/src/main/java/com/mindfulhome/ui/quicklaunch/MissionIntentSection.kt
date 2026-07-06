@@ -173,11 +173,13 @@ fun MissionIntentSection(
             },
             addTileContentDescription = "Add intent folder",
             tileContent = QuickLaunchTileContent.IntentLabels,
-            leadingAuxTile = resumeTile,
-            beforeAddAuxTile = QuickLaunchAuxTile(
-                label = "something else?",
-                onClick = onOpenTimerPlain,
-                contentDescription = "Open timer without prefill",
+            beforeAddAuxTiles = listOfNotNull(
+                resumeTile,
+                QuickLaunchAuxTile(
+                    label = "something else?",
+                    onClick = onOpenTimerPlain,
+                    contentDescription = "Open timer without prefill",
+                ),
             ),
         )
     }
