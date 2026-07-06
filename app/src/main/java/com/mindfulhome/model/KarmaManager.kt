@@ -15,6 +15,23 @@ class KarmaManager(private val context: Context, private val repository: AppRepo
         const val KARMA_CLOSED_ON_TIME = 1
         const val KARMA_DAILY_RECOVERY = 1
         const val KARMA_QUICK_LAUNCH_EXIT_AFTER_RED = -1
+        const val CHEAT_SCREEN_KARMA_THRESHOLD = -10
+
+        /**
+         * Divides [baseGraceMs] by |karma| for zero/negative karma (minimum divisor 1).
+         * e.g. base 60s: karma 0/-1 → 60s, -2 → 30s, -3 → 20s, -10 → 6s.
+         */
+        fun quickLaunchAllowedStayMs(karmaScore: Int, baseGraceMs: Long): Long {
+            if (karmaScore > 0) return baseGraceMs
+            val divisor = if (karmaScore == 0) 1 else -karmaScore
+            return baseGraceMs / divisor
+        }
+
+        /** Seconds to show the anti-cheat overlay when karma is below [CHEAT_SCREEN_KARMA_THRESHOLD]. */
+        fun cheatScreenDurationMs(karmaScore: Int): Long? {
+            if (karmaScore >= CHEAT_SCREEN_KARMA_THRESHOLD) return null
+            return (-karmaScore - 10) * 1_000L
+        }
     }
 
     private fun hideThreshold(): Int = -SettingsManager.getHideThreshold(context)

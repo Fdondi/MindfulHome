@@ -54,9 +54,6 @@ fun IntervalSettingsScreen(
     var positiveKarmaMultiplier by remember {
         mutableFloatStateOf(SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(context))
     }
-    var negativeKarmaMultiplier by remember {
-        mutableFloatStateOf(SettingsManager.getQuickLaunchSemaphoreKarmaNegativeMultiplier(context))
-    }
     var cacheTtlMs by remember {
         mutableLongStateOf(SettingsManager.getUsageForegroundCacheTtlMs(context))
     }
@@ -86,7 +83,6 @@ fun IntervalSettingsScreen(
         quickLaunchMs = SettingsManager.getQuickLaunchMonitorMs(context)
         quickLaunchSemaphorePhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(context)
         positiveKarmaMultiplier = SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(context)
-        negativeKarmaMultiplier = SettingsManager.getQuickLaunchSemaphoreKarmaNegativeMultiplier(context)
         cacheTtlMs = SettingsManager.getUsageForegroundCacheTtlMs(context)
         nudgeLoopMs = SettingsManager.getNudgeLoopTickMs(context)
         timerTickMs = SettingsManager.getTimerCountdownTickMs(context)
@@ -172,17 +168,24 @@ fun IntervalSettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            FloatOptionCard(
-                title = "Negative karma multiplier",
-                description = "Apps with negative karma get reduced time during Quick Launch semaphore phases.",
-                options = SettingsManager.QUICK_LAUNCH_SEMAPHORE_KARMA_NEGATIVE_MULTIPLIER_OPTIONS,
-                selected = negativeKarmaMultiplier,
-                onSelect = {
-                    negativeKarmaMultiplier = it
-                    SettingsManager.setQuickLaunchSemaphoreKarmaNegativeMultiplier(context, it)
-                },
-                labelFor = { "${it}x" },
-            )
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Negative karma grace divisor",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = "Each zero or negative karma point divides the total Quick Launch grace " +
+                            "(green + yellow + red) by |karma|, minimum divisor 1. " +
+                            "With a 60s grace: karma 0/-1 → 60s, -2 → 30s, -3 → 20s, -10 → 6s. " +
+                            "Switching via recents no longer resets the clock.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 

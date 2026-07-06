@@ -52,6 +52,8 @@ class TimerService : Service() {
     private var quickLaunchExitCandidatePackage: String? = null
     private var quickLaunchExitCandidateStartedAtMs: Long = 0L
     private var quickLaunchExitCandidateLabel: String? = null
+    private var quickLaunchExitDeadlineMs: Long = 0L
+    private var quickLaunchExitCandidateKarmaScore: Int = 0
     private val quickLaunchExitResumeByPackage = mutableMapOf<String, QuickLaunchExitSnapshot>()
     private var lastQuickLaunchNotificationText: String? = null
     private var quickLaunchFrameSuppressedForSensitiveApp: Boolean = false
@@ -99,8 +101,9 @@ class TimerService : Service() {
     )
 
     private data class QuickLaunchExitSnapshot(
-        val frameLevel: OverlayNudgeManager.QuickLaunchFrameLevel,
-        val capturedAtMs: Long,
+        val deadlineMs: Long,
+        val phaseMs: Long,
+        val karmaScore: Int,
     )
 
     private enum class NudgeStage {
@@ -387,27 +390,18 @@ class TimerService : Service() {
         if (quickLaunchExitCandidatePackage != packageName) {
             rememberQuickLaunchExitProgress(now)
             quickLaunchExitCandidatePackage = packageName
-            quickLaunchExitCandidateStartedAtMs = now
             quickLaunchExitCandidateLabel = getAppLabel(packageName)
-            val appLabel = getAppLabel(packageName)
+            val appLabel = quickLaunchExitCandidateLabel ?: packageName
             serviceScope.launch {
-                val k = repository.getKarma(packageName)
-                val normalPhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(this@TimerService)
-                val multiplier = when {
-                    k.isOptedOut -> 1.0f
-                    k.karmaScore > 0 -> SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(this@TimerService)
-                    k.karmaScore < 0 -> SettingsManager.getQuickLaunchSemaphoreKarmaNegativeMultiplier(this@TimerService)
-                    else -> 1.0f
+                configureQuickLaunchExitGrace(packageName, now)
+                if (quickLaunchExitCandidatePackage == packageName &&
+                    quickLaunchExitDeadlineMs > 0L &&
+                    System.currentTimeMillis() >= quickLaunchExitDeadlineMs
+                ) {
+                    triggerQuickLaunchExit(packageName)
+                } else {
+                    refreshQuickLaunchMonitoringNotification()
                 }
-                quickLaunchSemaphorePhaseMs = (normalPhaseMs * multiplier).toLong().coerceAtLeast(5_000L)
-                val resumedStartAtMs = resumedCandidateStartAtMs(packageName, quickLaunchSemaphorePhaseMs, now)
-                if (quickLaunchExitCandidatePackage == packageName && resumedStartAtMs != null) {
-                    quickLaunchExitCandidateStartedAtMs = resumedStartAtMs
-                    logSessionEvent(
-                        "Quick Launch grace resumed for package=$packageName from cached semaphore color"
-                    )
-                }
-                refreshQuickLaunchMonitoringNotification()
             }
             logWithSession(
                 "Quick Launch switch observed: **$appLabel** — green → yellow → red, then return to timer"
@@ -420,46 +414,77 @@ class TimerService : Service() {
         }
     }
 
+    private suspend fun configureQuickLaunchExitGrace(packageName: String, nowMs: Long) {
+        val k = repository.getKarma(packageName)
+        val normalPhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(this@TimerService)
+        val baseGraceMs = normalPhaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES
+
+        val (phaseMs, graceMs) = when {
+            k.isOptedOut -> normalPhaseMs to baseGraceMs
+            k.karmaScore > 0 -> {
+                val multiplier = SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(this@TimerService)
+                val phase = (normalPhaseMs * multiplier).toLong().coerceAtLeast(5_000L)
+                phase to phase * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES
+            }
+            k.karmaScore < 0 -> {
+                val grace = KarmaManager.quickLaunchAllowedStayMs(k.karmaScore, baseGraceMs)
+                val phase = (grace / QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES).coerceAtLeast(1_000L)
+                phase to grace
+            }
+            else -> normalPhaseMs to baseGraceMs
+        }
+
+        quickLaunchSemaphorePhaseMs = phaseMs
+        quickLaunchExitCandidateKarmaScore = k.karmaScore
+
+        val existingSnapshot = quickLaunchExitResumeByPackage[packageName]
+        if (existingSnapshot != null && existingSnapshot.deadlineMs > nowMs) {
+            quickLaunchExitDeadlineMs = existingSnapshot.deadlineMs
+            quickLaunchSemaphorePhaseMs = existingSnapshot.phaseMs
+            quickLaunchExitCandidateKarmaScore = existingSnapshot.karmaScore
+            quickLaunchExitCandidateStartedAtMs =
+                existingSnapshot.deadlineMs - (existingSnapshot.phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES)
+            logSessionEvent(
+                "Quick Launch grace resumed for package=$packageName (wall-clock deadline preserved)"
+            )
+            return
+        }
+
+        quickLaunchExitDeadlineMs = nowMs + graceMs
+        quickLaunchExitCandidateStartedAtMs = nowMs
+        quickLaunchExitResumeByPackage[packageName] = QuickLaunchExitSnapshot(
+            deadlineMs = quickLaunchExitDeadlineMs,
+            phaseMs = phaseMs,
+            karmaScore = k.karmaScore,
+        )
+    }
+
     private fun clearQuickLaunchExitCandidate(
         preserveProgress: Boolean = false,
         nowMs: Long = System.currentTimeMillis(),
     ) {
         if (preserveProgress) {
             rememberQuickLaunchExitProgress(nowMs)
+        } else {
+            quickLaunchExitCandidatePackage?.let { quickLaunchExitResumeByPackage.remove(it) }
         }
         quickLaunchExitCandidatePackage = null
         quickLaunchExitCandidateStartedAtMs = 0L
         quickLaunchExitCandidateLabel = null
+        quickLaunchExitDeadlineMs = 0L
+        quickLaunchExitCandidateKarmaScore = 0
         quickLaunchSemaphorePhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(this)
         refreshQuickLaunchMonitoringNotification()
     }
 
     private fun rememberQuickLaunchExitProgress(nowMs: Long = System.currentTimeMillis()) {
         val candidatePackage = quickLaunchExitCandidatePackage ?: return
-        val candidateStartedAt = quickLaunchExitCandidateStartedAtMs
-        if (candidatePackage.isBlank() || candidateStartedAt <= 0L) return
-        val level = quickLaunchFrameLevelForNow(nowMs)
+        if (candidatePackage.isBlank() || quickLaunchExitDeadlineMs <= 0L) return
         quickLaunchExitResumeByPackage[candidatePackage] = QuickLaunchExitSnapshot(
-            frameLevel = level,
-            capturedAtMs = nowMs,
+            deadlineMs = quickLaunchExitDeadlineMs,
+            phaseMs = quickLaunchSemaphorePhaseMs,
+            karmaScore = quickLaunchExitCandidateKarmaScore,
         )
-    }
-
-    private fun resumedCandidateStartAtMs(
-        packageName: String,
-        phaseMs: Long,
-        nowMs: Long,
-    ): Long? {
-        val snapshot = quickLaunchExitResumeByPackage[packageName] ?: return null
-        if (nowMs - snapshot.capturedAtMs > QUICK_LAUNCH_EXIT_RESUME_WINDOW_MS) {
-            quickLaunchExitResumeByPackage.remove(packageName)
-            return null
-        }
-        return when (snapshot.frameLevel) {
-            OverlayNudgeManager.QuickLaunchFrameLevel.GREEN -> nowMs
-            OverlayNudgeManager.QuickLaunchFrameLevel.YELLOW -> nowMs - phaseMs
-            OverlayNudgeManager.QuickLaunchFrameLevel.RED -> nowMs - (phaseMs * 2)
-        }
     }
 
     private fun isSystemOrUtilityPackage(packageName: String): Boolean {
@@ -538,9 +563,8 @@ class TimerService : Service() {
 
     private fun shouldShowQuickLaunchFrameForPackage(packageName: String): Boolean {
         if (packageName.isBlank()) return false
-        if (quickLaunchExitCandidatePackage != packageName || quickLaunchExitCandidateStartedAtMs <= 0L) {
-            return false
-        }
+        if (quickLaunchExitCandidatePackage != packageName) return false
+        if (quickLaunchExitDeadlineMs <= 0L) return false
         val allowedPackages = SettingsManager.getQuickLaunchPackages(this) + this.packageName
         return packageName !in allowedPackages && !isSystemOrUtilityPackage(packageName)
     }
@@ -565,14 +589,15 @@ class TimerService : Service() {
         updateQuickLaunchFrameVisibility(foregroundPackage, nowMs)
         val candidatePackage = quickLaunchExitCandidatePackage ?: return
         if (candidatePackage != foregroundPackage) return
-        val candidateStartedAt = quickLaunchExitCandidateStartedAtMs
-        if (candidateStartedAt <= 0L) return
+        if (quickLaunchExitDeadlineMs <= 0L) return
 
-        val elapsedMs = (nowMs - candidateStartedAt).coerceAtLeast(0L)
-        val phaseMs = quickLaunchSemaphorePhaseMs
-        val graceMs = phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES
-        if (elapsedMs < graceMs) return
+        if (nowMs < quickLaunchExitDeadlineMs) return
 
+        triggerQuickLaunchExit(foregroundPackage)
+    }
+
+    private fun triggerQuickLaunchExit(foregroundPackage: String) {
+        val karmaScore = quickLaunchExitCandidateKarmaScore
         val appLabel = getAppLabel(foregroundPackage)
         Log.d(TAG, "non-quick app still active after grace: $foregroundPackage")
         logWithSession("Quick Launch exit detected: opened **$appLabel** — returning to timer (karma -1)")
@@ -583,7 +608,14 @@ class TimerService : Service() {
         serviceScope.launch {
             karmaManager.onQuickLaunchExitAfterRed(foregroundPackage)
         }
-        forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
+        val cheatMs = KarmaManager.cheatScreenDurationMs(karmaScore)
+        if (cheatMs != null && cheatMs > 0L) {
+            overlayManager.showCheatScreen(cheatMs) {
+                forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
+            }
+        } else {
+            forceBackToTimer(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH)
+        }
     }
 
     private fun startQuickLaunchMonitoringLoop() {
@@ -1584,21 +1616,24 @@ class TimerService : Service() {
 
     private fun buildQuickLaunchMonitoringStatusText(): String {
         val candidatePackage = quickLaunchExitCandidatePackage
-        val candidateStartedAt = quickLaunchExitCandidateStartedAtMs
-        if (candidatePackage.isNullOrBlank() || candidateStartedAt <= 0L) {
+        if (candidatePackage.isNullOrBlank() || quickLaunchExitDeadlineMs <= 0L) {
             return DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT
         }
 
         val candidateLabel = quickLaunchExitCandidateLabel ?: getAppLabel(candidatePackage)
-        val elapsedMs = (System.currentTimeMillis() - candidateStartedAt).coerceAtLeast(0L)
         val phaseMs = quickLaunchSemaphorePhaseMs
-        val graceMs = phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES
+        val elapsedMs = if (quickLaunchExitDeadlineMs > 0L) {
+            (phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES) -
+                (quickLaunchExitDeadlineMs - System.currentTimeMillis()).coerceAtLeast(0L)
+        } else {
+            0L
+        }
         val phase = when {
             elapsedMs < phaseMs -> "green"
             elapsedMs < phaseMs * 2 -> "yellow"
             else -> "red"
         }
-        val remainingSeconds = ((graceMs - elapsedMs).coerceAtLeast(0L) / 1_000L)
+        val remainingSeconds = ((quickLaunchExitDeadlineMs - System.currentTimeMillis()).coerceAtLeast(0L) / 1_000L)
         return "Detected $candidateLabel. Phase $phase, forcing home in ${remainingSeconds}s."
     }
 
@@ -1676,7 +1711,6 @@ class TimerService : Service() {
         private const val NUDGE_NOTIFICATION_ID = 1002
         private const val QUICK_LAUNCH_NOTIFICATION_ID = 1003
         private const val QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES = 3
-        private const val QUICK_LAUNCH_EXIT_RESUME_WINDOW_MS = 60 * 60_000L
         private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
         private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
         private const val MAX_NUDGE_LOOP_DURATION_MS = 30 * 60_000L
