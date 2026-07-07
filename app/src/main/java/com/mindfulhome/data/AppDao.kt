@@ -159,6 +159,11 @@ data class SessionLogWithCount(
     val eventCount: Int,
 )
 
+data class DaySessionCount(
+    val dayKey: String,
+    val sessionCount: Int,
+)
+
 @Dao
 interface SessionLogDao {
 
@@ -198,6 +203,27 @@ interface SessionLogDao {
 
     @Query(
         """
+        SELECT * FROM session_log_events
+        WHERE sessionId IN (:sessionIds)
+        ORDER BY sessionId ASC, timestampMs ASC, id ASC
+        """
+    )
+    suspend fun getEventsForSessions(sessionIds: List<Long>): List<SessionLogEvent>
+
+    @Query(
+        """
+        SELECT date(s.startedAtMs / 1000, 'unixepoch', 'localtime') AS dayKey,
+               COUNT(DISTINCT s.id) AS sessionCount
+        FROM session_logs s
+        INNER JOIN session_log_events e ON e.sessionId = s.id
+        WHERE s.startedAtMs >= :startMs AND s.startedAtMs < :endMs
+        GROUP BY dayKey
+        """
+    )
+    suspend fun getSessionCountsByDayInRange(startMs: Long, endMs: Long): List<DaySessionCount>
+
+    @Query(
+        """
         SELECT s.id, s.startedAtMs, s.title, COUNT(e.id) as eventCount
         FROM session_logs s
         LEFT JOIN session_log_events e ON e.sessionId = s.id
@@ -224,6 +250,22 @@ interface SessionLogDao {
         """
     )
     suspend fun getRecentDistinctLocalDaysWithLogs(limit: Int): List<String>
+
+    /**
+     * Calendar days with logs strictly before [beforeDay] (yyyy-MM-dd), most recent first.
+     */
+    @Query(
+        """
+        SELECT date(s.startedAtMs / 1000, 'unixepoch', 'localtime') AS dayKey
+        FROM session_logs s
+        INNER JOIN session_log_events e ON e.sessionId = s.id
+        GROUP BY date(s.startedAtMs / 1000, 'unixepoch', 'localtime')
+        HAVING dayKey < :beforeDay
+        ORDER BY dayKey DESC
+        LIMIT :limit
+        """
+    )
+    suspend fun getDistinctLocalDaysWithLogsBefore(beforeDay: String, limit: Int): List<String>
 }
 
 @Dao
@@ -233,6 +275,9 @@ interface DailyLogSummaryDao {
 
     @Query("SELECT * FROM daily_log_summaries WHERE day = :day LIMIT 1")
     suspend fun getByDay(day: String): DailyLogSummary?
+
+    @Query("SELECT * FROM daily_log_summaries WHERE day IN (:days)")
+    suspend fun getByDays(days: List<String>): List<DailyLogSummary>
 
     @Query("SELECT * FROM daily_log_summaries ORDER BY day DESC LIMIT :limit")
     suspend fun getLatest(limit: Int): List<DailyLogSummary>

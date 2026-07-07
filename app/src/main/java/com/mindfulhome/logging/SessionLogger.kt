@@ -38,6 +38,14 @@ object SessionLogger {
         val eventCount: Int,
     )
 
+    data class SessionSummary(
+        val id: Long,
+        val startedAtMs: Long,
+        val title: String,
+        val eventCount: Int,
+        val firstEventPreview: String,
+    )
+
     data class SessionHandle(val token: Long)
 
     private var sessionLogDao: SessionLogDao? = null
@@ -265,26 +273,79 @@ object SessionLogger {
     suspend fun getAllSessions(): List<SessionRecord> {
         val dao = sessionLogDao ?: return emptyList()
         val sessions = withContext(writeDispatcher) { dao.getSessionsWithCounts() }
-        return sessions.map { session ->
-            val markdown = renderSessionMarkdown(dao, session)
-            SessionRecord(
-                id = session.id,
-                startedAtMs = session.startedAtMs,
-                title = session.title,
-                markdown = markdown,
-                eventCount = session.eventCount,
-            )
-        }
+        return sessions.map { session -> toSessionRecord(dao, session) }
     }
 
-    private suspend fun renderSessionMarkdown(
+    suspend fun getSessionsInTimeRange(
+        startMs: Long,
+        endMs: Long,
+    ): List<SessionRecord> {
+        val dao = sessionLogDao ?: return emptyList()
+        val sessions = withContext(writeDispatcher) {
+            dao.getSessionsWithCountsInRange(startMs, endMs)
+        }
+        return sessions
+            .sortedByDescending { it.startedAtMs }
+            .map { session -> toSessionRecord(dao, session) }
+    }
+
+    suspend fun getSessionSummariesInTimeRange(
+        startMs: Long,
+        endMs: Long,
+    ): List<SessionSummary> {
+        val dao = sessionLogDao ?: return emptyList()
+        val sessions = withContext(writeDispatcher) {
+            dao.getSessionsWithCountsInRange(startMs, endMs)
+        }
+        if (sessions.isEmpty()) return emptyList()
+        val eventsBySession = withContext(writeDispatcher) {
+            dao.getEventsForSessions(sessions.map { it.id })
+                .groupBy { it.sessionId }
+        }
+        return sessions
+            .sortedByDescending { it.startedAtMs }
+            .map { session ->
+                SessionSummary(
+                    id = session.id,
+                    startedAtMs = session.startedAtMs,
+                    title = session.title,
+                    eventCount = session.eventCount,
+                    firstEventPreview = eventsBySession[session.id]
+                        ?.firstOrNull()
+                        ?.entry
+                        .orEmpty(),
+                )
+            }
+    }
+
+    suspend fun getSessionMarkdown(sessionId: Long, title: String): String {
+        val dao = sessionLogDao ?: return ""
+        val events = withContext(writeDispatcher) { dao.getEventsForSession(sessionId) }
+        return renderSessionMarkdown(title, events)
+    }
+
+    private suspend fun toSessionRecord(
         dao: SessionLogDao,
         session: SessionLogWithCount,
+    ): SessionRecord {
+        val events = withContext(writeDispatcher) { dao.getEventsForSession(session.id) }
+        val markdown = renderSessionMarkdown(session.title, events)
+        return SessionRecord(
+            id = session.id,
+            startedAtMs = session.startedAtMs,
+            title = session.title,
+            markdown = markdown,
+            eventCount = session.eventCount,
+        )
+    }
+
+    private fun renderSessionMarkdown(
+        title: String,
+        events: List<SessionLogEvent>,
     ): String {
-        val events = dao.getEventsForSession(session.id)
         val body = buildString {
             append("# ")
-            append(session.title)
+            append(title)
             append("\n\n")
             events.forEach { event ->
                 val time = timeFmt.format(Date(event.timestampMs))
