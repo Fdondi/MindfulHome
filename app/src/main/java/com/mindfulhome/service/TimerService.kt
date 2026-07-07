@@ -14,6 +14,7 @@ import android.os.IBinder
 import android.os.Process
 import android.text.format.DateFormat
 import android.util.Log
+import android.view.inputmethod.InputMethodManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
@@ -231,6 +232,10 @@ class TimerService : Service() {
                 _currentPackage.value = packageName
                 maybeForceTimerForQuickLaunchSwitch(packageName)
                 evaluateQuickLaunchExitProgress(packageName)
+            }
+            ACTION_FOREGROUND_APP_CHANGED -> {
+                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
+                handleForegroundAppChanged(packageName)
             }
             ACTION_EXTEND -> {
                 val extraMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
@@ -550,6 +555,8 @@ class TimerService : Service() {
     private fun isSystemOrUtilityPackage(packageName: String): Boolean {
         if (packageName.isBlank()) return false
         if (packageName == this.packageName) return true
+        // Keyboards (IMEs) surface as window changes but the user never "left" the current app.
+        if (isInputMethodPackage(packageName)) return true
 
         val normalized = packageName.lowercase()
         if (
@@ -580,6 +587,19 @@ class TimerService : Service() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private var imePackages: Set<String> = emptySet()
+    private var imePackagesFetchedAtMs: Long = 0L
+
+    private fun isInputMethodPackage(packageName: String): Boolean {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (imePackages.isEmpty() || now - imePackagesFetchedAtMs > IME_CACHE_TTL_MS) {
+            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+            imePackages = imm.inputMethodList.mapTo(mutableSetOf()) { it.packageName }
+            imePackagesFetchedAtMs = now
+        }
+        return packageName in imePackages
     }
 
     private fun updateQuickLaunchFrameVisibility(foregroundPackage: String, nowMs: Long) {
@@ -684,7 +704,15 @@ class TimerService : Service() {
                 withContext(Dispatchers.Main) {
                     runQuickLaunchForegroundProbe("poll")
                 }
-                delay(SettingsManager.getQuickLaunchMonitorMs(this@TimerService))
+                // When the accessibility service is enabled, app switches arrive as events,
+                // so the poll only needs to be a slow safety net (catches anything missed);
+                // otherwise fall back to the user-configured tight poll.
+                val intervalMs = if (ForegroundAppAccessibilityService.isEnabled(this@TimerService)) {
+                    EVENT_DRIVEN_SAFETY_POLL_MS
+                } else {
+                    SettingsManager.getQuickLaunchMonitorMs(this@TimerService)
+                }
+                delay(intervalMs)
             }
             withContext(Dispatchers.Main) {
                 Log.d(TAG, "quick-launch monitoring loop ended")
@@ -701,6 +729,26 @@ class TimerService : Service() {
         if (foregroundPackage.isBlank()) return
         if (foregroundPackage != quickLaunchLastSeenPackage) {
             Log.d(TAG, "foreground changed ($reason): $quickLaunchLastSeenPackage -> $foregroundPackage")
+            quickLaunchLastSeenPackage = foregroundPackage
+            _currentPackage.value = foregroundPackage
+            maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
+        }
+        evaluateQuickLaunchExitProgress(foregroundPackage)
+        if (quickLaunchExitCandidatePackage != null) {
+            refreshQuickLaunchMonitoringNotification()
+        }
+    }
+
+    /**
+     * Event-driven counterpart to [runQuickLaunchForegroundProbe]: the foreground package is
+     * supplied by [ForegroundAppAccessibilityService] instead of being polled from UsageStats.
+     * Same downstream logic (allowed/utility filtering, semaphore, forced return).
+     */
+    private fun handleForegroundAppChanged(foregroundPackage: String) {
+        if (!SettingsManager.isQuickLaunchSessionActive(this)) return
+        if (foregroundPackage.isBlank()) return
+        if (foregroundPackage != quickLaunchLastSeenPackage) {
+            Log.d(TAG, "foreground changed (a11y-event): $quickLaunchLastSeenPackage -> $foregroundPackage")
             quickLaunchLastSeenPackage = foregroundPackage
             _currentPackage.value = foregroundPackage
             maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
@@ -1801,9 +1849,12 @@ class TimerService : Service() {
         private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
         private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
         private const val MAX_NUDGE_LOOP_DURATION_MS = 30 * 60_000L
+        /** Slow safety poll used while the accessibility service supplies switch events. */
+        private const val EVENT_DRIVEN_SAFETY_POLL_MS = 30_000L
         private const val PREDATORY_BIRD_EVERY_N_BIRDS = 10
         private const val DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT =
             "Quick Launch active - monitoring app switches"
+        private const val IME_CACHE_TTL_MS = 5 * 60_000L
         private val QUICK_LAUNCH_UTILITY_PACKAGES_EXACT = setOf(
             "com.android.camera",
             "com.google.android.googlequicksearchbox",
@@ -1856,6 +1907,7 @@ class TimerService : Service() {
         const val ACTION_RESUME_QUICK_LAUNCH_MONITORING = "com.mindfulhome.ACTION_RESUME_QUICK_LAUNCH_MONITORING"
         const val ACTION_PROBE_QUICK_LAUNCH_FOREGROUND = "com.mindfulhome.ACTION_PROBE_QUICK_LAUNCH_FOREGROUND"
         const val ACTION_TRACK_APP = "com.mindfulhome.ACTION_TRACK_APP"
+        const val ACTION_FOREGROUND_APP_CHANGED = "com.mindfulhome.ACTION_FOREGROUND_APP_CHANGED"
         const val ACTION_EXTEND = "com.mindfulhome.ACTION_EXTEND_TIMER"
         const val ACTION_STOP = "com.mindfulhome.ACTION_STOP_TIMER"
         const val ACTION_CLEAR_VISIBLE_NUDGES = "com.mindfulhome.ACTION_CLEAR_VISIBLE_NUDGES"
@@ -1939,6 +1991,21 @@ class TimerService : Service() {
                 action = ACTION_TRACK_APP
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
                 attachSession(sessionHandle)
+            }
+            context.startForegroundService(intent)
+        }
+
+        /**
+         * Push a foreground-app change detected out-of-band (e.g. by
+         * [ForegroundAppAccessibilityService]) into the running service. Cheap: when the
+         * Quick Launch foreground service is already alive this just delivers an intent to
+         * the existing instance — no new process, no poll.
+         */
+        fun notifyForegroundApp(context: Context, packageName: String) {
+            if (packageName.isBlank()) return
+            val intent = Intent(context, TimerService::class.java).apply {
+                action = ACTION_FOREGROUND_APP_CHANGED
+                putExtra(EXTRA_PACKAGE_NAME, packageName)
             }
             context.startForegroundService(intent)
         }

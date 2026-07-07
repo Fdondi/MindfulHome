@@ -6,4 +6,5 @@
     <string name="nudge_channel_name">Mindful Nudges</string>
     <string name="nudge_channel_description">Gentle reminders when your timer expires</string>
     <string name="quick_launch_cheat_message">Please don\u2019t cheat, you\u2019re only hurting yourself</string>
+    <string name="accessibility_service_description">Lets MindfulHome notice the instant you switch apps, so it can gently steer you back without constantly checking in the background (saves battery). MindfulHome only reads which app is in front \u2014 never the content of your screen.</string>
 </resources>

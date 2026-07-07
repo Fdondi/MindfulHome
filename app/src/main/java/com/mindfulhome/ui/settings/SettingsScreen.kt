@@ -64,6 +64,7 @@ import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.ai.backend.BackendHttpException
+import com.mindfulhome.service.ForegroundAppAccessibilityService
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.logging.DailyLogSummaryGenerator
 import com.mindfulhome.settings.SettingsManager
@@ -90,6 +91,9 @@ fun SettingsScreen(
         )
     }
     var hasOverlayPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var accessibilityEnabled by remember {
+        mutableStateOf(ForegroundAppAccessibilityService.isEnabled(context))
+    }
 
     var skippedUsagePrompt by remember {
         mutableStateOf(
@@ -158,6 +162,7 @@ fun SettingsScreen(
                     Manifest.permission.POST_NOTIFICATIONS,
                 ) == PackageManager.PERMISSION_GRANTED
         hasOverlayPermission = Settings.canDrawOverlays(context)
+        accessibilityEnabled = ForegroundAppAccessibilityService.isEnabled(context)
 
         skippedUsagePrompt = SettingsManager.isPermissionPromptSuppressed(
             context, SettingsManager.PermissionPrompt.USAGE_ACCESS
@@ -298,6 +303,40 @@ fun SettingsScreen(
                         Uri.parse("package:${context.packageName}")
                     )
                     context.startActivity(intent)
+                }
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            SettingsCard(
+                title = if (accessibilityEnabled) {
+                    "App-switch detection — On ✓"
+                } else {
+                    "App-switch detection — Off (optional)"
+                },
+                description = if (accessibilityEnabled) {
+                    "On. MindfulHome is notified the instant you switch apps, so it reacts " +
+                        "immediately and no longer polls in the background — better for battery. " +
+                        "It only reads which app is in front, never your screen content."
+                } else {
+                    "Off. Right now MindfulHome checks the foreground app on a timer, which " +
+                        "uses more battery. Turn this on and MindfulHome is told the moment you " +
+                        "switch apps instead — faster reactions, less battery. It reads only " +
+                        "which app is in front, never your screen content.\n\n" +
+                        "To enable: tap below, find MindfulHome under Installed/Downloaded apps, " +
+                        "and switch it on."
+                },
+                actionLabel = if (accessibilityEnabled) "Open Accessibility settings" else "Enable",
+                onAction = {
+                    try {
+                        context.startActivity(ForegroundAppAccessibilityService.settingsIntent())
+                    } catch (_: Exception) {
+                        Toast.makeText(
+                            context,
+                            "Couldn't open Accessibility settings on this device.",
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
                 }
             )
 
