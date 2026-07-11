@@ -460,6 +460,87 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            var focusGateMinRounds by remember {
+                mutableFloatStateOf(SettingsManager.getFocusGateMinRounds(context).toFloat())
+            }
+            var focusGateMaxRounds by remember {
+                mutableFloatStateOf(SettingsManager.getFocusGateMaxRounds(context).toFloat())
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Focus Gate Length",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = "Back-and-forths in the focus time gate chat: minimum before " +
+                            "Proceed can appear, maximum before access is granted automatically.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 8.dp),
+                    ) {
+                        Slider(
+                            value = focusGateMinRounds,
+                            onValueChange = { focusGateMinRounds = it },
+                            onValueChangeFinished = {
+                                SettingsManager.setFocusGateMinRounds(
+                                    context, focusGateMinRounds.toInt()
+                                )
+                                focusGateMinRounds =
+                                    SettingsManager.getFocusGateMinRounds(context).toFloat()
+                                focusGateMaxRounds =
+                                    SettingsManager.getFocusGateMaxRounds(context).toFloat()
+                            },
+                            valueRange = SettingsManager.MIN_FOCUS_GATE_ROUNDS.toFloat()..
+                                SettingsManager.MAX_FOCUS_GATE_ROUNDS.toFloat(),
+                            steps = SettingsManager.MAX_FOCUS_GATE_ROUNDS -
+                                SettingsManager.MIN_FOCUS_GATE_ROUNDS - 1,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "min ${focusGateMinRounds.toInt()}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        Slider(
+                            value = focusGateMaxRounds,
+                            onValueChange = { focusGateMaxRounds = it },
+                            onValueChangeFinished = {
+                                SettingsManager.setFocusGateMaxRounds(
+                                    context, focusGateMaxRounds.toInt()
+                                )
+                                focusGateMaxRounds =
+                                    SettingsManager.getFocusGateMaxRounds(context).toFloat()
+                            },
+                            valueRange = SettingsManager.MIN_FOCUS_GATE_ROUNDS.toFloat()..
+                                SettingsManager.MAX_FOCUS_GATE_ROUNDS.toFloat(),
+                            steps = SettingsManager.MAX_FOCUS_GATE_ROUNDS -
+                                SettingsManager.MIN_FOCUS_GATE_ROUNDS - 1,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "max ${focusGateMaxRounds.toInt()}",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             var developerLogsEnabled by remember {
                 mutableStateOf(SettingsManager.isDeveloperLogsEnabled(context))
             }

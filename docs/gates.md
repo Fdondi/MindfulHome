@@ -32,7 +32,7 @@ A **round** is one completed back-and-forth: your message after the AI has spoke
 
 ### Default round limits
 
-**Focus time gate:** min 2, max 4 (fixed).
+**Focus time gate:** min 1, max 1 by default; both configurable in Settings → Behavior → Focus Gate Length (1–6, max is kept ≥ min).
 
 **App gatekeeper:** min from karma and context:
 
@@ -93,7 +93,7 @@ The model receives: `systemPrompt` + `context template` (resolved) on conversati
 | `{durationMinutes}` | Timer session length |
 | `{declaredIntent}` | Reason entered on timer screen |
 | `{focusWindowDescription}` | Active focus window label |
-| `{minRounds}` | Min rounds (default 2) |
+| `{minRounds}` | Min rounds (from Settings, default 1) |
 
 ### Caution keywords
 

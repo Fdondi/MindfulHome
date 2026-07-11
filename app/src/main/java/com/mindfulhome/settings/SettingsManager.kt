@@ -38,6 +38,14 @@ object SettingsManager {
     private const val FOCUS_TIME_ENABLED_KEY = "focus_time_enabled"
     private const val FOCUS_TIME_INTERVALS_KEY = "focus_time_intervals"
 
+    // Focus gate round limits (back-and-forths before Proceed / auto-grant)
+    private const val FOCUS_GATE_MIN_ROUNDS_KEY = "focus_gate_min_rounds"
+    private const val FOCUS_GATE_MAX_ROUNDS_KEY = "focus_gate_max_rounds"
+    const val DEFAULT_FOCUS_GATE_MIN_ROUNDS = 1
+    const val DEFAULT_FOCUS_GATE_MAX_ROUNDS = 1
+    const val MIN_FOCUS_GATE_ROUNDS = 1
+    const val MAX_FOCUS_GATE_ROUNDS = 6
+
     // Escalation threshold (number of nudge cycles before forcing back to timer)
     private const val ESCALATION_THRESHOLD_KEY = "escalation_nudge_threshold"
     const val DEFAULT_ESCALATION_THRESHOLD = 5
@@ -646,6 +654,35 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         val hour = normalized / 60
         val minute = normalized % 60
         return String.format(Locale.US, "%d:%02d", hour, minute)
+    }
+
+    // ── Focus gate round limits ─────────────────────────────────────
+
+    fun getFocusGateMinRounds(context: Context): Int =
+        prefs(context).getInt(FOCUS_GATE_MIN_ROUNDS_KEY, DEFAULT_FOCUS_GATE_MIN_ROUNDS)
+            .coerceIn(MIN_FOCUS_GATE_ROUNDS, MAX_FOCUS_GATE_ROUNDS)
+
+    fun setFocusGateMinRounds(context: Context, rounds: Int) {
+        val clamped = rounds.coerceIn(MIN_FOCUS_GATE_ROUNDS, MAX_FOCUS_GATE_ROUNDS)
+        prefs(context).edit {
+            putInt(FOCUS_GATE_MIN_ROUNDS_KEY, clamped)
+            // Max can never be below min
+            if (getFocusGateMaxRounds(context) < clamped) {
+                putInt(FOCUS_GATE_MAX_ROUNDS_KEY, clamped)
+            }
+        }
+    }
+
+    fun getFocusGateMaxRounds(context: Context): Int =
+        prefs(context).getInt(FOCUS_GATE_MAX_ROUNDS_KEY, DEFAULT_FOCUS_GATE_MAX_ROUNDS)
+            .coerceIn(MIN_FOCUS_GATE_ROUNDS, MAX_FOCUS_GATE_ROUNDS)
+            .coerceAtLeast(getFocusGateMinRounds(context))
+
+    fun setFocusGateMaxRounds(context: Context, rounds: Int) {
+        val clamped = rounds
+            .coerceIn(MIN_FOCUS_GATE_ROUNDS, MAX_FOCUS_GATE_ROUNDS)
+            .coerceAtLeast(getFocusGateMinRounds(context))
+        prefs(context).edit { putInt(FOCUS_GATE_MAX_ROUNDS_KEY, clamped) }
     }
 
     // ── Escalation threshold ────────────────────────────────────────

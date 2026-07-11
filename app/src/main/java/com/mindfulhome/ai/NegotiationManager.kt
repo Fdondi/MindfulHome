@@ -186,8 +186,8 @@ class NegotiationManager(
         focusGateDurationMinutes = durationMinutes
         focusGateDeclaredIntent = declaredIntent
 
-        gatekeeperMinRounds = 2
-        gatekeeperMaxRounds = 4
+        gatekeeperMinRounds = SettingsManager.getFocusGateMinRounds(context)
+        gatekeeperMaxRounds = SettingsManager.getFocusGateMaxRounds(context)
 
         val systemPrompt = PromptTemplates.focusGateSystemPrompt(context)
         val userContext = PromptTemplates.buildFocusGateUserContext(
