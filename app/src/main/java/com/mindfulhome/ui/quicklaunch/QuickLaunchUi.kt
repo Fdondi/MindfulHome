@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
@@ -98,6 +99,26 @@ data class QuickLaunchAuxTile(
 
 private val IntentTileWidth = 74.dp
 private val IntentTileHeight = 56.dp
+private val QuickLaunchGridMinCellWidth = 74.dp
+
+internal data class QuickLaunchAdaptiveGrid(
+    val columns: Int,
+    val horizontalGap: Dp,
+    val minCellWidth: Dp,
+)
+
+internal fun quickLaunchAdaptiveGrid(
+    maxWidth: Dp,
+    minCellWidth: Dp = QuickLaunchGridMinCellWidth,
+): QuickLaunchAdaptiveGrid {
+    val columns = (maxWidth / minCellWidth).toInt().coerceAtLeast(1)
+    val horizontalGap = if (columns > 1) {
+        ((maxWidth - (minCellWidth * columns)) / (columns - 1)).coerceAtLeast(0.dp)
+    } else {
+        0.dp
+    }
+    return QuickLaunchAdaptiveGrid(columns, horizontalGap, minCellWidth)
+}
 
 @Composable
 fun IntentLabelTile(
@@ -272,22 +293,23 @@ fun QuickLaunchFolderBody(
     }
 
     val draggedApp = draggingPackage?.let { appByPackage(it) }
-    val minCell = 76.dp
     var folderBodyRoot by remember { mutableStateOf(Offset.Zero) }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned { folderBodyRoot = it.positionInRoot() },
     ) {
+        val grid = quickLaunchAdaptiveGrid(maxWidth)
+        val minCell = grid.minCellWidth
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            apps.chunked(4).forEach { rowApps ->
+            apps.chunked(grid.columns).forEach { rowApps ->
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(grid.horizontalGap),
                 ) {
                     rowApps.forEach { app ->
                         val pkg = app.packageName
@@ -633,13 +655,10 @@ fun QuickLaunchWrappedRow(
         val intentLongPressDragThresholdPx = with(LocalDensity.current) { 10.dp.toPx() }
         val density = LocalDensity.current
 
-        val minCellWidth = 74.dp
-        val columns = (maxWidth / minCellWidth).toInt().coerceAtLeast(1)
-        val horizontalGap = if (columns > 1) {
-            ((maxWidth - (minCellWidth * columns)) / (columns - 1)).coerceAtLeast(0.dp)
-        } else {
-            0.dp
-        }
+        val grid = quickLaunchAdaptiveGrid(maxWidth)
+        val minCellWidth = grid.minCellWidth
+        val columns = grid.columns
+        val horizontalGap = grid.horizontalGap
         val rowChunks = remember(slots, columns, beforeAddAuxTiles) {
             val base = slots.mapIndexed { index, slot ->
                 QuickLaunchGridTile(
