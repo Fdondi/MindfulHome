@@ -21,7 +21,7 @@ fun placementsByPackage(slots: List<QuickLaunchSlot>): Map<String, List<AppSlotP
                 map.getOrPut(slot.packageName) { mutableListOf() }.add(AppSlotPlacement.Root)
             }
             is QuickLaunchSlot.Folder -> {
-                for (pkg in slot.apps) {
+                for (pkg in slot.packageNames()) {
                     map.getOrPut(pkg) { mutableListOf() }.add(AppSlotPlacement.InFolder(slot.symbolIconName))
                 }
             }

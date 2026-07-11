@@ -13,31 +13,55 @@ sealed class QuickLaunchSlot {
      */
     data class Folder(
         val name: String?,
-        val apps: List<String>,
+        val apps: List<QuickLaunchFolderApp>,
         val symbolIconName: String? = null,
         val shortcuts: List<PinnedShortcut> = emptyList(),
-    ) : QuickLaunchSlot()
+    ) : QuickLaunchSlot() {
+        fun limitMinutesFor(packageName: String): Int? =
+            apps.firstOrNull { it.packageName == packageName }?.limitMinutes
+
+        fun packageNames(): List<String> = apps.map { it.packageName }
+    }
 
     fun flattenAllowedPackages(): List<String> = when (this) {
         is Single -> listOf(com.mindfulhome.util.QuickLaunchAppRef.ownerPackage(packageName))
-        is Folder -> apps + shortcuts.map { it.packageName }
+        is Folder -> apps.filter { it.isUnlimited }.map { it.packageName } +
+            shortcuts.map { it.packageName }
     }
 
     /** Launch keys shown in folder UI (plain packages + encoded shortcuts). */
     fun flattenLaunchKeys(): List<String> = when (this) {
         is Single -> listOf(packageName)
-        is Folder -> apps + shortcuts.map { com.mindfulhome.util.QuickLaunchAppRef.shortcutKey(it) }
+        is Folder -> apps.map { it.packageName } +
+            shortcuts.map { com.mindfulhome.util.QuickLaunchAppRef.shortcutKey(it) }
     }
 
     fun flattenPackages(): List<String> = when (this) {
         is Single -> listOf(packageName)
-        is Folder -> apps
+        is Folder -> apps.map { it.packageName }
+    }
+
+    fun limitMinutesByPackage(): Map<String, Int> = when (this) {
+        is Single -> emptyMap()
+        is Folder -> apps.mapNotNull { app ->
+            app.limitMinutes?.let { app.packageName to it }
+        }.toMap()
     }
 
     fun itemCount(): Int = when (this) {
         is Single -> 1
         is Folder -> apps.size + shortcuts.size
     }
+}
+
+fun normalizeFolderApps(apps: List<QuickLaunchFolderApp>): List<QuickLaunchFolderApp> {
+    val merged = LinkedHashMap<String, QuickLaunchFolderApp>()
+    for (app in apps) {
+        val pkg = app.packageName.trim()
+        if (pkg.isEmpty()) continue
+        merged.putIfAbsent(pkg, app.copy(packageName = pkg))
+    }
+    return merged.values.toList()
 }
 
 /**
@@ -51,13 +75,14 @@ fun normalizeQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<QuickLaunchSlo
                 if (slot.packageName.isBlank()) null else slot
             }
             is QuickLaunchSlot.Folder -> {
-                val apps = slot.apps.filter { it.isNotBlank() }.distinct()
+                val apps = normalizeFolderApps(slot.apps)
                 val shortcuts = slot.shortcuts.filter {
                     it.packageName.isNotBlank() && it.id.isNotBlank()
                 }
                 when {
                     apps.isEmpty() && shortcuts.isEmpty() -> null
-                    apps.size == 1 && shortcuts.isEmpty() -> QuickLaunchSlot.Single(apps[0])
+                    apps.size == 1 && shortcuts.isEmpty() ->
+                        QuickLaunchSlot.Single(apps.single().packageName)
                     else -> slot.copy(apps = apps, shortcuts = shortcuts)
                 }
             }
@@ -74,10 +99,10 @@ fun normalizeIntentQuickLaunchSlots(slots: List<QuickLaunchSlot>): List<QuickLau
         when (slot) {
             is QuickLaunchSlot.Single -> {
                 if (slot.packageName.isBlank()) null
-                else QuickLaunchSlot.Folder(null, listOf(slot.packageName))
+                else QuickLaunchSlot.Folder(null, listOf(QuickLaunchFolderApp.unlimited(slot.packageName)))
             }
             is QuickLaunchSlot.Folder -> {
-                val apps = slot.apps.filter { it.isNotBlank() }.distinct()
+                val apps = normalizeFolderApps(slot.apps)
                 val shortcuts = slot.shortcuts.filter {
                     it.packageName.isNotBlank() && it.id.isNotBlank()
                 }

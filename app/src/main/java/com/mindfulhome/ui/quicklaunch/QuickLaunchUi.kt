@@ -67,6 +67,7 @@ data class QuickLaunchSlotUi(
     val folderName: String? = null,
     /** Material Icons name (snake_case) for badge on folder glyph; null = folder only. */
     val folderSymbolIconName: String? = null,
+    val limitMinutesByPackage: Map<String, Int> = emptyMap(),
 )
 
 data class QuickLaunchFolderOpen(
@@ -488,6 +489,7 @@ private data class QuickLaunchGridTile(
     val apps: List<AppInfo>? = null,
     val folderName: String? = null,
     val folderSymbolIconName: String? = null,
+    val limitMinutesByPackage: Map<String, Int> = emptyMap(),
     val slotIndex: Int? = null,
     val isAdd: Boolean = false,
     val isPlaceholder: Boolean = false,
@@ -539,7 +541,7 @@ private val QuickLaunchGapBarYellow = Color(0xFFEAB308)
 fun QuickLaunchWrappedRow(
     slots: List<QuickLaunchSlotUi>,
     quickLaunchPackages: Set<String>,
-    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
     onAddQuickLaunch: () -> Unit,
     onMoveSlot: (from: Int, to: Int) -> Unit,
     onMergeSlotInto: (from: Int, into: Int) -> Unit,
@@ -594,6 +596,7 @@ fun QuickLaunchWrappedRow(
                     apps = slot.apps,
                     folderName = slot.folderName,
                     folderSymbolIconName = slot.folderSymbolIconName,
+                    limitMinutesByPackage = slot.limitMinutesByPackage,
                     slotIndex = index,
                 )
             } + beforeAddAuxTiles.map { QuickLaunchGridTile(auxTile = it) } + listOf(
@@ -969,6 +972,7 @@ fun QuickLaunchWrappedRow(
                                                                         onQuickLaunchApp(
                                                                             apps.single().packageName,
                                                                             quickLaunchPackages,
+                                                                            tile.limitMinutesByPackage[apps.single().packageName],
                                                                         )
                                                                     tileContent == QuickLaunchTileContent.IntentLabels ||
                                                                         apps.size > 1 ->
@@ -981,6 +985,7 @@ fun QuickLaunchWrappedRow(
                                                                     else -> onQuickLaunchApp(
                                                                         apps.single().packageName,
                                                                         quickLaunchPackages,
+                                                                        tile.limitMinutesByPackage[apps.single().packageName],
                                                                     )
                                                                 }
                                                             },

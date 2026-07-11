@@ -25,6 +25,7 @@ import com.mindfulhome.data.QuickLaunchSlot
 import com.mindfulhome.data.placementsByPackage
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog
+import com.mindfulhome.ui.common.AddFolderAppDialog
 import com.mindfulhome.ui.icons.MaterialSymbolPickerDialog
 import com.mindfulhome.util.PackageManagerHelper
 import com.mindfulhome.util.ShortcutUiHelper
@@ -33,7 +34,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun MissionIntentSection(
     repository: AppRepository,
-    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
     onOpenTimerPlain: () -> Unit,
     modifier: Modifier = Modifier,
     resumeSessionLabel: String? = null,
@@ -50,6 +51,7 @@ fun MissionIntentSection(
     var installedApps by remember { mutableStateOf(emptyList<AppInfo>()) }
     var showAddDialog by remember { mutableStateOf(false) }
     var addDialogFolderSlotIndex by remember { mutableStateOf<Int?>(null) }
+    var pendingFolderApp by remember { mutableStateOf<AppInfo?>(null) }
     var showNewIntentDialog by remember { mutableStateOf(false) }
     var newIntentName by remember { mutableStateOf("") }
     var folderToShow by remember { mutableStateOf<QuickLaunchFolderOpen?>(null) }
@@ -81,7 +83,7 @@ fun MissionIntentSection(
             is QuickLaunchSlot.Single -> folderToShow = null
             is QuickLaunchSlot.Folder -> {
                 val map = installedApps.associateBy { it.packageName }
-                val apps = slot.apps.mapNotNull { map[it] } +
+                val apps = slot.apps.mapNotNull { map[it.packageName] } +
                     slot.shortcuts.map { ShortcutUiHelper.pinnedShortcutToAppInfo(context, it, map) }
                 folderToShow = QuickLaunchFolderOpen(
                     idx,
@@ -99,12 +101,13 @@ fun MissionIntentSection(
             when (slot) {
                 is QuickLaunchSlot.Single -> null
                 is QuickLaunchSlot.Folder -> {
-                    val apps = slot.apps.mapNotNull { map[it] } +
+                    val apps = slot.apps.mapNotNull { map[it.packageName] } +
                         slot.shortcuts.map { ShortcutUiHelper.pinnedShortcutToAppInfo(context, it, map) }
                     QuickLaunchSlotUi(
                         apps = apps,
                         folderName = slot.name?.takeIf { it.isNotBlank() } ?: "Unnamed",
                         folderSymbolIconName = slot.symbolIconName,
+                        limitMinutesByPackage = slot.limitMinutesByPackage(),
                     )
                 }
             }
@@ -245,15 +248,34 @@ fun MissionIntentSection(
             apps = installedApps,
             placementByPackage = placementByPackage,
             onAdd = { packageName ->
-                scope.launch {
-                    val folderIdx = addDialogFolderSlotIndex
-                    if (folderIdx != null) {
-                        repository.mergePackageIntoQuickLaunchAt(folderIdx, packageName)
-                    }
+                val app = installedApps.firstOrNull { it.packageName == packageName }
+                if (app != null) {
+                    showAddDialog = false
+                    pendingFolderApp = app
                 }
             },
             onDismiss = {
                 showAddDialog = false
+                addDialogFolderSlotIndex = null
+            },
+        )
+    }
+
+    pendingFolderApp?.let { app ->
+        AddFolderAppDialog(
+            appInfo = app,
+            onConfirm = { limitMinutes ->
+                scope.launch {
+                    val folderIdx = addDialogFolderSlotIndex
+                    if (folderIdx != null) {
+                        repository.mergePackageIntoQuickLaunchAt(folderIdx, app.packageName, limitMinutes)
+                    }
+                    pendingFolderApp = null
+                    addDialogFolderSlotIndex = null
+                }
+            },
+            onDismiss = {
+                pendingFolderApp = null
                 addDialogFolderSlotIndex = null
             },
         )
@@ -278,7 +300,9 @@ fun MissionIntentSection(
             },
             onLaunchApp = { app ->
                 folderToShow = null
-                onQuickLaunchApp(app.packageName, stripPackages)
+                val slot = rawSlots.getOrNull(folder.slotIndex) as? QuickLaunchSlot.Folder
+                val limitMinutes = slot?.limitMinutesFor(app.packageName)
+                onQuickLaunchApp(app.packageName, stripPackages, limitMinutes)
             },
             onDragRemove = { app ->
                 scope.launch { repository.removeLaunchKeyFromQuickLaunch(app.packageName) }

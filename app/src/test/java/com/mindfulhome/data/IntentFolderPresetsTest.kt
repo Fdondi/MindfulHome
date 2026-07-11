@@ -16,12 +16,12 @@ class IntentFolderPresetsTest {
         val slots = IntentFolderPresets.buildInitialSlots(installed)
         assertEquals(IntentFolderPresets.all.size, slots.size)
         val search = slots.first { it.name == "Search" }
-        assertEquals(listOf("com.android.chrome"), search.apps)
+        assertEquals(listOf("com.android.chrome"), search.packageNames())
         assertEquals("search", search.symbolIconName)
         val learn = slots.first { it.name == "Learn" }
-        assertEquals(listOf("com.duolingo"), learn.apps)
+        assertEquals(listOf("com.duolingo"), learn.packageNames())
         val connect = slots.first { it.name == "Connect" }
-        assertEquals(listOf("com.whatsapp"), connect.apps)
+        assertEquals(listOf("com.whatsapp"), connect.packageNames())
         val util = slots.first { it.name == "Util" }
         assertTrue(util.apps.isEmpty())
     }
@@ -35,8 +35,8 @@ class IntentFolderPresetsTest {
         )
         val migrated = IntentFolderPresets.migrateLegacySlots(legacy, installed)
         val search = migrated.first { it.name == "Search" }
-        assertEquals(listOf("com.android.chrome"), search.apps)
+        assertEquals(listOf("com.android.chrome"), search.packageNames())
         val util = migrated.first { it.name == "Util" }
-        assertEquals(listOf("com.example.other"), util.apps)
+        assertEquals(listOf("com.example.other"), util.packageNames())
     }
 }

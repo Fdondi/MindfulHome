@@ -47,7 +47,19 @@ class SlotFolderOperationsInstrumentedTest {
         assertTrue(slots[0] is QuickLaunchSlot.Folder)
         val folder = slots[0] as QuickLaunchSlot.Folder
         assertEquals("Work", folder.name)
-        assertEquals(listOf("com.a"), folder.apps)
+        assertEquals(listOf("com.a"), folder.packageNames())
+    }
+
+    @Test
+    fun mergeTimedAppIntoFolder_persistsLimitMinutes() = runBlocking {
+        repo.addIntentFolder("Work")
+        repo.mergePackageIntoQuickLaunchAt(0, "com.timed", limitMinutes = 7)
+        repo.mergePackageIntoQuickLaunchAt(0, "com.unlimited", limitMinutes = null)
+
+        val folder = repo.quickLaunchSlots().first() as QuickLaunchSlot.Folder
+        assertEquals(7, folder.limitMinutesFor("com.timed"))
+        assertEquals(null, folder.limitMinutesFor("com.unlimited"))
+        assertEquals(listOf("com.unlimited"), folder.flattenAllowedPackages())
     }
 
     @Test
@@ -59,8 +71,8 @@ class SlotFolderOperationsInstrumentedTest {
         assertEquals(2, slots.size)
         assertTrue(slots[0] is QuickLaunchSlot.Folder)
         assertTrue(slots[1] is QuickLaunchSlot.Folder)
-        assertEquals(listOf("com.a"), (slots[0] as QuickLaunchSlot.Folder).apps)
-        assertEquals(listOf("com.b"), (slots[1] as QuickLaunchSlot.Folder).apps)
+        assertEquals(listOf("com.a"), (slots[0] as QuickLaunchSlot.Folder).packageNames())
+        assertEquals(listOf("com.b"), (slots[1] as QuickLaunchSlot.Folder).packageNames())
     }
 
     @Test

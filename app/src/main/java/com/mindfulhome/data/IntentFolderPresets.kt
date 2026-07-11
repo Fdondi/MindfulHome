@@ -121,7 +121,7 @@ object IntentFolderPresets {
     fun buildInitialSlots(installedPackages: Set<String>): List<QuickLaunchSlot.Folder> =
         all.map { preset ->
             val apps = installedPackages.filter { packageMatchesPreset(it, preset) }.distinct()
-            QuickLaunchSlot.Folder(preset.name, apps, preset.symbolIconName)
+            QuickLaunchSlot.Folder(preset.name, apps.toUnlimitedFolderApps(), preset.symbolIconName)
         }
 
     fun applyMissingPresetSymbols(slots: List<QuickLaunchSlot>): List<QuickLaunchSlot> =
@@ -154,7 +154,7 @@ object IntentFolderPresets {
                         val existing = presetSlots[name]!!
                         val preset = all.firstOrNull { it.name == name }
                         presetSlots[name] = existing.copy(
-                            apps = (existing.apps + slot.apps).distinct(),
+                            apps = mergeFolderApps(existing.apps, slot.apps),
                             symbolIconName = existing.symbolIconName
                                 ?: slot.symbolIconName
                                 ?: preset?.symbolIconName,
@@ -163,7 +163,7 @@ object IntentFolderPresets {
                         val preset = all.firstOrNull { it.name == name }
                         presetSlots[name] = QuickLaunchSlot.Folder(
                             name,
-                            (presetSlots[name]?.apps.orEmpty() + slot.apps).distinct(),
+                            mergeFolderApps(presetSlots[name]?.apps.orEmpty(), slot.apps),
                             slot.symbolIconName ?: preset?.symbolIconName,
                         )
                     } else {
@@ -178,7 +178,7 @@ object IntentFolderPresets {
 
         if (utilApps.isNotEmpty()) {
             val util = presetSlots["Util"]!!
-            presetSlots["Util"] = util.copy(apps = (util.apps + utilApps).distinct())
+            presetSlots["Util"] = util.copy(apps = mergeFolderApps(util.apps, utilApps.toUnlimitedFolderApps()))
         }
 
         return all.mapNotNull { preset -> presetSlots[preset.name] }
@@ -193,8 +193,10 @@ object IntentFolderPresets {
         val preset = presetForPackage(packageName)
         if (preset != null) {
             val existing = presetSlots[preset.name]!!
-            if (packageName !in existing.apps) {
-                presetSlots[preset.name] = existing.copy(apps = existing.apps + packageName)
+            if (packageName !in existing.packageNames()) {
+                presetSlots[preset.name] = existing.copy(
+                    apps = existing.apps + QuickLaunchFolderApp.unlimited(packageName),
+                )
             }
         } else {
             utilApps.add(packageName)

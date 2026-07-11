@@ -9,7 +9,14 @@ class AppSlotPlacementTest {
     fun placementsByPackage_listsRootAndMultipleFolderEntries() {
         val slots = listOf(
             QuickLaunchSlot.Single("com.a"),
-            QuickLaunchSlot.Folder("F", listOf("com.a", "com.b"), "star"),
+            QuickLaunchSlot.Folder(
+                "F",
+                listOf(
+                    QuickLaunchFolderApp.unlimited("com.a"),
+                    QuickLaunchFolderApp.unlimited("com.b"),
+                ),
+                "star",
+            ),
         )
         val m = placementsByPackage(slots)
         assertEquals(

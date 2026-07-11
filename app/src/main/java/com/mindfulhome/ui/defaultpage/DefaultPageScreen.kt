@@ -71,7 +71,7 @@ private data class TodoEditorState(
 @Composable
 fun DefaultPageScreen(
     repository: AppRepository,
-    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
     resumeSessionLabel: String? = null,
     resumeSessionMinutes: Int = 0,
     onResumeSession: (() -> Unit)? = null,

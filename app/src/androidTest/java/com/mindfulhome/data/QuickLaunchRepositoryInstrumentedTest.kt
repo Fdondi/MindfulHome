@@ -43,7 +43,7 @@ class QuickLaunchRepositoryInstrumentedTest {
         val slots = repo.quickLaunchSlots().first()
         val folder = slots.single() as QuickLaunchSlot.Folder
         assertEquals("Label", folder.name)
-        assertEquals(listOf("com.one", "com.two"), folder.apps)
+        assertEquals(listOf("com.one", "com.two"), folder.packageNames())
     }
 
     @Test
@@ -54,7 +54,7 @@ class QuickLaunchRepositoryInstrumentedTest {
         val slots = repo.quickLaunchSlots().first()
         assertEquals(1, slots.size)
         assertTrue(slots[0] is QuickLaunchSlot.Folder)
-        assertEquals(listOf("b"), (slots[0] as QuickLaunchSlot.Folder).apps)
+        assertEquals(listOf("b"), (slots[0] as QuickLaunchSlot.Folder).packageNames())
     }
 
     @Test
@@ -63,7 +63,7 @@ class QuickLaunchRepositoryInstrumentedTest {
         repo.addToQuickLaunch("second")
         repo.moveQuickLaunchSlot(fromUiIndex = 0, toUiIndex = 1)
         val slots = repo.quickLaunchSlots().first()
-        assertEquals(listOf("second"), (slots[0] as QuickLaunchSlot.Folder).apps)
-        assertEquals(listOf("first"), (slots[1] as QuickLaunchSlot.Folder).apps)
+        assertEquals(listOf("second"), (slots[0] as QuickLaunchSlot.Folder).packageNames())
+        assertEquals(listOf("first"), (slots[1] as QuickLaunchSlot.Folder).packageNames())
     }
 }

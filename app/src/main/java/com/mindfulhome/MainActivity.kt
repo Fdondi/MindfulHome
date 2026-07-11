@@ -246,8 +246,8 @@ class MainActivity : ComponentActivity() {
                         }
                         DefaultPageScreen(
                             repository = repository,
-                            onQuickLaunchApp = { packageName, quickLaunchPackages ->
-                                launchQuickStart(packageName, quickLaunchPackages)
+                            onQuickLaunchApp = { packageName, quickLaunchPackages, limitMinutes ->
+                                launchQuickStart(packageName, quickLaunchPackages, limitMinutes)
                             },
                             resumeSessionLabel = savedAppLabel,
                             resumeSessionMinutes = savedSession?.remainingMinutes ?: 0,
@@ -797,7 +797,12 @@ class MainActivity : ComponentActivity() {
     private fun launchQuickStart(
         packageName: String,
         quickLaunchPackages: Set<String>,
+        limitMinutes: Int? = null,
     ) {
+        if (limitMinutes != null) {
+            launchTimedQuickStart(packageName, limitMinutes)
+            return
+        }
         shouldShowTimer = false
         unlockReason = ""
         val handle = ensureSessionHandle()
@@ -816,6 +821,38 @@ class MainActivity : ComponentActivity() {
             this,
             initialPackageName = packageName,
             allowedQuickLaunchPackages = quickLaunchPackages.toList(),
+            sessionHandle = handle,
+        )
+        TimerService.trackApp(this, ownerPackage, handle)
+        if (QuickLaunchAppRef.isShortcutKey(packageName)) {
+            lifecycleScope.launch {
+                val shortcut = repository.findPinnedShortcutByLaunchKey(packageName)
+                PackageManagerHelper.launchApp(this@MainActivity, packageName, shortcut)
+            }
+        } else {
+            PackageManagerHelper.launchApp(this, packageName)
+        }
+    }
+
+    private fun launchTimedQuickStart(packageName: String, durationMinutes: Int) {
+        shouldShowTimer = false
+        unlockReason = ""
+        val handle = ensureSessionHandle()
+        val ownerPackage = QuickLaunchAppRef.ownerPackage(packageName)
+        val appLabel = try {
+            val appInfo = packageManager.getApplicationInfo(ownerPackage, 0)
+            packageManager.getApplicationLabel(appInfo).toString()
+        } catch (_: Exception) {
+            packageName
+        }
+        SessionLogger.log(
+            handle,
+            "Timed Quick Start launched: **$appLabel** (`$packageName`) - **$durationMinutes min**",
+        )
+        TimerService.start(
+            context = this,
+            durationMinutes = durationMinutes,
+            packageName = ownerPackage,
             sessionHandle = handle,
         )
         TimerService.trackApp(this, ownerPackage, handle)

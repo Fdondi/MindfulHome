@@ -43,7 +43,7 @@ enum class AppSlotStripKind {
 fun AppSlotStripSection(
     repository: AppRepository,
     kind: AppSlotStripKind,
-    onLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
+    onLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
     modifier: Modifier = Modifier,
     onAppSlotBounds: (uiIndex: Int, topLeft: Offset, size: Size) -> Unit = { _, _, _ -> },
     maxRows: Int? = null,
@@ -95,7 +95,7 @@ fun AppSlotStripSection(
             }
             is QuickLaunchSlot.Folder -> {
                 val map = installedApps.associateBy { it.packageName }
-                val apps = slot.apps.mapNotNull { map[it] }
+                val apps = slot.apps.mapNotNull { map[it.packageName] }
                 folderToShow = when {
                     apps.isEmpty() -> null
                     apps.size <= 1 -> null
@@ -119,7 +119,7 @@ fun AppSlotStripSection(
                     QuickLaunchSlotUi(apps = listOf(app), folderName = null)
                 }
                 is QuickLaunchSlot.Folder -> {
-                    val apps = slot.apps.mapNotNull { map[it] }
+                    val apps = slot.apps.mapNotNull { map[it.packageName] }
                     if (apps.isEmpty()) return@mapNotNull null
                     QuickLaunchSlotUi(
                         apps = apps,
@@ -165,7 +165,9 @@ fun AppSlotStripSection(
         QuickLaunchWrappedRow(
             slots = slotUiRows,
             quickLaunchPackages = stripPackages,
-            onQuickLaunchApp = onLaunchApp,
+            onQuickLaunchApp = { packageName, allowed, limitMinutes ->
+                onLaunchApp(packageName, allowed, limitMinutes)
+            },
             onAddQuickLaunch = {
                 addDialogFolderSlotIndex = null
                 showAddDialog = true
@@ -265,7 +267,7 @@ fun AppSlotStripSection(
             },
             onLaunchApp = { app ->
                 folderToShow = null
-                onLaunchApp(app.packageName, stripPackages)
+                onLaunchApp(app.packageName, stripPackages, null)
             },
             onDragRemove = { app ->
                 scope.launch {

@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -21,6 +22,11 @@ internal object QuickLaunchJson {
 
     fun encodeIntentSlots(slots: List<QuickLaunchSlot>): String = encodeSlots(slots, intentMode = true)
 
+    private fun encodeFolderApp(app: QuickLaunchFolderApp): JsonObject = buildJsonObject {
+        put("pkg", app.packageName)
+        app.limitMinutes?.let { put("limitMinutes", it) }
+    }
+
     private fun encodeSlots(slots: List<QuickLaunchSlot>, intentMode: Boolean): String = buildJsonArray {
         for (slot in slots) {
             when (slot) {
@@ -28,7 +34,14 @@ internal object QuickLaunchJson {
                     if (intentMode) {
                         add(
                             buildJsonObject {
-                                put("apps", JsonArray(listOf(JsonPrimitive(slot.packageName))))
+                                put(
+                                    "apps",
+                                    JsonArray(
+                                        listOf(
+                                            JsonPrimitive(slot.packageName),
+                                        ),
+                                    ),
+                                )
                             },
                         )
                     } else {
@@ -43,7 +56,15 @@ internal object QuickLaunchJson {
                         if (sym != null) put("symbolIcon", sym)
                         put(
                             "apps",
-                            JsonArray(slot.apps.map { JsonPrimitive(it) }),
+                            JsonArray(
+                                slot.apps.map { app ->
+                                    if (app.isUnlimited) {
+                                        JsonPrimitive(app.packageName)
+                                    } else {
+                                        encodeFolderApp(app)
+                                    }
+                                },
+                            ),
                         )
                         if (slot.shortcuts.isNotEmpty()) {
                             put(
@@ -70,6 +91,26 @@ internal object QuickLaunchJson {
 
     fun decodeIntentSlots(raw: String?): List<QuickLaunchSlot> = decodeSlots(raw, intentMode = true)
 
+    private fun decodeFolderApp(el: kotlinx.serialization.json.JsonElement): QuickLaunchFolderApp? {
+        return when {
+            el is JsonPrimitive && el.isString -> {
+                val pkg = el.content.trim()
+                if (pkg.isBlank()) null else QuickLaunchFolderApp.unlimited(pkg)
+            }
+            el is JsonObject -> {
+                val pkg = el["pkg"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+                if (pkg.isBlank()) return null
+                val limit = el["limitMinutes"]?.jsonPrimitive?.intOrNull
+                if (limit != null && limit > 0) {
+                    QuickLaunchFolderApp.timed(pkg, limit)
+                } else {
+                    QuickLaunchFolderApp.unlimited(pkg)
+                }
+            }
+            else -> null
+        }
+    }
+
     private fun decodeSlots(raw: String?, intentMode: Boolean): List<QuickLaunchSlot> {
         if (raw.isNullOrBlank()) return emptyList()
         val arr = try {
@@ -82,9 +123,8 @@ internal object QuickLaunchJson {
                 el is JsonPrimitive && el.isString ->
                     QuickLaunchSlot.Single(el.content)
                 el is JsonObject -> {
-                    val apps = el["apps"]?.jsonArray?.map { it.jsonPrimitive.content }
-                        ?.filter { it.isNotBlank() }
-                        ?.distinct()
+                    val apps = el["apps"]?.jsonArray?.mapNotNull { decodeFolderApp(it) }
+                        ?.let { normalizeFolderApps(it) }
                         ?: emptyList()
                     val name = el["name"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
                     val symbolIcon =
@@ -102,7 +142,7 @@ internal object QuickLaunchJson {
                         apps.isEmpty() && shortcuts.isEmpty() && name == null -> return@mapNotNull null
                         intentMode || apps.size != 1 || name != null || shortcuts.isNotEmpty() ->
                             QuickLaunchSlot.Folder(name, apps, symbolIcon, shortcuts)
-                        else -> QuickLaunchSlot.Single(apps[0])
+                        else -> QuickLaunchSlot.Single(apps[0].packageName)
                     }
                 }
                 else -> null

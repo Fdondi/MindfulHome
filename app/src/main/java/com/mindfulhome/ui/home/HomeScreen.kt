@@ -375,7 +375,7 @@ fun HomeScreen(
                     AppSlotStripSection(
                         repository = repository,
                         kind = AppSlotStripKind.Favorites,
-                        onLaunchApp = { pkg, _ ->
+                        onLaunchApp = { pkg, _, _ ->
                             allApps.find { it.packageName == pkg }?.let { handleAppTap(it) }
                         },
                         modifier = Modifier.fillMaxWidth(),

@@ -9,7 +9,7 @@ import com.mindfulhome.data.AppRepository
 @Composable
 fun QuickLaunchSection(
     repository: AppRepository,
-    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>) -> Unit,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
     modifier: Modifier = Modifier,
     onAppSlotBounds: (uiIndex: Int, topLeft: Offset, size: Size) -> Unit = { _, _, _ -> },
 ) {
