@@ -11,7 +11,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.os.IBinder
-import android.os.Process
 import android.text.format.DateFormat
 import android.util.Log
 import android.view.inputmethod.InputMethodManager
@@ -60,6 +59,10 @@ class TimerService : Service() {
     private var quickLaunchExitCandidateKarmaScore: Int = 0
     private val quickLaunchExitResumeByPackage = mutableMapOf<String, QuickLaunchExitSnapshot>()
     private var lastQuickLaunchNotificationText: String? = null
+    /** Foreground app currently shown in the Quick Launch monitoring notification (even when allowed/ignored). */
+    private var quickLaunchDetectedPackage: String = ""
+    private var quickLaunchDetectedLabel: String = ""
+    private var quickLaunchDetectedStatus: String = "Quick Launch active - monitoring app switches"
     private var quickLaunchFrameSuppressedForSensitiveApp: Boolean = false
     /** Green/yellow/red segment length for the Quick Launch overlay; shorter when the exit app has negative karma. */
     private var quickLaunchSemaphorePhaseMs: Long = 20_000L
@@ -396,42 +399,91 @@ class TimerService : Service() {
 
     private fun maybeForceTimerForQuickLaunchSwitch(packageName: String) {
         if (!SettingsManager.isQuickLaunchSessionActive(this)) return
-
-        val allowedPackages = SettingsManager.getQuickLaunchPackages(this) + this.packageName
-        val isAllowedQuickLaunchPackage = packageName in allowedPackages
-        val isSystemUtilityPackage = isSystemOrUtilityPackage(packageName)
-        val now = System.currentTimeMillis()
-        if (isAllowedQuickLaunchPackage || isSystemUtilityPackage) {
-            clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
-            if (isAllowedQuickLaunchPackage) {
-                Log.v(TAG, "quick-launch app allowed: $packageName")
-            } else {
-                Log.v(TAG, "quick-launch system/utility app ignored: $packageName")
-            }
-            return
-        }
         if (packageName.isBlank()) return
 
-        if (quickLaunchExitCandidatePackage != packageName) {
-            rememberQuickLaunchExitProgress(now)
-            quickLaunchExitCandidatePackage = packageName
-            quickLaunchExitCandidateLabel = getAppLabel(packageName)
-            quickLaunchExitDeadlineMs = 0L
-            cancelQuickLaunchExitDeadlineJob()
-            val appLabel = quickLaunchExitCandidateLabel ?: packageName
-            serviceScope.launch {
-                configureQuickLaunchExitGrace(packageName, now)
+        val label = getAppLabel(packageName)
+        val allowedPackages = SettingsManager.getQuickLaunchPackages(this) + this.packageName
+        val utilityReason = systemOrUtilityReason(packageName)
+        val now = System.currentTimeMillis()
+
+        when {
+            packageName in allowedPackages -> {
+                clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
+                rememberQuickLaunchDetection(
+                    packageName = packageName,
+                    label = label,
+                    status = "Detected $label — allowed Quick Launch app",
+                )
+                Log.v(TAG, "quick-launch app allowed: $packageName")
+                logDeveloperQuickLaunch(
+                    "detected package=$packageName label=$label decision=allowed reason=in_quick_launch_allowlist allowlistSize=${allowedPackages.size}",
+                )
+                refreshQuickLaunchMonitoringNotification()
             }
-            logWithSession(
-                "Quick Launch switch observed: **$appLabel** — green → yellow → red, then return to timer"
-            )
-            logSessionEvent(
-                "Quick Launch grace window started for package=$packageName"
-            )
-            refreshQuickLaunchMonitoringNotification()
-            return
+            utilityReason != null -> {
+                clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
+                rememberQuickLaunchDetection(
+                    packageName = packageName,
+                    label = label,
+                    status = "Detected $label — ignored ($utilityReason)",
+                )
+                Log.v(TAG, "quick-launch system/utility app ignored: $packageName ($utilityReason)")
+                logDeveloperQuickLaunch(
+                    "detected package=$packageName label=$label decision=ignored reason=$utilityReason",
+                )
+                refreshQuickLaunchMonitoringNotification()
+            }
+            quickLaunchExitCandidatePackage != packageName -> {
+                rememberQuickLaunchExitProgress(now)
+                quickLaunchExitCandidatePackage = packageName
+                quickLaunchExitCandidateLabel = label
+                quickLaunchExitDeadlineMs = 0L
+                cancelQuickLaunchExitDeadlineJob()
+                rememberQuickLaunchDetection(
+                    packageName = packageName,
+                    label = label,
+                    status = "Detected $label — starting grace",
+                )
+                serviceScope.launch {
+                    configureQuickLaunchExitGrace(packageName, now)
+                }
+                logWithSession(
+                    "Quick Launch switch observed: **$label** — green → yellow → red, then return to timer"
+                )
+                logSessionEvent(
+                    "Quick Launch grace window started for package=$packageName"
+                )
+                logDeveloperQuickLaunch(
+                    "detected package=$packageName label=$label decision=monitor reason=not_allowed_not_utility starting_grace=true",
+                )
+                refreshQuickLaunchMonitoringNotification()
+            }
+            else -> {
+                rememberQuickLaunchDetection(
+                    packageName = packageName,
+                    label = label,
+                    status = "Detected $label — monitoring",
+                )
+                logDeveloperQuickLaunch(
+                    "detected package=$packageName label=$label decision=monitor reason=same_exit_candidate enforcing_if_due=true",
+                )
+                enforceQuickLaunchExitIfDue(now)
+                refreshQuickLaunchMonitoringNotification()
+            }
         }
-        enforceQuickLaunchExitIfDue(now)
+    }
+
+    private fun rememberQuickLaunchDetection(packageName: String, label: String, status: String) {
+        quickLaunchDetectedPackage = packageName
+        quickLaunchDetectedLabel = label
+        quickLaunchDetectedStatus = status
+    }
+
+    private fun logDeveloperQuickLaunch(event: String) {
+        if (!SettingsManager.isDeveloperLogsEnabled(this)) return
+        val entry = "[DEV][quick-launch] $event"
+        Log.d(TAG, entry)
+        SessionLogger.log(logSessionHandle ?: SessionLogger.getActiveSessionHandle(), entry)
     }
 
     private suspend fun configureQuickLaunchExitGrace(packageName: String, nowMs: Long) {
@@ -468,12 +520,18 @@ class TimerService : Service() {
                 logSessionEvent(
                     "Quick Launch grace resumed for package=$packageName (wall-clock deadline preserved)"
                 )
+                logDeveloperQuickLaunch(
+                    "grace resumed package=$packageName karma=${existingSnapshot.karmaScore} phaseMs=${existingSnapshot.phaseMs} deadlineMs=${existingSnapshot.deadlineMs} remainingMs=${existingSnapshot.deadlineMs - nowMs}",
+                )
                 scheduleQuickLaunchExitEnforcement(packageName)
                 refreshQuickLaunchMonitoringNotification()
                 return
             }
             logSessionEvent(
                 "Quick Launch grace expired for package=$packageName while away — enforcing exit"
+            )
+            logDeveloperQuickLaunch(
+                "grace expired_while_away package=$packageName karma=${existingSnapshot.karmaScore} enforcing_exit=true",
             )
             quickLaunchExitDeadlineMs = existingSnapshot.deadlineMs
             quickLaunchSemaphorePhaseMs = existingSnapshot.phaseMs
@@ -492,6 +550,9 @@ class TimerService : Service() {
             deadlineMs = quickLaunchExitDeadlineMs,
             phaseMs = phaseMs,
             karmaScore = k.karmaScore,
+        )
+        logDeveloperQuickLaunch(
+            "grace configured package=$packageName karma=${k.karmaScore} optedOut=${k.isOptedOut} phaseMs=$phaseMs graceMs=$graceMs deadlineMs=$quickLaunchExitDeadlineMs",
         )
         scheduleQuickLaunchExitEnforcement(packageName)
         refreshQuickLaunchMonitoringNotification()
@@ -552,40 +613,54 @@ class TimerService : Service() {
         )
     }
 
-    private fun isSystemOrUtilityPackage(packageName: String): Boolean {
-        if (packageName.isBlank()) return false
-        if (packageName == this.packageName) return true
+    private fun isSystemOrUtilityPackage(packageName: String): Boolean =
+        systemOrUtilityReason(packageName) != null
+
+    /**
+     * @return human-readable reason if [packageName] should be ignored during Quick Launch,
+     * or null if it should be monitored as a normal app switch.
+     */
+    private fun systemOrUtilityReason(packageName: String): String? {
+        if (packageName.isBlank()) return null
+        if (packageName == this.packageName) return "self"
         // Keyboards (IMEs) surface as window changes but the user never "left" the current app.
-        if (isInputMethodPackage(packageName)) return true
+        if (isInputMethodPackage(packageName)) return "keyboard/IME"
 
         val normalized = packageName.lowercase()
-        if (
-            normalized in QUICK_LAUNCH_UTILITY_PACKAGES_EXACT ||
-            QUICK_LAUNCH_UTILITY_PACKAGE_PREFIXES.any { normalized.startsWith(it) } ||
-            QUICK_LAUNCH_UTILITY_PACKAGE_KEYWORDS.any { normalized.contains(it) }
-        ) {
-            return true
+        if (normalized in QUICK_LAUNCH_UTILITY_PACKAGES_EXACT) {
+            return "utility exact package"
+        }
+        val matchedPrefix = QUICK_LAUNCH_UTILITY_PACKAGE_PREFIXES.firstOrNull { normalized.startsWith(it) }
+        if (matchedPrefix != null) {
+            return "utility package prefix=$matchedPrefix"
+        }
+        val matchedKeyword = QUICK_LAUNCH_UTILITY_PACKAGE_KEYWORDS.firstOrNull { normalized.contains(it) }
+        if (matchedKeyword != null) {
+            return "utility package keyword=$matchedKeyword"
         }
         val label = getAppLabel(packageName).lowercase()
-        if (QUICK_LAUNCH_UTILITY_LABEL_KEYWORDS.any { label.contains(it) }) {
-            return true
+        val matchedLabel = QUICK_LAUNCH_UTILITY_LABEL_KEYWORDS.firstOrNull { label.contains(it) }
+        if (matchedLabel != null) {
+            return "utility label keyword=$matchedLabel"
         }
 
+        // Do NOT treat FLAG_SYSTEM / FLAG_UPDATED_SYSTEM_APP as "utility".
+        // OEM-preinstalled apps (Instagram, etc.) carry those flags and must still be monitored.
+        // Keyboards are already filtered via isInputMethodPackage; camera/gallery/files via the
+        // lists above. Only skip image/video category apps (share-sheet pickers / media UIs).
         return try {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            val isSystemApp =
-                (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
-                    (appInfo.flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0 ||
-                    appInfo.uid < Process.FIRST_APPLICATION_UID
-            val isMediaCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                appInfo.category == ApplicationInfo.CATEGORY_IMAGE ||
-                    appInfo.category == ApplicationInfo.CATEGORY_VIDEO
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                when (appInfo.category) {
+                    ApplicationInfo.CATEGORY_IMAGE -> "media category=IMAGE"
+                    ApplicationInfo.CATEGORY_VIDEO -> "media category=VIDEO"
+                    else -> null
+                }
             } else {
-                false
+                null
             }
-            isSystemApp || isMediaCategory
         } catch (_: Exception) {
-            false
+            null
         }
     }
 
@@ -734,9 +809,7 @@ class TimerService : Service() {
             maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
         }
         evaluateQuickLaunchExitProgress(foregroundPackage)
-        if (quickLaunchExitCandidatePackage != null) {
-            refreshQuickLaunchMonitoringNotification()
-        }
+        refreshQuickLaunchMonitoringNotification()
     }
 
     /**
@@ -754,9 +827,7 @@ class TimerService : Service() {
             maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
         }
         evaluateQuickLaunchExitProgress(foregroundPackage)
-        if (quickLaunchExitCandidatePackage != null) {
-            refreshQuickLaunchMonitoringNotification()
-        }
+        refreshQuickLaunchMonitoringNotification()
     }
 
     private fun extendTimer(extraMinutes: Int): Boolean {
@@ -1746,10 +1817,16 @@ class TimerService : Service() {
     private fun buildQuickLaunchMonitoringStatusText(): String {
         val candidatePackage = quickLaunchExitCandidatePackage
         if (candidatePackage.isNullOrBlank() || quickLaunchExitDeadlineMs <= 0L) {
-            return DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT
+            return if (quickLaunchDetectedPackage.isNotBlank()) {
+                quickLaunchDetectedStatus
+            } else {
+                DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT
+            }
         }
 
-        val candidateLabel = quickLaunchExitCandidateLabel ?: getAppLabel(candidatePackage)
+        val candidateLabel = quickLaunchExitCandidateLabel
+            ?: quickLaunchDetectedLabel.takeIf { quickLaunchDetectedPackage == candidatePackage }
+            ?: getAppLabel(candidatePackage)
         val phaseMs = quickLaunchSemaphorePhaseMs
         val elapsedMs = if (quickLaunchExitDeadlineMs > 0L) {
             (phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES) -
