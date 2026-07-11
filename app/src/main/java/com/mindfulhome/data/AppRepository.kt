@@ -399,6 +399,25 @@ class AppRepository(private val database: AppDatabase) {
         persistQuickLaunch(slots)
     }
 
+    suspend fun setQuickLaunchAppLimitAt(
+        uiIndex: Int,
+        packageName: String,
+        limitMinutes: Int?,
+    ) {
+        if (packageName.isBlank()) return
+        val slots = quickLaunchSnapshot().toMutableList()
+        if (uiIndex !in slots.indices) return
+        val slot = slots[uiIndex] as? QuickLaunchSlot.Folder ?: return
+        if (packageName !in slot.packageNames()) return
+        val updatedApps = slot.apps.map { app ->
+            if (app.packageName != packageName) app
+            else if (limitMinutes == null) QuickLaunchFolderApp.unlimited(packageName)
+            else QuickLaunchFolderApp.timed(packageName, limitMinutes)
+        }
+        slots[uiIndex] = slot.copy(apps = updatedApps)
+        persistQuickLaunch(slots)
+    }
+
     suspend fun quickLaunchLimitMinutesFor(packageName: String): Int? {
         if (packageName.isBlank()) return null
         val owner = com.mindfulhome.util.QuickLaunchAppRef.ownerPackage(packageName)

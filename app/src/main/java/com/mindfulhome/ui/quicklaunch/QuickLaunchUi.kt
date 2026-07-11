@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -49,9 +50,11 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.icons.MaterialFolderWithSymbolOverlay
@@ -75,7 +78,11 @@ data class QuickLaunchFolderOpen(
     val apps: List<AppInfo>,
     val folderName: String?,
     val folderSymbolIconName: String? = null,
+    /** null value = unlimited; absent key should not occur for listed apps. */
+    val appLimitsByPackage: Map<String, Int?> = emptyMap(),
 )
+
+fun formatFolderAppLimitBadge(limitMinutes: Int): String = "${limitMinutes}m"
 
 enum class QuickLaunchTileContent {
     AppIcons,
@@ -234,31 +241,34 @@ fun QuickLaunchFolderBody(
     apps: List<AppInfo>,
     onLaunchApp: (AppInfo) -> Unit,
     onDragRemove: (AppInfo) -> Unit,
-    onDragExtractToOwnSlot: (AppInfo) -> Unit,
+    onDragExtractToOwnSlot: (AppInfo) -> Unit = {},
     dragHintText: String = "Drop on → exit folder, or ✕ to remove from QuickLaunch",
     removeDropContentDescription: String = "Drop to remove from QuickLaunch",
     onAddAppsClick: (() -> Unit)? = null,
     addAppsContentDescription: String = "Add app to folder",
+    appLimitsByPackage: Map<String, Int?> = emptyMap(),
+    onEditAppLimit: ((AppInfo) -> Unit)? = null,
 ) {
     val appCoords = remember { mutableStateMapOf<String, LayoutCoordinates>() }
     var draggingPackage by remember { mutableStateOf<String?>(null) }
     var lastPointerInRoot by remember { mutableStateOf(Offset.Zero) }
+    var secondaryDropZoneBounds by remember { mutableStateOf<Rect?>(null) }
     var removeZoneBounds by remember { mutableStateOf<Rect?>(null) }
-    var extractZoneBounds by remember { mutableStateOf<Rect?>(null) }
+    var hoveringSecondaryDrop by remember { mutableStateOf(false) }
     var hoveringRemove by remember { mutableStateOf(false) }
-    var hoveringExtract by remember { mutableStateOf(false) }
+    val useEditTimerDrop = onEditAppLimit != null
 
     fun appByPackage(pkg: String) = apps.firstOrNull { it.packageName == pkg }
 
     fun updateFolderHover() {
         val finger = lastPointerInRoot
         if (draggingPackage == null) {
+            hoveringSecondaryDrop = false
             hoveringRemove = false
-            hoveringExtract = false
             return
         }
         hoveringRemove = removeZoneBounds?.contains(finger) == true
-        hoveringExtract = extractZoneBounds?.contains(finger) == true && !hoveringRemove
+        hoveringSecondaryDrop = secondaryDropZoneBounds?.contains(finger) == true && !hoveringRemove
     }
 
     val draggedApp = draggingPackage?.let { appByPackage(it) }
@@ -305,7 +315,7 @@ fun QuickLaunchFolderBody(
                                         onDragCancel = {
                                             draggingPackage = null
                                             hoveringRemove = false
-                                            hoveringExtract = false
+                                            hoveringSecondaryDrop = false
                                         },
                                         onDragEnd = {
                                             val draggedPkg = draggingPackage
@@ -313,13 +323,18 @@ fun QuickLaunchFolderBody(
                                             val droppedApp = appByPackage(draggedPkg)
                                             draggingPackage = null
                                             hoveringRemove = false
-                                            hoveringExtract = false
+                                            hoveringSecondaryDrop = false
                                             if (droppedApp == null) return@detectDragGesturesAfterLongPress
                                             when {
                                                 removeZoneBounds?.contains(lastPointerInRoot) == true ->
                                                     onDragRemove(droppedApp)
-                                                extractZoneBounds?.contains(lastPointerInRoot) == true ->
-                                                    onDragExtractToOwnSlot(droppedApp)
+                                                secondaryDropZoneBounds?.contains(lastPointerInRoot) == true -> {
+                                                    if (useEditTimerDrop) {
+                                                        onEditAppLimit(droppedApp)
+                                                    } else {
+                                                        onDragExtractToOwnSlot(droppedApp)
+                                                    }
+                                                }
                                                 else -> { /* no drop */ }
                                             }
                                         },
@@ -338,19 +353,42 @@ fun QuickLaunchFolderBody(
                                     if (draggingPackage != null) updateFolderHover()
                                 },
                             ) {
+                                val limitMinutes = appLimitsByPackage[pkg]
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    if (app.icon != null) {
-                                        Image(
-                                            painter = rememberDrawablePainter(app.icon),
-                                            contentDescription = app.label,
-                                            modifier = Modifier
-                                                .size(42.dp)
-                                                .then(
-                                                    if (draggingPackage == pkg) Modifier.alpha(0.22f) else Modifier,
-                                                ),
-                                        )
-                                    } else {
-                                        Spacer(modifier = Modifier.size(42.dp))
+                                    Box(modifier = Modifier.size(42.dp)) {
+                                        if (app.icon != null) {
+                                            Image(
+                                                painter = rememberDrawablePainter(app.icon),
+                                                contentDescription = app.label,
+                                                modifier = Modifier
+                                                    .size(42.dp)
+                                                    .then(
+                                                        if (draggingPackage == pkg) {
+                                                            Modifier.alpha(0.22f)
+                                                        } else {
+                                                            Modifier
+                                                        },
+                                                    ),
+                                            )
+                                        }
+                                        if (limitMinutes != null) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.TopStart)
+                                                    .offset(x = (-3).dp, y = (-3).dp)
+                                                    .background(Color.Red, RoundedCornerShape(3.dp))
+                                                    .padding(horizontal = 2.dp, vertical = 1.dp),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Text(
+                                                    text = formatFolderAppLimitBadge(limitMinutes),
+                                                    color = Color.White,
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1,
+                                                )
+                                            }
+                                        }
                                     }
                                     Spacer(modifier = Modifier.height(2.dp))
                                     Text(
@@ -396,7 +434,7 @@ fun QuickLaunchFolderBody(
                     Box(
                         modifier = Modifier
                             .onGloballyPositioned { coords ->
-                                extractZoneBounds = Rect(
+                                secondaryDropZoneBounds = Rect(
                                     coords.positionInRoot(),
                                     Size(coords.size.width.toFloat(), coords.size.height.toFloat()),
                                 )
@@ -408,7 +446,7 @@ fun QuickLaunchFolderBody(
                             modifier = Modifier
                                 .size(48.dp)
                                 .background(
-                                    if (hoveringExtract) {
+                                    if (hoveringSecondaryDrop) {
                                         MaterialTheme.colorScheme.primaryContainer
                                     } else {
                                         MaterialTheme.colorScheme.surfaceVariant
@@ -417,15 +455,27 @@ fun QuickLaunchFolderBody(
                                 ),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = "Drop to move out of folder",
-                                tint = if (hoveringExtract) {
-                                    MaterialTheme.colorScheme.onPrimaryContainer
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                            )
+                            if (useEditTimerDrop) {
+                                Icon(
+                                    Icons.Outlined.Timer,
+                                    contentDescription = "Drop to edit timer",
+                                    tint = if (hoveringSecondaryDrop) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            } else {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.ArrowForward,
+                                    contentDescription = "Drop to move out of folder",
+                                    tint = if (hoveringSecondaryDrop) {
+                                        MaterialTheme.colorScheme.onPrimaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                )
+                            }
                         }
                     }
                     Box(

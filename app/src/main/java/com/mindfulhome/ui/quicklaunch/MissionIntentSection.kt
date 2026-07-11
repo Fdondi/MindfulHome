@@ -52,6 +52,7 @@ fun MissionIntentSection(
     var showAddDialog by remember { mutableStateOf(false) }
     var addDialogFolderSlotIndex by remember { mutableStateOf<Int?>(null) }
     var pendingFolderApp by remember { mutableStateOf<AppInfo?>(null) }
+    var editingFolderApp by remember { mutableStateOf<AppInfo?>(null) }
     var showNewIntentDialog by remember { mutableStateOf(false) }
     var newIntentName by remember { mutableStateOf("") }
     var folderToShow by remember { mutableStateOf<QuickLaunchFolderOpen?>(null) }
@@ -90,6 +91,7 @@ fun MissionIntentSection(
                     apps,
                     slot.name,
                     slot.symbolIconName,
+                    slot.apps.associate { it.packageName to it.limitMinutes },
                 )
             }
         }
@@ -281,6 +283,26 @@ fun MissionIntentSection(
         )
     }
 
+    editingFolderApp?.let { app ->
+        val folderIdx = folderToShow?.slotIndex
+        val slot = folderIdx?.let { rawSlots.getOrNull(it) as? QuickLaunchSlot.Folder }
+        AddFolderAppDialog(
+            appInfo = app,
+            title = "App limit",
+            confirmLabel = "Save",
+            initialLimitMinutes = slot?.limitMinutesFor(app.packageName),
+            onConfirm = { limitMinutes ->
+                scope.launch {
+                    if (folderIdx != null) {
+                        repository.setQuickLaunchAppLimitAt(folderIdx, app.packageName, limitMinutes)
+                    }
+                    editingFolderApp = null
+                }
+            },
+            onDismiss = { editingFolderApp = null },
+        )
+    }
+
     folderToShow?.let { folder ->
         AppFolderDetailDialog(
             folder = folder,
@@ -311,20 +333,14 @@ fun MissionIntentSection(
                     f.copy(apps = next)
                 }
             },
-            onDragExtractToOwnSlot = { app ->
-                scope.launch { repository.extractQuickLaunchAppToOwnSlot(app.packageName) }
-                folderToShow = folderToShow?.let { f ->
-                    val next = f.apps.filter { it.packageName != app.packageName }
-                    f.copy(apps = next)
-                }
-            },
-            dragHintText = "Drop on → exit folder, or ✕ to remove from folder",
+            dragHintText = "Drop on timer to edit limit, or ✕ to remove from folder",
             removeDropContentDescription = "Drop to remove from folder",
             onAddAppsClick = {
                 addDialogFolderSlotIndex = folder.slotIndex
                 showAddDialog = true
             },
             addAppsContentDescription = "Add app to intent folder",
+            onEditAppLimit = { app -> editingFolderApp = app },
         )
     }
 

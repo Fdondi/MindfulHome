@@ -35,11 +35,12 @@ fun AppFolderDetailDialog(
     onSymbolIconClick: (() -> Unit)? = null,
     onLaunchApp: (AppInfo) -> Unit,
     onDragRemove: (AppInfo) -> Unit,
-    onDragExtractToOwnSlot: (AppInfo) -> Unit,
+    onDragExtractToOwnSlot: (AppInfo) -> Unit = {},
     dragHintText: String,
     removeDropContentDescription: String,
     onAddAppsClick: (() -> Unit)? = null,
     addAppsContentDescription: String = "Add app to folder",
+    onEditAppLimit: ((AppInfo) -> Unit)? = null,
 ) {
     val titleLabel = titleForFolder(folder)
     AlertDialog(
@@ -93,6 +94,8 @@ fun AppFolderDetailDialog(
                 removeDropContentDescription = removeDropContentDescription,
                 onAddAppsClick = onAddAppsClick,
                 addAppsContentDescription = addAppsContentDescription,
+                appLimitsByPackage = folder.appLimitsByPackage,
+                onEditAppLimit = onEditAppLimit,
             )
         },
         confirmButton = {

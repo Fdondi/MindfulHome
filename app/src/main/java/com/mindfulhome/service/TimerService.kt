@@ -233,8 +233,9 @@ class TimerService : Service() {
                     logWithSession("Foreground app detected: **$appLabel** (`$packageName`)")
                 }
                 _currentPackage.value = packageName
-                maybeForceTimerForQuickLaunchSwitch(packageName)
-                evaluateQuickLaunchExitProgress(packageName)
+                serviceScope.launch {
+                    handleForegroundPackage(packageName, packageChanged = true)
+                }
             }
             ACTION_FOREGROUND_APP_CHANGED -> {
                 val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
@@ -796,20 +797,56 @@ class TimerService : Service() {
         }
     }
 
-    private fun runQuickLaunchForegroundProbe(reason: String) {
+    private suspend fun maybeStartTimedQuickLaunchTimer(packageName: String): Boolean {
+        if (packageName.isBlank() || packageName == this.packageName) return false
+        if (systemOrUtilityReason(packageName) != null) return false
+
+        val limitMinutes = repository.quickLaunchLimitMinutesFor(packageName) ?: return false
+
+        when (_timerState.value) {
+            is TimerState.Counting -> return false
+            is TimerState.Expired -> return false
+            is TimerState.Idle -> Unit
+        }
+
+        val label = getAppLabel(packageName)
+        logSessionEvent(
+            "Timed Quick Launch auto-start: $label ($limitMinutes min) package=$packageName",
+        )
+        logWithSession(
+            "Timed app opened externally: **$label** — starting **$limitMinutes min** timer",
+        )
+        startTimer(limitMinutes * 60_000L, packageName, null)
+        return true
+    }
+
+    private suspend fun handleForegroundPackage(packageName: String, packageChanged: Boolean) {
+        if (packageName.isBlank()) return
+        if (packageChanged && maybeStartTimedQuickLaunchTimer(packageName)) {
+            return
+        }
         if (!SettingsManager.isQuickLaunchSessionActive(this)) return
+        if (packageChanged) {
+            maybeForceTimerForQuickLaunchSwitch(packageName)
+        }
+        evaluateQuickLaunchExitProgress(packageName)
+        refreshQuickLaunchMonitoringNotification()
+    }
+
+    private fun runQuickLaunchForegroundProbe(reason: String) {
         UsageTracker.invalidateForegroundCache()
         val foregroundPackage = UsageTracker.getForegroundAppForQuickLaunchMonitor(this)
             ?: quickLaunchLastSeenPackage.ifBlank { _currentPackage.value }
         if (foregroundPackage.isBlank()) return
-        if (foregroundPackage != quickLaunchLastSeenPackage) {
+        val packageChanged = foregroundPackage != quickLaunchLastSeenPackage
+        if (packageChanged) {
             Log.d(TAG, "foreground changed ($reason): $quickLaunchLastSeenPackage -> $foregroundPackage")
             quickLaunchLastSeenPackage = foregroundPackage
             _currentPackage.value = foregroundPackage
-            maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
         }
-        evaluateQuickLaunchExitProgress(foregroundPackage)
-        refreshQuickLaunchMonitoringNotification()
+        serviceScope.launch {
+            handleForegroundPackage(foregroundPackage, packageChanged)
+        }
     }
 
     /**
@@ -818,16 +855,16 @@ class TimerService : Service() {
      * Same downstream logic (allowed/utility filtering, semaphore, forced return).
      */
     private fun handleForegroundAppChanged(foregroundPackage: String) {
-        if (!SettingsManager.isQuickLaunchSessionActive(this)) return
         if (foregroundPackage.isBlank()) return
-        if (foregroundPackage != quickLaunchLastSeenPackage) {
+        val packageChanged = foregroundPackage != quickLaunchLastSeenPackage
+        if (packageChanged) {
             Log.d(TAG, "foreground changed (a11y-event): $quickLaunchLastSeenPackage -> $foregroundPackage")
             quickLaunchLastSeenPackage = foregroundPackage
             _currentPackage.value = foregroundPackage
-            maybeForceTimerForQuickLaunchSwitch(foregroundPackage)
         }
-        evaluateQuickLaunchExitProgress(foregroundPackage)
-        refreshQuickLaunchMonitoringNotification()
+        serviceScope.launch {
+            handleForegroundPackage(foregroundPackage, packageChanged)
+        }
     }
 
     private fun extendTimer(extraMinutes: Int): Boolean {

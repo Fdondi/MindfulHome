@@ -51,6 +51,18 @@ class SlotFolderOperationsInstrumentedTest {
     }
 
     @Test
+    fun setQuickLaunchAppLimitAt_updatesStoredLimit() = runBlocking {
+        repo.addIntentFolder("Work", listOf("com.timed"))
+        repo.setQuickLaunchAppLimitAt(0, "com.timed", limitMinutes = 5)
+        var folder = repo.quickLaunchSlots().first() as QuickLaunchSlot.Folder
+        assertEquals(5, folder.limitMinutesFor("com.timed"))
+
+        repo.setQuickLaunchAppLimitAt(0, "com.timed", limitMinutes = null)
+        folder = repo.quickLaunchSlots().first() as QuickLaunchSlot.Folder
+        assertEquals(null, folder.limitMinutesFor("com.timed"))
+    }
+
+    @Test
     fun mergeTimedAppIntoFolder_persistsLimitMinutes() = runBlocking {
         repo.addIntentFolder("Work")
         repo.mergePackageIntoQuickLaunchAt(0, "com.timed", limitMinutes = 7)

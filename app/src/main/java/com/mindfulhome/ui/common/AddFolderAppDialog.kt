@@ -32,19 +32,25 @@ import com.mindfulhome.model.AppInfo
 @Composable
 fun AddFolderAppDialog(
     appInfo: AppInfo,
-    defaultLimitMinutes: Int = QuickLaunchFolderApp.DEFAULT_LIMIT_MINUTES,
+    title: String = "Add to folder",
+    confirmLabel: String = "Add",
+    initialLimitMinutes: Int? = QuickLaunchFolderApp.DEFAULT_LIMIT_MINUTES,
     onConfirm: (limitMinutes: Int?) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var unlimited by remember { mutableStateOf(false) }
-    var minutesText by remember { mutableStateOf(defaultLimitMinutes.toString()) }
+    var unlimited by remember(initialLimitMinutes) { mutableStateOf(initialLimitMinutes == null) }
+    var minutesText by remember(initialLimitMinutes) {
+        mutableStateOf(
+            (initialLimitMinutes ?: QuickLaunchFolderApp.DEFAULT_LIMIT_MINUTES).toString(),
+        )
+    }
 
     val parsedMinutes = minutesText.trim().toIntOrNull()?.coerceAtLeast(1)
     val canConfirm = unlimited || parsedMinutes != null
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to folder") },
+        title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -96,7 +102,7 @@ fun AddFolderAppDialog(
                 },
                 enabled = canConfirm,
             ) {
-                Text("Add")
+                Text(confirmLabel)
             }
         },
         dismissButton = {
