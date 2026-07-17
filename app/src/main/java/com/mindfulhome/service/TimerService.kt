@@ -4,16 +4,13 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.pm.ApplicationInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.Build
 import android.os.IBinder
 import android.text.format.DateFormat
 import android.util.Log
-import android.view.inputmethod.InputMethodManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
@@ -29,6 +26,7 @@ import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.util.QuickLaunchUtilityClassifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -79,6 +77,12 @@ class TimerService : Service() {
     private var userAwayOverlayActive: Boolean = false
     private var awayShieldShownForCurrentAwayEpisode: Boolean = false
     private var lastAwayOverlayTapAtMs: Long = 0L
+    private val utilityClassifier: QuickLaunchUtilityClassifier by lazy {
+        QuickLaunchUtilityClassifier(
+            signals = QuickLaunchUtilityClassifier.AndroidPackageSignals(this),
+            selfPackageName = packageName,
+        )
+    }
 
     /**
      * Wall-clock instant when the active session timer reaches zero. Driven only by this deadline
@@ -615,68 +619,14 @@ class TimerService : Service() {
     }
 
     private fun isSystemOrUtilityPackage(packageName: String): Boolean =
-        systemOrUtilityReason(packageName) != null
+        utilityClassifier.isUtility(packageName)
 
     /**
      * @return human-readable reason if [packageName] should be ignored during Quick Launch,
      * or null if it should be monitored as a normal app switch.
      */
-    private fun systemOrUtilityReason(packageName: String): String? {
-        if (packageName.isBlank()) return null
-        if (packageName == this.packageName) return "self"
-        // Keyboards (IMEs) surface as window changes but the user never "left" the current app.
-        if (isInputMethodPackage(packageName)) return "keyboard/IME"
-
-        val normalized = packageName.lowercase()
-        if (normalized in QUICK_LAUNCH_UTILITY_PACKAGES_EXACT) {
-            return "utility exact package"
-        }
-        val matchedPrefix = QUICK_LAUNCH_UTILITY_PACKAGE_PREFIXES.firstOrNull { normalized.startsWith(it) }
-        if (matchedPrefix != null) {
-            return "utility package prefix=$matchedPrefix"
-        }
-        val matchedKeyword = QUICK_LAUNCH_UTILITY_PACKAGE_KEYWORDS.firstOrNull { normalized.contains(it) }
-        if (matchedKeyword != null) {
-            return "utility package keyword=$matchedKeyword"
-        }
-        val label = getAppLabel(packageName).lowercase()
-        val matchedLabel = QUICK_LAUNCH_UTILITY_LABEL_KEYWORDS.firstOrNull { label.contains(it) }
-        if (matchedLabel != null) {
-            return "utility label keyword=$matchedLabel"
-        }
-
-        // Do NOT treat FLAG_SYSTEM / FLAG_UPDATED_SYSTEM_APP as "utility".
-        // OEM-preinstalled apps (Instagram, etc.) carry those flags and must still be monitored.
-        // Keyboards are already filtered via isInputMethodPackage; camera/gallery/files via the
-        // lists above. Only skip image/video category apps (share-sheet pickers / media UIs).
-        return try {
-            val appInfo = packageManager.getApplicationInfo(packageName, 0)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                when (appInfo.category) {
-                    ApplicationInfo.CATEGORY_IMAGE -> "media category=IMAGE"
-                    ApplicationInfo.CATEGORY_VIDEO -> "media category=VIDEO"
-                    else -> null
-                }
-            } else {
-                null
-            }
-        } catch (_: Exception) {
-            null
-        }
-    }
-
-    private var imePackages: Set<String> = emptySet()
-    private var imePackagesFetchedAtMs: Long = 0L
-
-    private fun isInputMethodPackage(packageName: String): Boolean {
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (imePackages.isEmpty() || now - imePackagesFetchedAtMs > IME_CACHE_TTL_MS) {
-            val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
-            imePackages = imm.inputMethodList.mapTo(mutableSetOf()) { it.packageName }
-            imePackagesFetchedAtMs = now
-        }
-        return packageName in imePackages
-    }
+    private fun systemOrUtilityReason(packageName: String): String? =
+        utilityClassifier.utilityReason(packageName)
 
     private fun updateQuickLaunchFrameVisibility(foregroundPackage: String, nowMs: Long) {
         if (!SettingsManager.isQuickLaunchSessionActive(this)) {
@@ -1968,47 +1918,6 @@ class TimerService : Service() {
         private const val PREDATORY_BIRD_EVERY_N_BIRDS = 10
         private const val DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT =
             "Quick Launch active - monitoring app switches"
-        private const val IME_CACHE_TTL_MS = 5 * 60_000L
-        private val QUICK_LAUNCH_UTILITY_PACKAGES_EXACT = setOf(
-            "com.android.camera",
-            "com.google.android.googlequicksearchbox",
-            "com.google.android.apps.photos",
-            "com.android.gallery3d",
-            "com.google.android.documentsui",
-            "com.android.documentsui",
-            "com.android.providers.media.module",
-            "com.android.permissioncontroller",
-            "com.android.systemui",
-        )
-        private val QUICK_LAUNCH_UTILITY_PACKAGE_PREFIXES = setOf(
-            "com.android.camera",
-            "com.android.gallery",
-            "com.google.android.apps.photos",
-            "com.google.android.documentsui",
-            "com.android.documentsui",
-            "com.android.providers.media",
-            "com.android.providers.downloads",
-        )
-        private val QUICK_LAUNCH_UTILITY_PACKAGE_KEYWORDS = setOf(
-            "camera",
-            "gallery",
-            "photos",
-            "media",
-            "picker",
-            "documentsui",
-            "filemanager",
-            "files",
-        )
-        private val QUICK_LAUNCH_UTILITY_LABEL_KEYWORDS = setOf(
-            "camera",
-            "gallery",
-            "photos",
-            "photo",
-            "media",
-            "files",
-            "file manager",
-            "file picker",
-        )
         private val QUICK_LAUNCH_FRAME_RESTRICTED_PACKAGES_EXACT = setOf(
             "com.samsung.knox.securefolder",
         )
