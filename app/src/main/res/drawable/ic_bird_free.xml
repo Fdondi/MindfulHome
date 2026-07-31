@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Free bird flying away — green-path choice on ShouldYouBeHere. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Motion dashes -->
+    <path
+        android:fillColor="#FF86EFAC"
+        android:pathData="M8,48h10v3H8zM20,40h8v2.5H20zM18,56h9v2.5H18z" />
+    <!-- Body -->
+    <path
+        android:fillColor="#FF4ADE80"
+        android:pathData="M42,38C54,34 66,40 70,50C66,62 52,68 40,64C30,60 28,48 34,42C36,40 39,39 42,38Z" />
+    <!-- Wing up -->
+    <path
+        android:fillColor="#FF22C55E"
+        android:pathData="M44,44C36,28 28,24 22,26C30,34 34,44 38,52C40,48 42,46 44,44Z" />
+    <!-- Wing down -->
+    <path
+        android:fillColor="#FF16A34A"
+        android:pathData="M48,54C42,66 36,72 30,74C38,68 46,62 52,56C50,56 49,55 48,54Z" />
+    <!-- Head -->
+    <path
+        android:fillColor="#FF86EFAC"
+        android:pathData="M66,42C66,37.6 69.6,34 74,34C78.4,34 82,37.6 82,42C82,46.4 78.4,50 74,50C69.6,50 66,46.4 66,42Z" />
+    <!-- Beak -->
+    <path
+        android:fillColor="#FFFBBF24"
+        android:pathData="M80,41L90,39L82,46Z" />
+    <!-- Eye -->
+    <path
+        android:fillColor="#FF14532D"
+        android:pathData="M74,40.5C75.1,40.5 76,41.4 76,42.5C76,43.6 75.1,44.5 74,44.5C72.9,44.5 72,43.6 72,42.5C72,41.4 72.9,40.5 74,40.5Z" />
+</vector>

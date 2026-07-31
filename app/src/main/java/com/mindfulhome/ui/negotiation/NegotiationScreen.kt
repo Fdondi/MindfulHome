@@ -124,10 +124,13 @@ private fun extractLaunchQuery(rawText: String): String {
 
 @OptIn(ExperimentalMaterial3Api::class)
 /**
- * Chat UI for AI gates (focus time + app gatekeeper) and general assistant.
+ * Chat UI for AI gates (focus time + app gatekeeper), expire→extend (nudge script), and general assistant.
+ *
+ * @param extendGate When true, uses the timer-expired nudge script in this same chat UI
+ *  (not the notification). [packageName] is the app being extended.
  *
  * @see docs.gates.md Goals, Proceed button, round rules.
- * @see docs.navigation-map.md Entry: `assistant` or `negotiate/{packageName}`.
+ * @see docs.navigation-map.md Entry: `assistant`, `negotiate/{packageName}`, or `extend/{packageName}`.
  */
 @Composable
 fun NegotiationScreen(
@@ -137,6 +140,7 @@ fun NegotiationScreen(
     sessionHandle: SessionLogger.SessionHandle?,
     repository: AppRepository,
     karmaManager: KarmaManager,
+    extendGate: Boolean = false,
     onTimerClick: () -> Unit = {},
     onOpenDefault: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
@@ -162,13 +166,15 @@ fun NegotiationScreen(
     val focusModeActive = remember {
         SettingsManager.isFocusTimeActiveNow(context)
     }
-    val isFocusGate = packageName.isEmpty() && focusModeActive
-    val isGateFlow = packageName.isNotEmpty() || isFocusGate
+    val isFocusGate = !extendGate && packageName.isEmpty() && focusModeActive
+    val isExtendGate = extendGate && packageName.isNotEmpty()
+    val isGateFlow = packageName.isNotEmpty() || isFocusGate || isExtendGate
 
     val messages = remember { mutableStateListOf<ChatMessage>() }
     var userInput by remember { mutableStateOf("") }
     var isWaitingForAi by remember { mutableStateOf(false) }
     var accessGranted by remember { mutableStateOf(false) }
+    var grantedExtensionMinutes by remember { mutableStateOf(0) }
     val canProceedFromGate = isGateFlow && accessGranted
     var launchTarget by remember { mutableStateOf("") }
     var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
@@ -265,9 +271,20 @@ fun NegotiationScreen(
     }
 
     fun proceedAfterGate() {
+        if (isExtendGate) {
+            val minutes = grantedExtensionMinutes.coerceAtLeast(1)
+            SessionLogger.log(
+                sessionHandle,
+                "Extend gate passed — **+$minutes min** for **$appLabel**",
+            )
+            com.mindfulhome.service.TimerService.extend(context, minutes)
+            negotiationManager.endConversation()
+            lmManager.shutdown()
+            onAppGranted()
+            return
+        }
         if (packageName.isNotEmpty()) {
             SessionLogger.log(sessionHandle, "User proceeded to **$appLabel**")
-            PackageManagerHelper.launchApp(context, packageName)
         } else if (isFocusGate) {
             SessionLogger.log(sessionHandle, "Focus time gate passed — proceeding to session")
         } else {
@@ -276,6 +293,31 @@ fun NegotiationScreen(
         negotiationManager.endConversation()
         lmManager.shutdown()
         onAppGranted()
+    }
+
+    fun applyNegotiationOutcome(result: NegotiationResult) {
+        if (isExtendGate) {
+            if (result.extensionMinutes > 0) {
+                grantedExtensionMinutes = result.extensionMinutes
+                accessGranted = true
+                SessionLogger.log(
+                    sessionHandle,
+                    "Extend offered: **+${result.extensionMinutes} min** for **$appLabel**",
+                )
+                logDevDecision("extend_gate_result extensionMinutes=${result.extensionMinutes}")
+            }
+            return
+        }
+        if (result.accessGranted) {
+            if (packageName.isNotEmpty()) {
+                SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
+                logDevDecision("gatekeeper_result access_granted=true")
+            } else if (isFocusGate) {
+                SessionLogger.log(sessionHandle, "Focus time gate passed")
+                logDevDecision("focus_gate_result access_granted=true")
+            }
+            accessGranted = true
+        }
     }
 
     suspend fun showQuickLaunchBar(queryText: String) {
@@ -422,6 +464,7 @@ fun NegotiationScreen(
         userInput = ""
         isWaitingForAi = false
         accessGranted = false
+        grantedExtensionMinutes = 0
         launchTarget = ""
         showSearchOverlay = false
         showLaunchSuggestions = false
@@ -477,7 +520,26 @@ fun NegotiationScreen(
             lmManager.initialize()
         }
 
-        if (packageName.isNotEmpty()) {
+        if (isExtendGate) {
+            // Same script as the timer-expired notification, in the gate chat UI.
+            SessionLogger.log(sessionHandle, "Extend gate started for **$appLabel** via $modelLabel")
+            isWaitingForAi = true
+            val overrunMinutes = when (val state = com.mindfulhome.service.TimerService.timerState.value) {
+                is com.mindfulhome.model.TimerState.Expired ->
+                    ((state.overrunMs + 59_999L) / 60_000L).toInt().coerceAtLeast(0)
+                else -> 0
+            }
+            val result = negotiationManager.startNudgeNegotiation(
+                packageName = packageName,
+                appName = appLabel,
+                overrunMinutes = overrunMinutes,
+                nudgeCount = 0,
+            )
+            logDevBoundary("chat_to_app extend_start_result ${summarizeResult(result)}")
+            addMessage(result.responseText, isFromUser = false)
+            isWaitingForAi = false
+            applyNegotiationOutcome(result)
+        } else if (packageName.isNotEmpty()) {
             // Gatekeeper flow
             SessionLogger.log(sessionHandle, "AI negotiation started for **$appLabel** via $modelLabel")
             isWaitingForAi = true
@@ -510,10 +572,7 @@ fun NegotiationScreen(
             logDevBoundary("chat_to_app gatekeeper_start_result ${summarizeResult(result)}")
             addMessage(result.responseText, isFromUser = false)
             isWaitingForAi = false
-            if (result.accessGranted) {
-                accessGranted = true
-                logDevDecision("gatekeeper_result access_granted_immediately=true")
-            }
+            applyNegotiationOutcome(result)
         } else if (isFocusGate) {
             SessionLogger.log(sessionHandle, "Focus time gate started via $modelLabel")
             isWaitingForAi = true
@@ -525,10 +584,7 @@ fun NegotiationScreen(
             logDevBoundary("chat_to_app focus_gate_start_result ${summarizeResult(result)}")
             addMessage(result.responseText, isFromUser = false)
             isWaitingForAi = false
-            if (result.accessGranted) {
-                accessGranted = true
-                logDevDecision("focus_gate_result access_granted_immediately=true")
-            }
+            applyNegotiationOutcome(result)
         } else {
             // General chat
             SessionLogger.log(sessionHandle, "AI assistant opened via $modelLabel")
@@ -741,7 +797,7 @@ fun NegotiationScreen(
                 }
             }
 
-            if (showLaunchSuggestions && !isFocusGate) {
+            if (showLaunchSuggestions && !isFocusGate && !isExtendGate) {
                 item {
                     LaunchSuggestionsBubble(
                         apps = suggestedLaunchApps,
@@ -767,7 +823,13 @@ fun NegotiationScreen(
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
                     Text(
-                        text = if (packageName.isNotEmpty()) "Proceed to $appLabel" else "Proceed",
+                        text = when {
+                            isExtendGate && grantedExtensionMinutes > 0 ->
+                                "Continue (+$grantedExtensionMinutes min)"
+                            packageName.isNotEmpty() && !isExtendGate ->
+                                "Proceed to $appLabel"
+                            else -> "Proceed"
+                        },
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
@@ -813,28 +875,19 @@ fun NegotiationScreen(
                                     isWaitingForAi = true
                                     val firstResult = negotiationManager.reply(input)
                                     logDevBoundary("chat_to_app payload reply_result ${summarizeResult(firstResult)}")
-                                    val result = if (isFocusGate) {
+                                    val result = if (isFocusGate || isExtendGate) {
                                         firstResult
                                     } else {
                                         resolveSuggestedAppsTool(firstResult)
                                     }
                                     addMessage(result.responseText, isFromUser = false)
                                     isWaitingForAi = false
-                                    if (result.suggestedQuery.isNotBlank() && !isFocusGate) {
+                                    if (result.suggestedQuery.isNotBlank() && !isFocusGate && !isExtendGate) {
                                         lastLaunchRequestText = result.suggestedQuery
                                     }
 
-                                    if (result.accessGranted) {
-                                        if (packageName.isNotEmpty()) {
-                                            SessionLogger.log(sessionHandle, "Access granted to **$appLabel**")
-                                            logDevDecision("gatekeeper_result access_granted=true")
-                                        } else if (isFocusGate) {
-                                            SessionLogger.log(sessionHandle, "Focus time gate passed")
-                                            logDevDecision("focus_gate_result access_granted=true")
-                                        }
-                                        accessGranted = true
-                                    }
-                                    if (isFocusGate) return@launch
+                                    applyNegotiationOutcome(result)
+                                    if (isFocusGate || isExtendGate) return@launch
                                     if (result.launchedPackage.isNotEmpty()) {
                                         val label = PackageManagerHelper.getAppLabel(
                                             context, result.launchedPackage

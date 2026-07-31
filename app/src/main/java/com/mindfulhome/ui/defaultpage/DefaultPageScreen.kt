@@ -51,9 +51,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.mindfulhome.AppVersion
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.TodoItem
+import com.mindfulhome.ui.common.VersionLabel
 import com.mindfulhome.ui.quicklaunch.MissionIntentSection
 import java.text.DateFormat
 import java.util.Calendar
@@ -83,7 +83,6 @@ fun DefaultPageScreen(
     onScreenShown: () -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    val appVersion = AppVersion.versionName
     val todoItems by repository.sortedOpenTodos().collectAsState(initial = emptyList())
     var editor by remember { mutableStateOf<TodoEditorState?>(null) }
 
@@ -104,12 +103,7 @@ fun DefaultPageScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = "v$appVersion",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
+            VersionLabel(modifier = Modifier.weight(1f))
             IconButton(onClick = onOpenLogs) {
                 Icon(
                     Icons.AutoMirrored.Filled.Article,

@@ -1,6 +1,6 @@
 # AI gates
 
-MindfulHome uses two short AI conversations before phone time is allowed. They **nag, never block**: you can always keep chatting, and access is only offered via an explicit **Proceed** button once the gate allows it.
+MindfulHome uses two short AI conversations before phone time is allowed, plus a separate expired-session confrontation. The AI gates **nag, never block**: you can always keep chatting, and access is only offered via an explicit **Proceed** button once the gate allows it.
 
 ## Goals
 
@@ -8,8 +8,9 @@ MindfulHome uses two short AI conversations before phone time is allowed. They *
 |------|------|---------|
 | **Focus time gate** | Timer starts during a focus-time window | Check that spending phone time now matches your declared intent (not which app you'll use). |
 | **App gatekeeper** | Opening a hidden (karma-hidden) app | Ask why you need it, surface your per-app note and recent usage, push for intentional use. |
+| **Should you be here?** | Recents (or similar) returns to a non–Quick Launch app while monitoring treats the session as expired | Instant confrontation screen. Green → leave. Red → in-app chat using the **timer-expired nudge script** (same prompts/tools as the notification, gate chat UI). |
 
-Both gates share the same UX pattern:
+Both AI gates share the same UX pattern:
 
 1. AI opens with a question.
 2. You reply (at least one full back-and-forth before Proceed can appear).

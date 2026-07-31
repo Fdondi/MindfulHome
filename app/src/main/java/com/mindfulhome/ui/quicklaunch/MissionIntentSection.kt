@@ -327,7 +327,9 @@ fun MissionIntentSection(
                 onQuickLaunchApp(app.packageName, stripPackages, limitMinutes)
             },
             onDragRemove = { app ->
-                scope.launch { repository.removeLaunchKeyFromQuickLaunch(app.packageName) }
+                scope.launch {
+                    repository.removeLaunchKeyFromQuickLaunchAt(folder.slotIndex, app.packageName)
+                }
                 folderToShow = folderToShow?.let { f ->
                     val next = f.apps.filter { it.packageName != app.packageName }
                     f.copy(apps = next)

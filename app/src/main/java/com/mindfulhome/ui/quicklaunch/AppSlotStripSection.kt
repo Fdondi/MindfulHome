@@ -196,6 +196,14 @@ fun AppSlotStripSection(
                     }
                 }
             },
+            onRemoveSlotAt = { slotIndex ->
+                scope.launch {
+                    when (kind) {
+                        AppSlotStripKind.QuickLaunch -> repository.removeQuickLaunchSlotAt(slotIndex)
+                        AppSlotStripKind.Favorites -> repository.removeFavoritesSlotAt(slotIndex)
+                    }
+                }
+            },
             onOpenFolder = { slotIndex, apps, folderName, folderSymbolIconName ->
                 folderToShow = QuickLaunchFolderOpen(slotIndex, apps, folderName, folderSymbolIconName)
             },
@@ -272,8 +280,10 @@ fun AppSlotStripSection(
             onDragRemove = { app ->
                 scope.launch {
                     when (kind) {
-                        AppSlotStripKind.QuickLaunch -> repository.removeFromQuickLaunch(app.packageName)
-                        AppSlotStripKind.Favorites -> repository.removeFromFavorites(app.packageName)
+                        AppSlotStripKind.QuickLaunch ->
+                            repository.removeLaunchKeyFromQuickLaunchAt(folder.slotIndex, app.packageName)
+                        AppSlotStripKind.Favorites ->
+                            repository.removePackageFromFavoritesAt(folder.slotIndex, app.packageName)
                     }
                 }
                 folderToShow = folderToShow?.let { f ->

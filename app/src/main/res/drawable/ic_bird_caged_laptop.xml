@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Caged bird at a laptop — red-path choice on ShouldYouBeHere. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- Laptop base -->
+    <path
+        android:fillColor="#FF64748B"
+        android:pathData="M18,70h60l6,8H12z" />
+    <!-- Laptop screen -->
+    <path
+        android:fillColor="#FF334155"
+        android:pathData="M22,34h52v36H22z" />
+    <path
+        android:fillColor="#FF0F172A"
+        android:pathData="M26,38h44v28H26z" />
+    <!-- Cage bars over screen -->
+    <path
+        android:fillColor="#FF94A3B8"
+        android:pathData="M34,38h2.5v28H34zM46.75,38h2.5v28h-2.5zM59.5,38H62v28h-2.5zM26,48h44v2H26zM26,58h44v2H26z" />
+    <!-- Bird body inside cage -->
+    <path
+        android:fillColor="#FFF87171"
+        android:pathData="M40,48C46,45 54,47 56,52C54,58 46,61 40,58C36,56 35,51 40,48Z" />
+    <!-- Bird head -->
+    <path
+        android:fillColor="#FFFCA5A5"
+        android:pathData="M54,48C54,45.2 56.2,43 59,43C61.8,43 64,45.2 64,48C64,50.8 61.8,53 59,53C56.2,53 54,50.8 54,48Z" />
+    <!-- Beak -->
+    <path
+        android:fillColor="#FFFBBF24"
+        android:pathData="M63,47L70,46L64.5,51Z" />
+    <!-- Eye -->
+    <path
+        android:fillColor="#FF7F1D1D"
+        android:pathData="M58.5,47C59.3,47 60,47.7 60,48.5C60,49.3 59.3,50 58.5,50C57.7,50 57,49.3 57,48.5C57,47.7 57.7,47 58.5,47Z" />
+    <!-- Tiny wing -->
+    <path
+        android:fillColor="#FFEF4444"
+        android:pathData="M42,52C38,50 36,47 36,45C39,47 42,49 44,52Z" />
+</vector>

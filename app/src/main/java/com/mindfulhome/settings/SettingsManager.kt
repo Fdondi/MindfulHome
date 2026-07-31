@@ -980,7 +980,6 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         if (raw.isBlank()) return emptySet()
         return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     }
-
     private fun minuteOfDay(nowMs: Long): Int {
         val calendar = Calendar.getInstance()
         calendar.timeInMillis = nowMs

@@ -70,9 +70,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
-import com.mindfulhome.AppVersion
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.service.UsageTracker
+import com.mindfulhome.ui.common.VersionLabel
 import com.mindfulhome.util.PackageManagerHelper
 import java.text.DateFormat
 import java.util.Date
@@ -107,7 +107,6 @@ fun TimerScreen(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val appVersion = AppVersion.versionName
     val startButtonBringIntoViewRequester = remember { BringIntoViewRequester() }
     val imeBottomPx = WindowInsets.ime.getBottom(density)
 
@@ -254,20 +253,10 @@ fun TimerScreen(
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    Text(
-                        text = "v$appVersion",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    VersionLabel()
                 }
             } else {
-                Text(
-                    text = "v$appVersion",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Start,
-                )
+                VersionLabel(modifier = Modifier.fillMaxWidth())
             }
 
             Spacer(modifier = Modifier.height(8.dp))

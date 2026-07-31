@@ -44,6 +44,7 @@ import com.mindfulhome.ui.home.HomeScreen
 import com.mindfulhome.ui.logs.LogsScreen
 import com.mindfulhome.ui.negotiation.NegotiationScreen
 import com.mindfulhome.ui.onboarding.OnboardingScreen
+import com.mindfulhome.ui.overtime.ShouldYouBeHereScreen
 import com.mindfulhome.ui.karma.KarmaScreen
 import com.mindfulhome.ui.settings.IntervalSettingsScreen
 import com.mindfulhome.ui.settings.SettingsScreen
@@ -76,9 +77,11 @@ class MainActivity : ComponentActivity() {
     companion object {
         const val EXTRA_FORCE_TIMER = "force_timer"
         const val EXTRA_FORCE_TIMER_REASON = "force_timer_reason"
+        const val EXTRA_FORCE_TIMER_PACKAGE = "force_timer_package"
         const val FORCE_TIMER_REASON_EXPIRED = "expired_timer"
         const val FORCE_TIMER_REASON_QUICK_LAUNCH = "quick_launch_exit"
         const val FORCE_TIMER_REASON_AWAY_RETURN = "away_return"
+        const val FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE = "should_you_be_here"
         const val EXTRA_OPEN_TIMER_PREFILL = "todo_open_timer_prefill"
         const val EXTRA_PREFILL_MINUTES = "todo_prefill_minutes"
         const val EXTRA_PREFILL_REASON = "todo_prefill_reason"
@@ -209,8 +212,8 @@ class MainActivity : ComponentActivity() {
                                     sessionHandle = handle,
                                     hardDeadlineMinutes = hardDeadlineMinutes,
                                 )
-                                Log.d("MainActivity", "TimerService.start called, navigating to home")
                                 val targetRoute = postTimerTargetRoute()
+                                Log.d("MainActivity", "TimerService.start called, navigating to $targetRoute")
                                 navCtrl.navigate(targetRoute)
                                 Log.d("MainActivity", "Navigation to $targetRoute completed")
                             },
@@ -228,6 +231,89 @@ class MainActivity : ComponentActivity() {
                             onPrefillApplied = {
                                 pendingPrefillMinutes = null
                                 pendingPrefillReason = null
+                            },
+                        )
+                    }
+
+                    composable("should_you_be_here") {
+                        val pkg = TimerService.currentPackage.value
+                        val appLabel = remember(pkg) {
+                            if (pkg.isBlank()) {
+                                null
+                            } else {
+                                try {
+                                    packageManager.getApplicationLabel(
+                                        packageManager.getApplicationInfo(pkg, 0),
+                                    ).toString()
+                                } catch (_: Exception) {
+                                    pkg
+                                }
+                            }
+                        }
+                        ShouldYouBeHereScreen(
+                            appLabel = appLabel,
+                            onLeave = {
+                                SessionLogger.getActiveSessionHandle()?.let {
+                                    SessionLogger.log(it, "ShouldYouBeHere: left for home")
+                                }
+                                TimerService.dismissShouldYouBeHere(this@MainActivity)
+                                shouldShowTimer = false
+                                wentToBackground = false
+                                navCtrl.navigate("default") {
+                                    popUpTo("root") { inclusive = true }
+                                }
+                            },
+                            onNeedMoreTime = {
+                                val pkg = TimerService.currentPackage.value
+                                shouldShowTimer = false
+                                if (pkg.isNotBlank()) {
+                                    navCtrl.navigate("extend/$pkg") {
+                                        popUpTo("should_you_be_here") { inclusive = true }
+                                    }
+                                } else {
+                                    navCtrl.navigate("default") {
+                                        popUpTo("root") { inclusive = true }
+                                    }
+                                }
+                            },
+                        )
+                    }
+
+                    composable("extend/{packageName}") { backStackEntry ->
+                        val packageName = backStackEntry.arguments
+                            ?.getString("packageName") ?: ""
+                        NegotiationScreen(
+                            packageName = packageName,
+                            unlockReason = unlockReason,
+                            durationMinutes = lastDurationMinutes,
+                            sessionHandle = sessionHandle,
+                            repository = repository,
+                            karmaManager = karmaManager,
+                            extendGate = true,
+                            onTimerClick = {
+                                shouldShowTimer = true
+                                navCtrl.navigate("timer") {
+                                    popUpTo("root") { inclusive = true }
+                                }
+                            },
+                            onOpenDefault = {
+                                shouldShowTimer = false
+                                navCtrl.navigate("default") {
+                                    popUpTo("root") { inclusive = true }
+                                }
+                            },
+                            onOpenLogs = { navCtrl.navigate("logs") },
+                            onOpenKarma = { navCtrl.navigate("karma") },
+                            onOpenSettings = { navCtrl.navigate("settings") },
+                            onAppGranted = {
+                                shouldShowTimer = false
+                                wentToBackground = false
+                                PackageManagerHelper.launchApp(this@MainActivity, packageName)
+                            },
+                            onDismiss = {
+                                navCtrl.navigate("default") {
+                                    popUpTo("root") { inclusive = true }
+                                }
                             },
                         )
                     }
@@ -375,7 +461,9 @@ class MainActivity : ComponentActivity() {
                             onOpenKarma = { navCtrl.navigate("karma") },
                             onOpenSettings = { navCtrl.navigate("settings") },
                             onAppGranted = {
-                                navCtrl.popBackStack()
+                                shouldShowTimer = false
+                                wentToBackground = false
+                                PackageManagerHelper.launchApp(this@MainActivity, packageName)
                             },
                             onDismiss = {
                                 navCtrl.popBackStack()
@@ -515,6 +603,32 @@ class MainActivity : ComponentActivity() {
                 )
                 return
             }
+        }
+
+        if (forceTimer && (
+                forceTimerReason == FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE ||
+                    forceTimerReason == FORCE_TIMER_REASON_QUICK_LAUNCH
+                )
+        ) {
+            val timerState = TimerService.timerState.value
+            if (timerState !is TimerState.Expired) {
+                Log.w(
+                    "MainActivity",
+                    "Ignoring ShouldYouBeHere force because timer is not expired (state=$timerState)",
+                )
+                return
+            }
+            // QL exit promotes to Expired before sending this intent; if state isn't ready
+            // yet, still show the gate — engageExtendChat no-ops until Expired is set.
+            wentToBackground = false
+            shouldShowTimer = false
+            lifecycleScope.launch {
+                navController?.navigate("should_you_be_here") {
+                    popUpTo("root") { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+            return
         }
 
         if (fromUnlock || forceTimer) {
@@ -877,7 +991,7 @@ class MainActivity : ComponentActivity() {
     /**
      * Starts Quick Launch monitoring as soon as the launcher default page is shown, so usage
      * (e.g. recents → another app on unlock) is tracked even before tapping a Quick Launch tile.
-     * Only when no session timer is running — starting Quick Launch would otherwise suspend a countdown.
+     * Only when idle — never while Counting/Expired (Expired must keep the ShouldYouBeHere path).
      */
     private fun ensureQuickLaunchMonitoringAtHome() {
         if (TimerService.timerState.value !is TimerState.Idle) return

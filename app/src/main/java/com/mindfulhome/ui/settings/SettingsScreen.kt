@@ -57,7 +57,6 @@ import androidx.core.content.ContextCompat
 import androidx.credentials.exceptions.NoCredentialException
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import com.mindfulhome.AppVersion
 import com.mindfulhome.ai.LiteRtLmManager
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.ai.backend.ApiKeyManager
@@ -68,6 +67,7 @@ import com.mindfulhome.service.ForegroundAppAccessibilityService
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.logging.DailyLogSummaryGenerator
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.ui.common.VersionLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,7 +79,6 @@ fun SettingsScreen(
     onOpenIntervalSettings: () -> Unit,
 ) {
     val context = LocalContext.current
-    val appVersion = AppVersion.versionName
     var hasUsageStats by remember { mutableStateOf(UsageTracker.hasUsageStatsPermission(context)) }
     var hasNotificationPermission by remember {
         mutableStateOf(
@@ -1218,11 +1217,12 @@ fun SettingsScreen(
                         fontWeight = FontWeight.Bold
                     )
                     Text(
-                        text = "A home launcher that nags, never blocks.\n" +
-                                "Version $appVersion",
+                        text = "A home launcher that nags, never blocks.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    VersionLabel()
                 }
             }
         }

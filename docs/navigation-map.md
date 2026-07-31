@@ -10,6 +10,8 @@ This document maps how the app moves between launcher states and pages.
 - `home` - app selection page after timer starts.
 - `assistant` - focus time gate ([gates.md](gates.md)); `NegotiationScreen` with no target app.
 - `negotiate/{packageName}` - app gatekeeper ([gates.md](gates.md)); `NegotiationScreen` for a hidden app.
+- `should_you_be_here` - expired Recents confrontation ([gates.md](gates.md)); leave or open extend chat.
+- `extend/{packageName}` - expire→extend gate; same chat UI as other gates, nudge/extend script.
 - `karma`, `settings`, `logs` - auxiliary pages.
 
 ## Startup and unlock entry
@@ -56,7 +58,9 @@ When `MainActivity` handles `EXTRA_FROM_UNLOCK`, it navigates to `default` (not 
 
 ## AI gates
 
-Focus time and hidden-app opens use `NegotiationScreen` with different prompts (no `packageName` = focus gate). Both require at least one user reply before **Proceed** can appear; access may be granted by the AI or auto-granted at max rounds. Full behavior and editable prompts: [gates.md](gates.md).
+Focus time and hidden-app opens use `NegotiationScreen` with different prompts (no `packageName` = focus gate). Both require at least one user reply before **Proceed** can appear; access may be granted by the AI or auto-granted at max rounds.
+
+`should_you_be_here` is separate: shown instantly when a non–Quick Launch app comes to the foreground while `TimerState.Expired`. Green leaves to `default` and stops the session; red opens `extend/{package}` — the standard gate chat UI running the timer-expired nudge script. Full behavior: [gates.md](gates.md).
 
 ## Background/return behavior (`onResume`)
 

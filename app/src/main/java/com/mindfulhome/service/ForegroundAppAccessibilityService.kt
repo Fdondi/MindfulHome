@@ -9,6 +9,7 @@ import android.text.TextUtils
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
+import com.mindfulhome.model.TimerState
 import com.mindfulhome.settings.SettingsManager
 
 /**
@@ -48,9 +49,13 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         if (pkg == lastPackage) return
         lastPackage = pkg
 
-        // Only wake the TimerService when there is actually something to monitor.
-        // (Downstream still applies the allowed/utility filtering.)
-        if (!SettingsManager.isQuickLaunchSessionActive(this)) return
+        // Only wake TimerService when Quick Launch is active or the pre-timer gate is up.
+        // Normal timer-expiry (birds/notification) does not need foreground redirects.
+        if (!SettingsManager.isQuickLaunchSessionActive(this) &&
+            !TimerService.shouldYouBeHereGateActive
+        ) {
+            return
+        }
 
         Log.d(TAG, "Foreground app changed -> $pkg")
         TimerService.notifyForegroundApp(this, pkg)

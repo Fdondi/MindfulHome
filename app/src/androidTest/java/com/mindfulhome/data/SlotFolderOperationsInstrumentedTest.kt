@@ -101,6 +101,42 @@ class SlotFolderOperationsInstrumentedTest {
     }
 
     @Test
+    fun favorites_removeFromOneFolder_leavesSharedPackageInOtherFolder() = runBlocking {
+        repo.addToFavorites("com.shared")
+        repo.addToFavorites("com.a")
+        repo.mergeFavoritesSlots(fromUiIndex = 1, intoUiIndex = 0)
+        repo.addToFavorites("com.shared")
+        repo.addToFavorites("com.b")
+        repo.mergeFavoritesSlots(fromUiIndex = 2, intoUiIndex = 1)
+
+        repo.removePackageFromFavoritesAt(0, "com.shared")
+
+        val slots = repo.favoritesSlots().first()
+        assertEquals(2, slots.size)
+        assertTrue(slots[0] is QuickLaunchSlot.Single)
+        assertEquals("com.a", (slots[0] as QuickLaunchSlot.Single).packageName)
+        assertTrue(slots[1] is QuickLaunchSlot.Folder)
+        assertEquals(listOf("com.shared", "com.b"), (slots[1] as QuickLaunchSlot.Folder).packageNames())
+    }
+
+    @Test
+    fun quickLaunch_removeFromOneFolder_leavesSharedPackageInOtherFolder() = runBlocking {
+        repo.addIntentFolder("Work", listOf("com.shared", "com.a"))
+        repo.addIntentFolder("Play", listOf("com.shared", "com.b"))
+
+        repo.removeLaunchKeyFromQuickLaunchAt(0, "com.shared")
+
+        val slots = repo.quickLaunchSlots().first()
+        assertEquals(2, slots.size)
+        val work = slots[0] as QuickLaunchSlot.Folder
+        val play = slots[1] as QuickLaunchSlot.Folder
+        assertEquals("Work", work.name)
+        assertEquals(listOf("com.a"), work.packageNames())
+        assertEquals("Play", play.name)
+        assertEquals(listOf("com.shared", "com.b"), play.packageNames())
+    }
+
+    @Test
     fun favorites_extractFromFolder_insertsOwnSlotAndShiftsLaterSlots() = runBlocking {
         repo.addToFavorites("com.a")
         repo.addToFavorites("com.b")

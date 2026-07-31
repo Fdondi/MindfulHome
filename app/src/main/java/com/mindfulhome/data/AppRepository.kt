@@ -238,6 +238,27 @@ class AppRepository(private val database: AppDatabase) {
         persistFavorites(removePackageFromSlots(favoritesSnapshot(), packageName))
     }
 
+    /** Remove [packageName] only from the Favorites slot at [uiIndex] (other folders untouched). */
+    suspend fun removePackageFromFavoritesAt(uiIndex: Int, packageName: String) {
+        if (packageName.isBlank()) return
+        val slots = favoritesSnapshot().toMutableList()
+        if (uiIndex !in slots.indices) return
+        val updated = removePackageFromSlots(listOf(slots[uiIndex]), packageName)
+        if (updated.isEmpty()) {
+            slots.removeAt(uiIndex)
+        } else {
+            slots[uiIndex] = updated.single()
+        }
+        persistFavorites(slots)
+    }
+
+    suspend fun removeFavoritesSlotAt(uiIndex: Int) {
+        val slots = favoritesSnapshot().toMutableList()
+        if (uiIndex !in slots.indices) return
+        slots.removeAt(uiIndex)
+        persistFavorites(slots)
+    }
+
     suspend fun moveFavoritesSlot(fromUiIndex: Int, toUiIndex: Int) {
         if (fromUiIndex == toUiIndex) return
         val m = favoritesSnapshot().toMutableList()
@@ -449,9 +470,42 @@ class AppRepository(private val database: AppDatabase) {
         }
     }
 
+    /**
+     * Remove a launch key (plain package or shortcut) only from the Quick Launch slot at [uiIndex].
+     * Other folders that also contain the same package stay unchanged.
+     */
+    suspend fun removeLaunchKeyFromQuickLaunchAt(uiIndex: Int, launchKey: String) {
+        if (launchKey.isBlank()) return
+        val slots = quickLaunchSnapshot().toMutableList()
+        if (uiIndex !in slots.indices) return
+        val shortcut = com.mindfulhome.util.QuickLaunchAppRef.parseShortcut(launchKey)
+        if (shortcut != null) {
+            val slot = slots[uiIndex]
+            if (slot !is QuickLaunchSlot.Folder) return
+            slots[uiIndex] = slot.copy(
+                shortcuts = slot.shortcuts.filterNot {
+                    it.packageName == shortcut.packageName && it.id == shortcut.id
+                },
+            )
+            persistQuickLaunch(slots)
+            return
+        }
+        val updated = removePackageFromIntentSlots(listOf(slots[uiIndex]), launchKey)
+        if (updated.isEmpty()) {
+            slots.removeAt(uiIndex)
+        } else {
+            slots[uiIndex] = updated.single()
+        }
+        persistQuickLaunch(slots)
+    }
+
     suspend fun removeFromQuickLaunch(packageName: String) {
         persistQuickLaunch(removePackageFromIntentSlots(quickLaunchSnapshot(), packageName))
     }
+
+    /** All packages present in Quick Launch slots (any limit), for expired Recents allowlisting. */
+    suspend fun allQuickLaunchPackages(): Set<String> =
+        quickLaunchSnapshot().flatMap { it.flattenPackages() }.toSet()
 
     suspend fun swapQuickLaunchSlotsAt(uiIndexA: Int, uiIndexB: Int) {
         val m = quickLaunchSnapshot().toMutableList()
