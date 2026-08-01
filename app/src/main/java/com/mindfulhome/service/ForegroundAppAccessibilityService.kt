@@ -9,7 +9,6 @@ import android.text.TextUtils
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
-import com.mindfulhome.model.TimerState
 import com.mindfulhome.settings.SettingsManager
 
 /**
@@ -36,27 +35,27 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-
         val pkg = event.packageName?.toString().orEmpty()
-        if (pkg.isBlank() || pkg == packageName) return
-        // Toasts and some popups also fire WINDOW_STATE_CHANGED but aren't real switches.
-        if (event.className?.toString()?.contains("Toast", ignoreCase = true) == true) return
-        // IME (keyboard) windows also fire WINDOW_STATE_CHANGED when they show/hide, but the
-        // user is still inside the underlying app — never report a keyboard as the foreground
-        // app (and don't touch lastPackage, so the real app stays current).
-        if (isInputMethodPackage(pkg)) return
-        if (pkg == lastPackage) return
-        lastPackage = pkg
-
-        // Only wake TimerService when Quick Launch is active or the pre-timer gate is up.
-        // Normal timer-expiry (birds/notification) does not need foreground redirects.
-        if (!SettingsManager.isQuickLaunchSessionActive(this) &&
-            !TimerService.shouldYouBeHereGateActive
+        if (ForegroundA11yLogic.shouldIgnoreWindowStateEvent(
+                eventType = event.eventType,
+                windowStateChangedType = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
+                packageName = pkg,
+                ownPackageName = packageName,
+                className = event.className?.toString(),
+                isImePackage = isInputMethodPackage(pkg),
+                lastPackage = lastPackage,
+            )
         ) {
             return
         }
-
+        lastPackage = pkg
+        if (!ForegroundA11yLogic.shouldNotifyTimerService(
+                quickLaunchActive = SettingsManager.isQuickLaunchSessionActive(this),
+                shouldYouBeHereGateActive = TimerService.shouldYouBeHereGateActive,
+            )
+        ) {
+            return
+        }
         Log.d(TAG, "Foreground app changed -> $pkg")
         TimerService.notifyForegroundApp(this, pkg)
     }

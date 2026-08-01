@@ -41,15 +41,9 @@ object MaterialIconCatalog {
             context.assets.open(ASSET).use { stream ->
                 BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).useLines { lines ->
                     lines.forEach { line ->
-                        val trimmed = line.trim()
-                        if (trimmed.isEmpty() || trimmed.startsWith("#")) return@forEach
-                        val space = trimmed.lastIndexOf(' ')
-                        if (space <= 0) return@forEach
-                        val name = trimmed.substring(0, space).trim()
-                        val hex = trimmed.substring(space + 1).trim()
-                        if (name.isEmpty()) return@forEach
-                        val cp = hex.toIntOrNull(16) ?: return@forEach
-                        map[name] = cp
+                        parseMaterialIconCodepointLine(line)?.let { (name, cp) ->
+                            map[name] = cp
+                        }
                     }
                 }
             }

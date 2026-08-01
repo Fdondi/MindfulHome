@@ -280,58 +280,78 @@ private fun TodoEditorDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (state.id == null) "Add todo" else "Edit todo") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = local.intent,
-                    onValueChange = { local = local.copy(intent = it) },
-                    label = { Text("Intent") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                OutlinedTextField(
-                    value = local.durationMinutes,
-                    onValueChange = { local = local.copy(durationMinutes = it.filter(Char::isDigit)) },
-                    label = { Text("Duration (minutes)") },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                val deadlineLabel = local.deadlineEpochMs?.let { formatter.format(Date(it)) } ?: "No deadline"
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Text(
-                        text = "Deadline: $deadlineLabel",
-                        modifier = Modifier.weight(1f),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    TextButton(
-                        onClick = {
-                            val initial = local.deadlineEpochMs ?: next6pmEpochMs()
-                            pickDateTime(context, initial) { selected ->
-                                local = local.copy(deadlineEpochMs = selected)
-                            }
-                        }
-                    ) {
-                        Text("Pick")
-                    }
-                    TextButton(
-                        onClick = { local = local.copy(deadlineEpochMs = null) }
-                    ) {
-                        Text("Clear")
-                    }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    (1..4).forEach { p ->
-                        Button(onClick = { local = local.copy(priority = p) }) {
-                            Text("P$p${if (local.priority == p) "*" else ""}")
-                        }
-                    }
-                }
-            }
+            TodoEditorDialogFields(
+                local = local,
+                onLocalChange = { local = it },
+                formatter = formatter,
+                context = context,
+            )
         },
         confirmButton = { TextButton(onClick = { onSave(local) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+@Composable
+private fun TodoEditorDialogFields(
+    local: TodoEditorState,
+    onLocalChange: (TodoEditorState) -> Unit,
+    formatter: java.text.DateFormat,
+    context: android.content.Context,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = local.intent,
+            onValueChange = { onLocalChange(local.copy(intent = it)) },
+            label = { Text("Intent") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        OutlinedTextField(
+            value = local.durationMinutes,
+            onValueChange = { onLocalChange(local.copy(durationMinutes = it.filter(Char::isDigit))) },
+            label = { Text("Duration (minutes)") },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        val deadlineLabel = local.deadlineEpochMs?.let { formatter.format(Date(it)) } ?: "No deadline"
+        TodoDeadlineRow(
+            deadlineLabel = deadlineLabel,
+            onPick = {
+                val initial = local.deadlineEpochMs ?: next6pmEpochMs()
+                pickDateTime(context, initial) { selected ->
+                    onLocalChange(local.copy(deadlineEpochMs = selected))
+                }
+            },
+            onClear = { onLocalChange(local.copy(deadlineEpochMs = null)) },
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (1..4).forEach { p ->
+                Button(onClick = { onLocalChange(local.copy(priority = p)) }) {
+                    Text("P$p${if (local.priority == p) "*" else ""}")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TodoDeadlineRow(
+    deadlineLabel: String,
+    onPick: () -> Unit,
+    onClear: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = "Deadline: $deadlineLabel",
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        TextButton(onClick = onPick) { Text("Pick") }
+        TextButton(onClick = onClear) { Text("Clear") }
+    }
 }
 
 private fun next6pmEpochMs(nowMs: Long = System.currentTimeMillis()): Long {

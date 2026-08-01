@@ -71,116 +71,141 @@ object SessionLogger {
         val now = Date()
         val dao = sessionLogDao ?: return SessionHandle(0L)
         val nowMs = now.time
-        val token: Long
-        val shouldDebounce = synchronized(stateLock) {
-            (currentSessionId > 0L || sessionStarting) &&
-                nowMs - currentSessionStartedAtMs in 0 until START_DEBOUNCE_MS &&
-                currentSessionEventCount <= 1
-        }
-        if (shouldDebounce) {
+        if (shouldDebounceNow(nowMs)) {
             Log.d(TAG, "Ignoring duplicate startSession() within debounce window")
             return getActiveSessionHandle() ?: SessionHandle(0L)
         }
-
-        synchronized(stateLock) {
-            activeSessionToken += 1L
-            token = activeSessionToken
-            sessionStarting = true
-            currentSessionId = 0L
-            currentSessionStartedAtMs = nowMs
-            currentSessionEventCount = 0
-            pendingEvents.clear()
-        }
-
+        val token = beginNewSessionToken(nowMs)
         val title = "Session ${headerDateFmt.format(now)}"
-        writeScope.launch {
-            val sessionId = dao.insertSession(
-                SessionLog(
-                    startedAtMs = nowMs,
-                    title = title,
-                )
-            )
+        writeScope.launch { persistNewSession(dao, token, nowMs, title, initialEntry) }
+        return SessionHandle(token)
+    }
+
+    private fun shouldDebounceNow(nowMs: Long): Boolean = synchronized(stateLock) {
+        shouldDebounceSessionStart(
+            hasActiveOrStartingSession = currentSessionId > 0L || sessionStarting,
+            ageMs = nowMs - currentSessionStartedAtMs,
+            debounceMs = START_DEBOUNCE_MS,
+            eventCount = currentSessionEventCount,
+        )
+    }
+
+    private fun beginNewSessionToken(nowMs: Long): Long = synchronized(stateLock) {
+        activeSessionToken += 1L
+        val token = activeSessionToken
+        sessionStarting = true
+        currentSessionId = 0L
+        currentSessionStartedAtMs = nowMs
+        currentSessionEventCount = 0
+        pendingEvents.clear()
+        token
+    }
+
+    private suspend fun persistNewSession(
+        dao: SessionLogDao,
+        token: Long,
+        nowMs: Long,
+        title: String,
+        initialEntry: String,
+    ) {
+        val sessionId = dao.insertSession(SessionLog(startedAtMs = nowMs, title = title))
+        dao.insertEvent(SessionLogEvent(sessionId = sessionId, timestampMs = nowMs, entry = initialEntry))
+        val toFlush: List<PendingEvent> = synchronized(stateLock) {
+            if (token != activeSessionToken) {
+                sessionStarting = false
+                emptyList()
+            } else {
+                currentSessionId = sessionId
+                currentSessionStartedAtMs = nowMs
+                currentSessionEventCount = 1
+                sessionStarting = false
+                pendingEvents.filter { it.token == token }.also { pendingEvents.removeAll(it) }
+            }
+        }
+        toFlush.forEach { pending ->
             dao.insertEvent(
                 SessionLogEvent(
                     sessionId = sessionId,
-                    timestampMs = nowMs,
-                    entry = initialEntry,
-                )
+                    timestampMs = pending.timestampMs,
+                    entry = pending.entry,
+                ),
             )
-            val toFlush: List<PendingEvent> = synchronized(stateLock) {
-                if (token != activeSessionToken) {
-                    sessionStarting = false
-                    emptyList()
-                } else {
-                    currentSessionId = sessionId
-                    currentSessionStartedAtMs = nowMs
-                    currentSessionEventCount = 1
-                    sessionStarting = false
-                    pendingEvents
-                        .filter { it.token == token }
-                        .also { pendingEvents.removeAll(it) }
-                }
-            }
-            toFlush.forEach { pending ->
-                dao.insertEvent(
-                    SessionLogEvent(
-                        sessionId = sessionId,
-                        timestampMs = pending.timestampMs,
-                        entry = pending.entry,
-                    )
-                )
-                synchronized(stateLock) {
-                    currentSessionEventCount += 1
-                }
-            }
+            synchronized(stateLock) { currentSessionEventCount += 1 }
         }
-        return SessionHandle(token)
     }
 
     fun log(entry: String) {
         log(getActiveSessionHandle(), entry)
     }
 
-    fun log(handle: SessionHandle?, entry: String) {
+    fun log(
+        handle: SessionHandle?,
+        entry: String,
+    ) {
         if (handle == null || handle.token <= 0L) return
         val dao = sessionLogDao ?: return
         val now = System.currentTimeMillis()
-        var sessionId: Long? = null
-        var shouldRecover = false
+        val decision = synchronized(stateLock) {
+            decideSessionLogWrite(
+                handleToken = handle.token,
+                activeToken = activeSessionToken,
+                currentSessionId = currentSessionId,
+                sessionStarting = sessionStarting,
+            )
+        }
+        applySessionLogDecision(dao, handle.token, now, entry, decision)
+    }
+
+    private fun applySessionLogDecision(
+        dao: SessionLogDao,
+        token: Long,
+        now: Long,
+        entry: String,
+        decision: SessionLogWriteDecision,
+    ) {
+        when (decision) {
+            SessionLogWriteDecision.Stale ->
+                Log.d(TAG, "Dropped stale log event for token=$token")
+            SessionLogWriteDecision.QueuePending ->
+                queuePendingEvent(token, now, entry)
+            SessionLogWriteDecision.QueueAndRecover -> {
+                queuePendingEvent(token, now, entry, markStarting = true)
+                writeScope.launch { recoverOrCreateSessionAndFlush(dao, token) }
+            }
+            is SessionLogWriteDecision.WriteNow ->
+                writeLogEventNow(dao, decision.sessionId, now, entry)
+        }
+    }
+
+    private fun queuePendingEvent(
+        token: Long,
+        now: Long,
+        entry: String,
+        markStarting: Boolean = false,
+    ) {
         synchronized(stateLock) {
-            if (handle.token != activeSessionToken) {
-                Log.d(TAG, "Dropped stale log event for token=${handle.token}")
-                return
-            }
-            if (currentSessionId <= 0L) {
-                if (sessionStarting) {
-                    pendingEvents.add(PendingEvent(handle.token, now, entry))
-                } else {
-                    pendingEvents.add(PendingEvent(handle.token, now, entry))
-                    sessionStarting = true
-                    shouldRecover = true
-                }
-            } else {
-                sessionId = currentSessionId
-                currentSessionEventCount += 1
-            }
+            pendingEvents.add(PendingEvent(token, now, entry))
+            if (markStarting) sessionStarting = true
         }
-        if (sessionId != null) {
-            val targetSessionId = sessionId
-            writeScope.launch {
-                dao.insertEvent(
-                    SessionLogEvent(
-                        sessionId = targetSessionId,
-                        timestampMs = now,
-                        entry = entry,
-                    )
-                )
-            }
+    }
+
+    private fun writeLogEventNow(
+        dao: SessionLogDao,
+        sessionId: Long,
+        now: Long,
+        entry: String,
+    ) {
+        synchronized(stateLock) {
+            currentSessionEventCount += 1
         }
-        if (shouldRecover) {
-            writeScope.launch {
-                recoverOrCreateSessionAndFlush(dao, handle.token)
-            }
+        writeScope.launch {
+            dao.insertEvent(
+                SessionLogEvent(
+                    sessionId = sessionId,
+                    timestampMs = now,
+                    entry = entry,
+                ),
+            )
         }
     }
 
@@ -204,37 +229,34 @@ object SessionLogger {
             }
         }
         val recovered = dao.getLatestSessionWithCount()
-        val sessionId: Long
-        val startedAtMs: Long
-        var eventCount = 0
-
-        if (recovered != null) {
-            sessionId = recovered.id
-            startedAtMs = recovered.startedAtMs
-            eventCount = recovered.eventCount
-            Log.d(TAG, "Recovered existing session id=$sessionId")
+        val (sessionId, startedAtMs, eventCount) = if (recovered != null) {
+            Log.d(TAG, "Recovered existing session id=${recovered.id}")
+            Triple(recovered.id, recovered.startedAtMs, recovered.eventCount)
         } else {
-            val now = Date()
-            val nowMs = now.time
-            val title = "Session ${headerDateFmt.format(now)}"
-            sessionId = dao.insertSession(
-                SessionLog(
-                    startedAtMs = nowMs,
-                    title = title,
-                )
-            )
-            dao.insertEvent(
-                SessionLogEvent(
-                    sessionId = sessionId,
-                    timestampMs = nowMs,
-                    entry = "Session resumed",
-                )
-            )
-            startedAtMs = nowMs
-            eventCount = 1
-            Log.w(TAG, "No session found; created recovery session id=$sessionId")
+            createRecoverySession(dao)
         }
+        flushPendingAfterRecover(dao, token, sessionId, startedAtMs, eventCount)
+    }
 
+    private suspend fun createRecoverySession(dao: SessionLogDao): Triple<Long, Long, Int> {
+        val now = Date()
+        val nowMs = now.time
+        val title = "Session ${headerDateFmt.format(now)}"
+        val sessionId = dao.insertSession(SessionLog(startedAtMs = nowMs, title = title))
+        dao.insertEvent(
+            SessionLogEvent(sessionId = sessionId, timestampMs = nowMs, entry = "Session resumed"),
+        )
+        Log.w(TAG, "No session found; created recovery session id=$sessionId")
+        return Triple(sessionId, nowMs, 1)
+    }
+
+    private suspend fun flushPendingAfterRecover(
+        dao: SessionLogDao,
+        token: Long,
+        sessionId: Long,
+        startedAtMs: Long,
+        eventCount: Int,
+    ) {
         val toFlush: List<PendingEvent>
         val activeSessionId: Long
         synchronized(stateLock) {
@@ -250,11 +272,8 @@ object SessionLogger {
             }
             sessionStarting = false
             activeSessionId = currentSessionId
-            toFlush = pendingEvents
-                .filter { it.token == token }
-                .also { pendingEvents.removeAll(it) }
+            toFlush = pendingEvents.filter { it.token == token }.also { pendingEvents.removeAll(it) }
         }
-
         if (toFlush.isEmpty()) return
         toFlush.forEach { pending ->
             dao.insertEvent(
@@ -262,12 +281,10 @@ object SessionLogger {
                     sessionId = activeSessionId,
                     timestampMs = pending.timestampMs,
                     entry = pending.entry,
-                )
+                ),
             )
         }
-        synchronized(stateLock) {
-            currentSessionEventCount += toFlush.size
-        }
+        synchronized(stateLock) { currentSessionEventCount += toFlush.size }
     }
 
     suspend fun getAllSessions(): List<SessionRecord> {

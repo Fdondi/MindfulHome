@@ -43,6 +43,16 @@ class BackendAuthHelper(
     private val checkAuthStatus: suspend (String) -> Unit = { token ->
         withContext(Dispatchers.IO) { BackendClient.checkAuthStatus(token) }
     },
+    /**
+     * Port for `/api/generate`. Defaults to [BackendClient.generate]; inject a fake
+     * in unit tests to avoid network I/O.
+     */
+    private val generate: (
+        token: String,
+        model: String,
+        contents: List<BackendClient.BackendContent>,
+        tools: List<Map<String, JsonElement>>?,
+    ) -> BackendClient.GenerateResponse = BackendClient::generate,
 ) {
 
     companion object {
@@ -92,14 +102,14 @@ class BackendAuthHelper(
             ?: throw BackendAuthException("Unable to obtain authentication token")
 
         try {
-            BackendClient.generate(token, model, contents, tools)
+            generate(token, model, contents, tools)
         } catch (e: BackendHttpException) {
             if (e.statusCode == 401) {
                 Log.i(TAG, "Got 401 on generate, clearing session and re-exchanging once")
                 clearSessionToken()
                 val newToken = ensureSessionToken()
                     ?: throw BackendAuthException("Unable to refresh authentication token")
-                BackendClient.generate(newToken, model, contents, tools)
+                generate(newToken, model, contents, tools)
             } else {
                 throw e
             }

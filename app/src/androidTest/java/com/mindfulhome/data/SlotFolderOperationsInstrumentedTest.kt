@@ -54,11 +54,11 @@ class SlotFolderOperationsInstrumentedTest {
     fun setQuickLaunchAppLimitAt_updatesStoredLimit() = runBlocking {
         repo.addIntentFolder("Work", listOf("com.timed"))
         repo.setQuickLaunchAppLimitAt(0, "com.timed", limitMinutes = 5)
-        var folder = repo.quickLaunchSlots().first() as QuickLaunchSlot.Folder
+        var folder = repo.quickLaunchSlots().first().single() as QuickLaunchSlot.Folder
         assertEquals(5, folder.limitMinutesFor("com.timed"))
 
         repo.setQuickLaunchAppLimitAt(0, "com.timed", limitMinutes = null)
-        folder = repo.quickLaunchSlots().first() as QuickLaunchSlot.Folder
+        folder = repo.quickLaunchSlots().first().single() as QuickLaunchSlot.Folder
         assertEquals(null, folder.limitMinutesFor("com.timed"))
     }
 
@@ -68,7 +68,7 @@ class SlotFolderOperationsInstrumentedTest {
         repo.mergePackageIntoQuickLaunchAt(0, "com.timed", limitMinutes = 7)
         repo.mergePackageIntoQuickLaunchAt(0, "com.unlimited", limitMinutes = null)
 
-        val folder = repo.quickLaunchSlots().first() as QuickLaunchSlot.Folder
+        val folder = repo.quickLaunchSlots().first().single() as QuickLaunchSlot.Folder
         assertEquals(7, folder.limitMinutesFor("com.timed"))
         assertEquals(null, folder.limitMinutesFor("com.unlimited"))
         assertEquals(listOf("com.unlimited"), folder.flattenAllowedPackages())

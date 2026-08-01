@@ -14,6 +14,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.credentials.exceptions.NoCredentialException
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -21,6 +22,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import android.content.SharedPreferences
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
@@ -144,403 +146,354 @@ class MainActivity : ComponentActivity() {
                 navController = navCtrl
                 val startDestination = remember {
                     val timerIsRunning = TimerService.timerState.value is TimerState.Counting
-                    when {
-                        !onboardingDone -> "onboarding"
-                        shouldShowTimer -> "timer"
-                        timerIsRunning -> postTimerTargetRoute()
-                        else -> "default"
-                    }
+                    MainActivityLogic.resolveStartDestination(
+                        onboardingDone = onboardingDone,
+                        shouldShowTimer = shouldShowTimer,
+                        timerIsRunning = timerIsRunning,
+                        postTimerRoute = postTimerTargetRoute(),
+                    )
                 }
-
-                NavHost(navController = navCtrl, startDestination = startDestination, route = "root") {
-
-                    composable("onboarding") {
-                        OnboardingScreen(
-                            onComplete = {
-                                prefs.edit {
-                                    putBoolean("onboarding_done", true)
-                                    remove("onboarding_step")
-                                }
-                                shouldShowTimer = false
-                                navCtrl.navigate("default") {
-                                    popUpTo("onboarding") { inclusive = true }
-                                }
-                            }
-                        )
-                    }
-
-                    composable("timer") {
-                        // Timer is the only flow that needs backend auth (AI negotiation
-                        // follows). Refresh the Google ID token silently here so the
-                        // NegotiationScreen doesn't have to prompt mid-conversation.
-                        // Not done on the launcher/default page, so quick-launching apps
-                        // never triggers a sign-in popup.
-                        LaunchedEffect(Unit) { maybePreflightBackendAuth() }
-                        TimerScreen(
-                            onTimerSet = { durationMinutes, reason, hardDeadlineMinutes, mostUsedAppsToday, mostUsedAppsCapturedAtMs ->
-                                Log.d(
-                                    "MainActivity",
-                                    "onTimerSet: duration=$durationMinutes reason='$reason' hardDeadlineMinutes=$hardDeadlineMinutes",
-                                )
-                                shouldShowTimer = false
-                                lastDurationMinutes = durationMinutes
-                                unlockReason = reason
-                                val handle = ensureSessionHandle()
-                                SettingsManager.saveLastDeclaredIntent(
-                                    this@MainActivity,
-                                    durationMinutes,
-                                    reason,
-                                )
-                                if (mostUsedAppsToday.isNotEmpty() && mostUsedAppsCapturedAtMs != null) {
-                                    SettingsManager.saveLastTimerUsageSnapshot(
-                                        context = this@MainActivity,
-                                        capturedAtMs = mostUsedAppsCapturedAtMs,
-                                        topApps = mostUsedAppsToday,
-                                    )
-                                } else {
-                                    SettingsManager.clearLastTimerUsageSnapshot(this@MainActivity)
-                                }
-                                val normalizedReason = reason.ifBlank { "_(not provided)_" }
-                                SessionLogger.log(
-                                    handle,
-                                    "Timer + intention set: **$durationMinutes min** - $normalizedReason",
-                                )
-                                TimerService.start(
-                                    context = this@MainActivity,
-                                    durationMinutes = durationMinutes,
-                                    packageName = "",
-                                    sessionHandle = handle,
-                                    hardDeadlineMinutes = hardDeadlineMinutes,
-                                )
-                                val targetRoute = postTimerTargetRoute()
-                                Log.d("MainActivity", "TimerService.start called, navigating to $targetRoute")
-                                navCtrl.navigate(targetRoute)
-                                Log.d("MainActivity", "Navigation to $targetRoute completed")
-                            },
-                            onBackToDefault = {
-                                clearPendingPrefill()
-                                shouldShowTimer = false
-                                navCtrl.navigate("default") {
-                                    popUpTo("timer") { inclusive = true }
-                                    launchSingleTop = true
-                                }
-                            },
-                            initialMinutes = pendingPrefillMinutes,
-                            initialReason = pendingPrefillReason,
-                            prefillToken = pendingPrefillToken,
-                            onPrefillApplied = {
-                                pendingPrefillMinutes = null
-                                pendingPrefillReason = null
-                            },
-                        )
-                    }
-
-                    composable("should_you_be_here") {
-                        val pkg = TimerService.currentPackage.value
-                        val appLabel = remember(pkg) {
-                            if (pkg.isBlank()) {
-                                null
-                            } else {
-                                try {
-                                    packageManager.getApplicationLabel(
-                                        packageManager.getApplicationInfo(pkg, 0),
-                                    ).toString()
-                                } catch (_: Exception) {
-                                    pkg
-                                }
-                            }
-                        }
-                        ShouldYouBeHereScreen(
-                            appLabel = appLabel,
-                            onLeave = {
-                                SessionLogger.getActiveSessionHandle()?.let {
-                                    SessionLogger.log(it, "ShouldYouBeHere: left for home")
-                                }
-                                TimerService.dismissShouldYouBeHere(this@MainActivity)
-                                shouldShowTimer = false
-                                wentToBackground = false
-                                navCtrl.navigate("default") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onNeedMoreTime = {
-                                val pkg = TimerService.currentPackage.value
-                                shouldShowTimer = false
-                                if (pkg.isNotBlank()) {
-                                    navCtrl.navigate("extend/$pkg") {
-                                        popUpTo("should_you_be_here") { inclusive = true }
-                                    }
-                                } else {
-                                    navCtrl.navigate("default") {
-                                        popUpTo("root") { inclusive = true }
-                                    }
-                                }
-                            },
-                        )
-                    }
-
-                    composable("extend/{packageName}") { backStackEntry ->
-                        val packageName = backStackEntry.arguments
-                            ?.getString("packageName") ?: ""
-                        NegotiationScreen(
-                            packageName = packageName,
-                            unlockReason = unlockReason,
-                            durationMinutes = lastDurationMinutes,
-                            sessionHandle = sessionHandle,
-                            repository = repository,
-                            karmaManager = karmaManager,
-                            extendGate = true,
-                            onTimerClick = {
-                                shouldShowTimer = true
-                                navCtrl.navigate("timer") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onOpenDefault = {
-                                shouldShowTimer = false
-                                navCtrl.navigate("default") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onOpenLogs = { navCtrl.navigate("logs") },
-                            onOpenKarma = { navCtrl.navigate("karma") },
-                            onOpenSettings = { navCtrl.navigate("settings") },
-                            onAppGranted = {
-                                shouldShowTimer = false
-                                wentToBackground = false
-                                PackageManagerHelper.launchApp(this@MainActivity, packageName)
-                            },
-                            onDismiss = {
-                                navCtrl.navigate("default") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                        )
-                    }
-
-                    composable("default") {
-                        val savedSession = SettingsManager.getLastSession(this@MainActivity)
-                        val savedAppLabel = savedSession?.let { session ->
-                            try {
-                                val appInfo = packageManager.getApplicationInfo(
-                                    session.packageName, 0
-                                )
-                                packageManager.getApplicationLabel(appInfo).toString()
-                            } catch (_: Exception) {
-                                null
-                            }
-                        }
-                        DefaultPageScreen(
-                            repository = repository,
-                            onQuickLaunchApp = { packageName, quickLaunchPackages, limitMinutes ->
-                                launchQuickStart(packageName, quickLaunchPackages, limitMinutes)
-                            },
-                            resumeSessionLabel = savedAppLabel,
-                            resumeSessionMinutes = savedSession?.remainingMinutes ?: 0,
-                            onResumeSession = savedSession?.let { session ->
-                                {
-                                    shouldShowTimer = false
-                                    lastDurationMinutes = session.remainingMinutes
-                                    val handle = ensureSessionHandle()
-                                    SettingsManager.saveLastDeclaredIntent(
-                                        this@MainActivity,
-                                        session.remainingMinutes,
-                                        "",
-                                    )
-                                    SettingsManager.clearLastSession(this@MainActivity)
-                                    SessionLogger.log(
-                                        handle,
-                                        "Resumed previous session: **${session.remainingMinutes} min**"
-                                    )
-                                    TimerService.startWithDurationMs(
-                                        this@MainActivity,
-                                        session.remainingMs,
-                                        session.packageName,
-                                        handle,
-                                    )
-                                    val launchIntent = packageManager
-                                        .getLaunchIntentForPackage(session.packageName)
-                                    if (launchIntent != null) {
-                                        startActivity(launchIntent)
-                                    }
-                                }
-                            },
-                            onOpenTimerPlain = {
-                                clearPendingPrefill()
-                                SettingsManager.clearQuickLaunchSession(this@MainActivity)
-                                shouldShowTimer = true
-                                navCtrl.navigate("timer") {
-                                    popUpTo("default") { inclusive = false }
-                                }
-                            },
-                            onOpenLogs = { navCtrl.navigate("logs") },
-                            onOpenKarma = { navCtrl.navigate("karma") },
-                            onOpenSettings = { navCtrl.navigate("settings") },
-                            onStartTodo = { minutes, intentText ->
-                                pendingPrefillMinutes = minutes
-                                pendingPrefillReason = intentText
-                                pendingPrefillToken = System.currentTimeMillis()
-                                SettingsManager.clearQuickLaunchSession(this@MainActivity)
-                                shouldShowTimer = true
-                                navCtrl.navigate("timer") {
-                                    popUpTo("default") { inclusive = false }
-                                }
-                            },
-                            onScreenShown = {
-                                ensureQuickLaunchMonitoringAtHome()
-                            },
-                        )
-                    }
-
-                    composable("home") {
-                        HomeScreen(
-                            durationMinutes = lastDurationMinutes,
-                            unlockReason = unlockReason,
-                            sessionHandle = sessionHandle,
-                            repository = repository,
-                            karmaManager = karmaManager,
-                            onRequestAi = { packageName ->
-                                if (packageName.isBlank()) {
-                                    navCtrl.navigate("assistant")
-                                } else {
-                                    navCtrl.navigate("negotiate/$packageName")
-                                }
-                            },
-                            onTimerClick = {
-                                shouldShowTimer = true
-                                navCtrl.navigate("timer") {
-                                    popUpTo("home") { inclusive = true }
-                                }
-                            },
-                            onOpenDefault = {
-                                shouldShowTimer = false
-                                navCtrl.navigate("default") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onOpenSettings = {
-                                navCtrl.navigate("settings")
-                            },
-                            onOpenLogs = {
-                                navCtrl.navigate("logs")
-                            },
-                            onOpenKarma = {
-                                navCtrl.navigate("karma")
-                            }
-                        )
-                    }
-
-                    composable("negotiate/{packageName}") { backStackEntry ->
-                        val packageName = backStackEntry.arguments
-                            ?.getString("packageName") ?: ""
-
-                        // Read (but don't clear) the unlock reason; it persists
-                        // for the whole session so HomeScreen can still use it.
-                        val reason = remember { unlockReason }
-
-                        NegotiationScreen(
-                            packageName = packageName,
-                            unlockReason = reason,
-                            durationMinutes = lastDurationMinutes,
-                            sessionHandle = sessionHandle,
-                            repository = repository,
-                            karmaManager = karmaManager,
-                            onTimerClick = {
-                                shouldShowTimer = true
-                                navCtrl.navigate("timer") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onOpenDefault = {
-                                shouldShowTimer = false
-                                navCtrl.navigate("default") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onOpenLogs = { navCtrl.navigate("logs") },
-                            onOpenKarma = { navCtrl.navigate("karma") },
-                            onOpenSettings = { navCtrl.navigate("settings") },
-                            onAppGranted = {
-                                shouldShowTimer = false
-                                wentToBackground = false
-                                PackageManagerHelper.launchApp(this@MainActivity, packageName)
-                            },
-                            onDismiss = {
-                                navCtrl.popBackStack()
-                            }
-                        )
-                    }
-
-                    composable("assistant") {
-                        NegotiationScreen(
-                            packageName = "",
-                            unlockReason = unlockReason,
-                            durationMinutes = lastDurationMinutes,
-                            sessionHandle = sessionHandle,
-                            repository = repository,
-                            karmaManager = karmaManager,
-                            onTimerClick = {
-                                shouldShowTimer = true
-                                navCtrl.navigate("timer") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onOpenDefault = {
-                                shouldShowTimer = false
-                                navCtrl.navigate("default") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onOpenLogs = { navCtrl.navigate("logs") },
-                            onOpenKarma = { navCtrl.navigate("karma") },
-                            onOpenSettings = { navCtrl.navigate("settings") },
-                            onAppGranted = {
-                                navCtrl.navigate("home") {
-                                    popUpTo("root") { inclusive = true }
-                                }
-                            },
-                            onDismiss = {
-                                if (shouldShowAssistantAfterUnlock()) {
-                                    shouldShowTimer = true
-                                    navCtrl.navigate("timer") {
-                                        popUpTo("root") { inclusive = true }
-                                    }
-                                } else {
-                                    navCtrl.popBackStack()
-                                }
-                            }
-                        )
-                    }
-
-                    composable("karma") {
-                        KarmaScreen(
-                            repository = repository,
-                            karmaManager = karmaManager,
-                            onBack = { navCtrl.popBackStack() }
-                        )
-                    }
-
-                    composable("settings") {
-                        SettingsScreen(
-                            onBack = { navCtrl.popBackStack() },
-                            onOpenIntervalSettings = { navCtrl.navigate("settings_intervals") },
-                        )
-                    }
-
-                    composable("settings_intervals") {
-                        IntervalSettingsScreen(
-                            onBack = { navCtrl.popBackStack() },
-                        )
-                    }
-
-                    composable("logs") {
-                        LogsScreen(
-                            onBack = { navCtrl.popBackStack() }
-                        )
-                    }
-                }
+                MindfulNavHost(
+                    navCtrl = navCtrl,
+                    startDestination = startDestination,
+                    prefs = prefs,
+                )
             }
         }
+    }
+
+    @Composable
+    private fun MindfulNavHost(
+        navCtrl: NavHostController,
+        startDestination: String,
+        prefs: SharedPreferences,
+    ) {
+        NavHost(navController = navCtrl, startDestination = startDestination, route = "root") {
+            composable("onboarding") { OnboardingRoute(navCtrl, prefs) }
+            composable("timer") { TimerRoute(navCtrl) }
+            composable("should_you_be_here") { ShouldYouBeHereRoute(navCtrl) }
+            composable("extend/{packageName}") { entry ->
+                ExtendGateRoute(navCtrl, entry.arguments?.getString("packageName").orEmpty())
+            }
+            composable("default") { DefaultRoute(navCtrl) }
+            composable("home") { HomeRoute(navCtrl) }
+            composable("negotiate/{packageName}") { entry ->
+                NegotiateRoute(navCtrl, entry.arguments?.getString("packageName").orEmpty())
+            }
+            composable("assistant") { AssistantRoute(navCtrl) }
+            composable("karma") {
+                KarmaScreen(
+                    repository = repository,
+                    karmaManager = karmaManager,
+                    onBack = { navCtrl.popBackStack() },
+                )
+            }
+            composable("settings") {
+                SettingsScreen(
+                    onBack = { navCtrl.popBackStack() },
+                    onOpenIntervalSettings = { navCtrl.navigate("settings_intervals") },
+                )
+            }
+            composable("settings_intervals") {
+                IntervalSettingsScreen(onBack = { navCtrl.popBackStack() })
+            }
+            composable("logs") {
+                LogsScreen(onBack = { navCtrl.popBackStack() })
+            }
+        }
+    }
+
+    @Composable
+    private fun OnboardingRoute(navCtrl: NavHostController, prefs: SharedPreferences) {
+        OnboardingScreen(
+            onComplete = {
+                prefs.edit {
+                    putBoolean("onboarding_done", true)
+                    remove("onboarding_step")
+                }
+                shouldShowTimer = false
+                navCtrl.navigate("default") {
+                    popUpTo("onboarding") { inclusive = true }
+                }
+            },
+        )
+    }
+
+    @Composable
+    private fun TimerRoute(navCtrl: NavHostController) {
+        // Timer is the only flow that needs backend auth (AI negotiation follows).
+        LaunchedEffect(Unit) { maybePreflightBackendAuth() }
+        TimerScreen(
+            onTimerSet = { durationMinutes, reason, hardDeadlineMinutes, mostUsedAppsToday, mostUsedAppsCapturedAtMs ->
+                applyTimerSet(
+                    navCtrl = navCtrl,
+                    durationMinutes = durationMinutes,
+                    reason = reason,
+                    hardDeadlineMinutes = hardDeadlineMinutes,
+                    mostUsedAppsToday = mostUsedAppsToday,
+                    mostUsedAppsCapturedAtMs = mostUsedAppsCapturedAtMs,
+                )
+            },
+            onBackToDefault = {
+                clearPendingPrefill()
+                shouldShowTimer = false
+                navCtrl.navigate("default") {
+                    popUpTo("timer") { inclusive = true }
+                    launchSingleTop = true
+                }
+            },
+            initialMinutes = pendingPrefillMinutes,
+            initialReason = pendingPrefillReason,
+            prefillToken = pendingPrefillToken,
+            onPrefillApplied = {
+                pendingPrefillMinutes = null
+                pendingPrefillReason = null
+            },
+        )
+    }
+
+    private fun applyTimerSet(
+        navCtrl: NavHostController,
+        durationMinutes: Int,
+        reason: String,
+        hardDeadlineMinutes: Int?,
+        mostUsedAppsToday: List<com.mindfulhome.service.UsageTracker.DailyAppUsage>,
+        mostUsedAppsCapturedAtMs: Long?,
+    ) {
+        Log.d(
+            "MainActivity",
+            "onTimerSet: duration=$durationMinutes reason='$reason' hardDeadlineMinutes=$hardDeadlineMinutes",
+        )
+        shouldShowTimer = false
+        lastDurationMinutes = durationMinutes
+        unlockReason = reason
+        val handle = ensureSessionHandle()
+        SettingsManager.saveLastDeclaredIntent(this, durationMinutes, reason)
+        if (mostUsedAppsToday.isNotEmpty() && mostUsedAppsCapturedAtMs != null) {
+            SettingsManager.saveLastTimerUsageSnapshot(
+                context = this,
+                capturedAtMs = mostUsedAppsCapturedAtMs,
+                topApps = mostUsedAppsToday,
+            )
+        } else {
+            SettingsManager.clearLastTimerUsageSnapshot(this)
+        }
+        val normalizedReason = reason.ifBlank { "_(not provided)_" }
+        SessionLogger.log(
+            handle,
+            "Timer + intention set: **$durationMinutes min** - $normalizedReason",
+        )
+        TimerService.start(
+            context = this,
+            durationMinutes = durationMinutes,
+            packageName = "",
+            sessionHandle = handle,
+            hardDeadlineMinutes = hardDeadlineMinutes,
+        )
+        val targetRoute = postTimerTargetRoute()
+        Log.d("MainActivity", "TimerService.start called, navigating to $targetRoute")
+        navCtrl.navigate(targetRoute)
+        Log.d("MainActivity", "Navigation to $targetRoute completed")
+    }
+
+    @Composable
+    private fun ShouldYouBeHereRoute(navCtrl: NavHostController) {
+        val pkg = TimerService.currentPackage.value
+        val appLabel = remember(pkg) { resolveAppLabelOrNull(pkg) }
+        ShouldYouBeHereScreen(
+            appLabel = appLabel,
+            onLeave = {
+                SessionLogger.getActiveSessionHandle()?.let {
+                    SessionLogger.log(it, "ShouldYouBeHere: left for home")
+                }
+                TimerService.dismissShouldYouBeHere(this@MainActivity)
+                shouldShowTimer = false
+                wentToBackground = false
+                navCtrl.navigate("default") { popUpTo("root") { inclusive = true } }
+            },
+            onNeedMoreTime = {
+                val currentPkg = TimerService.currentPackage.value
+                shouldShowTimer = false
+                if (currentPkg.isNotBlank()) {
+                    navCtrl.navigate("extend/$currentPkg") {
+                        popUpTo("should_you_be_here") { inclusive = true }
+                    }
+                } else {
+                    navCtrl.navigate("default") { popUpTo("root") { inclusive = true } }
+                }
+            },
+        )
+    }
+
+    private fun resolveAppLabelOrNull(pkg: String): String? {
+        if (pkg.isBlank()) return null
+        return try {
+            packageManager.getApplicationLabel(packageManager.getApplicationInfo(pkg, 0)).toString()
+        } catch (_: Exception) {
+            pkg
+        }
+    }
+
+    @Composable
+    private fun ExtendGateRoute(navCtrl: NavHostController, packageName: String) {
+        NegotiationScreen(
+            packageName = packageName,
+            unlockReason = unlockReason,
+            durationMinutes = lastDurationMinutes,
+            sessionHandle = sessionHandle,
+            repository = repository,
+            karmaManager = karmaManager,
+            extendGate = true,
+            onTimerClick = { navigateToTimerFromRoot(navCtrl) },
+            onOpenDefault = { navigateToDefaultFromRoot(navCtrl) },
+            onOpenLogs = { navCtrl.navigate("logs") },
+            onOpenKarma = { navCtrl.navigate("karma") },
+            onOpenSettings = { navCtrl.navigate("settings") },
+            onAppGranted = {
+                shouldShowTimer = false
+                wentToBackground = false
+                PackageManagerHelper.launchApp(this@MainActivity, packageName)
+            },
+            onDismiss = { navigateToDefaultFromRoot(navCtrl) },
+        )
+    }
+
+    @Composable
+    private fun DefaultRoute(navCtrl: NavHostController) {
+        val savedSession = SettingsManager.getLastSession(this@MainActivity)
+        val savedAppLabel = savedSession?.let { resolveAppLabelOrNull(it.packageName) }
+        DefaultPageScreen(
+            repository = repository,
+            onQuickLaunchApp = { packageName, quickLaunchPackages, limitMinutes ->
+                launchQuickStart(packageName, quickLaunchPackages, limitMinutes)
+            },
+            resumeSessionLabel = savedAppLabel,
+            resumeSessionMinutes = savedSession?.remainingMinutes ?: 0,
+            onResumeSession = savedSession?.let { session ->
+                { resumeSavedSession(session) }
+            },
+            onOpenTimerPlain = {
+                clearPendingPrefill()
+                SettingsManager.clearQuickLaunchSession(this@MainActivity)
+                shouldShowTimer = true
+                navCtrl.navigate("timer") { popUpTo("default") { inclusive = false } }
+            },
+            onOpenLogs = { navCtrl.navigate("logs") },
+            onOpenKarma = { navCtrl.navigate("karma") },
+            onOpenSettings = { navCtrl.navigate("settings") },
+            onStartTodo = { minutes, intentText ->
+                pendingPrefillMinutes = minutes
+                pendingPrefillReason = intentText
+                pendingPrefillToken = System.currentTimeMillis()
+                SettingsManager.clearQuickLaunchSession(this@MainActivity)
+                shouldShowTimer = true
+                navCtrl.navigate("timer") { popUpTo("default") { inclusive = false } }
+            },
+            onScreenShown = { ensureQuickLaunchMonitoringAtHome() },
+        )
+    }
+
+    private fun resumeSavedSession(session: SettingsManager.SavedSession) {
+        shouldShowTimer = false
+        lastDurationMinutes = session.remainingMinutes
+        val handle = ensureSessionHandle()
+        SettingsManager.saveLastDeclaredIntent(this, session.remainingMinutes, "")
+        SettingsManager.clearLastSession(this)
+        SessionLogger.log(
+            handle,
+            "Resumed previous session: **${session.remainingMinutes} min**",
+        )
+        TimerService.startWithDurationMs(
+            this,
+            session.remainingMs,
+            session.packageName,
+            handle,
+        )
+        packageManager.getLaunchIntentForPackage(session.packageName)?.let { startActivity(it) }
+    }
+
+    @Composable
+    private fun HomeRoute(navCtrl: NavHostController) {
+        HomeScreen(
+            durationMinutes = lastDurationMinutes,
+            unlockReason = unlockReason,
+            sessionHandle = sessionHandle,
+            repository = repository,
+            karmaManager = karmaManager,
+            onRequestAi = { packageName ->
+                if (packageName.isBlank()) navCtrl.navigate("assistant")
+                else navCtrl.navigate("negotiate/$packageName")
+            },
+            onTimerClick = {
+                shouldShowTimer = true
+                navCtrl.navigate("timer") { popUpTo("home") { inclusive = true } }
+            },
+            onOpenDefault = { navigateToDefaultFromRoot(navCtrl) },
+            onOpenSettings = { navCtrl.navigate("settings") },
+            onOpenLogs = { navCtrl.navigate("logs") },
+            onOpenKarma = { navCtrl.navigate("karma") },
+        )
+    }
+
+    @Composable
+    private fun NegotiateRoute(navCtrl: NavHostController, packageName: String) {
+        val reason = remember { unlockReason }
+        NegotiationScreen(
+            packageName = packageName,
+            unlockReason = reason,
+            durationMinutes = lastDurationMinutes,
+            sessionHandle = sessionHandle,
+            repository = repository,
+            karmaManager = karmaManager,
+            onTimerClick = { navigateToTimerFromRoot(navCtrl) },
+            onOpenDefault = { navigateToDefaultFromRoot(navCtrl) },
+            onOpenLogs = { navCtrl.navigate("logs") },
+            onOpenKarma = { navCtrl.navigate("karma") },
+            onOpenSettings = { navCtrl.navigate("settings") },
+            onAppGranted = {
+                shouldShowTimer = false
+                wentToBackground = false
+                PackageManagerHelper.launchApp(this@MainActivity, packageName)
+            },
+            onDismiss = { navCtrl.popBackStack() },
+        )
+    }
+
+    @Composable
+    private fun AssistantRoute(navCtrl: NavHostController) {
+        NegotiationScreen(
+            packageName = "",
+            unlockReason = unlockReason,
+            durationMinutes = lastDurationMinutes,
+            sessionHandle = sessionHandle,
+            repository = repository,
+            karmaManager = karmaManager,
+            onTimerClick = { navigateToTimerFromRoot(navCtrl) },
+            onOpenDefault = { navigateToDefaultFromRoot(navCtrl) },
+            onOpenLogs = { navCtrl.navigate("logs") },
+            onOpenKarma = { navCtrl.navigate("karma") },
+            onOpenSettings = { navCtrl.navigate("settings") },
+            onAppGranted = {
+                navCtrl.navigate("home") { popUpTo("root") { inclusive = true } }
+            },
+            onDismiss = {
+                if (shouldShowAssistantAfterUnlock()) {
+                    navigateToTimerFromRoot(navCtrl)
+                } else {
+                    navCtrl.popBackStack()
+                }
+            },
+        )
+    }
+
+    private fun navigateToTimerFromRoot(navCtrl: NavHostController) {
+        shouldShowTimer = true
+        navCtrl.navigate("timer") { popUpTo("root") { inclusive = true } }
+    }
+
+    private fun navigateToDefaultFromRoot(navCtrl: NavHostController) {
+        shouldShowTimer = false
+        navCtrl.navigate("default") { popUpTo("root") { inclusive = true } }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -550,327 +503,274 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIncomingIntent(intent: Intent) {
         val openPrefill = intent.getBooleanExtra(EXTRA_OPEN_TIMER_PREFILL, false)
-        if (openPrefill) {
-            val minutes = intent.getIntExtra(EXTRA_PREFILL_MINUTES, -1)
-            pendingPrefillMinutes = minutes.takeIf { it in 1..120 }
-            pendingPrefillReason = intent.getStringExtra(EXTRA_PREFILL_REASON).orEmpty()
-            pendingPrefillToken = System.currentTimeMillis()
-            shouldShowTimer = true
-            wentToBackground = false
-            lifecycleScope.launch {
-                navController?.navigate("timer") {
-                    popUpTo("root") { inclusive = true }
-                }
-            }
-            return
-        }
-
-        val isLauncherHomeIntent = isLauncherHomeIntent(intent)
-        if (isLauncherHomeIntent) {
-            val onboardingDone = getSharedPreferences("mindfulhome", MODE_PRIVATE)
-                .getBoolean("onboarding_done", false)
-            if (onboardingDone) {
-                clearPendingPrefill()
-                shouldShowTimer = false
-                wentToBackground = false
-                lifecycleScope.launch {
-                    navController?.navigate("default") {
-                        popUpTo("root") { inclusive = true }
-                    }
-                }
-            }
-            return
-        }
-
         val fromUnlock = intent.getBooleanExtra(
             com.mindfulhome.receiver.ScreenUnlockReceiver.EXTRA_FROM_UNLOCK, false
         )
         val forceTimer = intent.getBooleanExtra(EXTRA_FORCE_TIMER, false)
         val forceTimerReason = intent.getStringExtra(EXTRA_FORCE_TIMER_REASON)
-
+        val isLauncherHome = MainActivityLogic.isLauncherHomeIntentFlags(
+            actionIsMain = intent.action == Intent.ACTION_MAIN,
+            hasHomeCategory = intent.hasCategory(Intent.CATEGORY_HOME),
+            openPrefill = openPrefill,
+            fromUnlock = fromUnlock,
+            forceTimer = forceTimer,
+        )
         Log.d(
             "MainActivity",
             "handleIncomingIntent: fromUnlock=$fromUnlock forceTimer=$forceTimer " +
                 "reason=$forceTimerReason navController=${navController != null}",
         )
+        applyIncomingIntentDecision(
+            MainActivityLogic.decideIncomingIntent(
+                openPrefill = openPrefill,
+                prefillMinutes = intent.getIntExtra(EXTRA_PREFILL_MINUTES, -1),
+                prefillReason = intent.getStringExtra(EXTRA_PREFILL_REASON),
+                isLauncherHome = isLauncherHome,
+                onboardingDone = getSharedPreferences("mindfulhome", MODE_PRIVATE)
+                    .getBoolean("onboarding_done", false),
+                fromUnlock = fromUnlock,
+                forceTimer = forceTimer,
+                forceTimerReason = forceTimerReason,
+                timerIsExpired = TimerService.timerState.value is TimerState.Expired,
+            ),
+        )
+    }
 
-        if (forceTimer && forceTimerReason == FORCE_TIMER_REASON_EXPIRED) {
-            val timerState = TimerService.timerState.value
-            if (timerState !is TimerState.Expired) {
-                Log.w(
-                    "MainActivity",
-                    "Ignoring expired-timer open request because timer is not expired (state=$timerState)",
-                )
-                return
-            }
+    private fun applyIncomingIntentDecision(decision: IncomingIntentDecision) {
+        when (decision) {
+            is IncomingIntentDecision.OpenTimerPrefill -> applyOpenTimerPrefill(decision)
+            IncomingIntentDecision.NavigateDefaultFromLauncherHome -> applyNavigateDefaultFromLauncher()
+            is IncomingIntentDecision.IgnoreExpiredForce -> logIgnoredExpiredForce(decision.reason)
+            else -> applyPostExpireIntentDecision(decision)
         }
+    }
 
-        if (forceTimer && (
-                forceTimerReason == FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE ||
-                    forceTimerReason == FORCE_TIMER_REASON_QUICK_LAUNCH
-                )
-        ) {
-            val timerState = TimerService.timerState.value
-            if (timerState !is TimerState.Expired) {
-                Log.w(
-                    "MainActivity",
-                    "Ignoring ShouldYouBeHere force because timer is not expired (state=$timerState)",
-                )
-                return
-            }
-            // QL exit promotes to Expired before sending this intent; if state isn't ready
-            // yet, still show the gate — engageExtendChat no-ops until Expired is set.
-            wentToBackground = false
-            shouldShowTimer = false
-            lifecycleScope.launch {
-                navController?.navigate("should_you_be_here") {
-                    popUpTo("root") { inclusive = true }
-                    launchSingleTop = true
-                }
-            }
-            return
+    private fun logIgnoredExpiredForce(reason: String) {
+        Log.w(
+            "MainActivity",
+            "Ignoring $reason open request because timer is not expired " +
+                "(state=${TimerService.timerState.value})",
+        )
+    }
+
+    private fun applyPostExpireIntentDecision(decision: IncomingIntentDecision) {
+        when (decision) {
+            IncomingIntentDecision.NavigateShouldYouBeHere -> applyNavigateShouldYouBeHere()
+            is IncomingIntentDecision.NavigateUnlockOrForce -> applyNavigateUnlockOrForce(decision)
+            else -> Unit
         }
+    }
 
-        if (fromUnlock || forceTimer) {
-            val forceDestination = "default"
-            if (forceTimer) {
-                TimerService.stop(this)
-            }
-            // Clear wentToBackground so onResume doesn't also navigate
-            wentToBackground = false
-            shouldShowTimer = false
-            sessionHandle = if (fromUnlock) {
-                SessionLogger.startSession("Phone unlocked")
-            } else { // forceTimer
-                SessionLogger.startSession("Session resumed from timer alert")
-            }
-            lifecycleScope.launch {
-                val destination = if (forceTimer) forceDestination else "default"
-                Log.d("MainActivity", "Navigating to $destination from handleIncomingIntent")
-                navController?.navigate(destination) {
-                    popUpTo("root") { inclusive = true }
-                }
+    private fun applyOpenTimerPrefill(decision: IncomingIntentDecision.OpenTimerPrefill) {
+        pendingPrefillMinutes = decision.minutes
+        pendingPrefillReason = decision.reason
+        pendingPrefillToken = System.currentTimeMillis()
+        shouldShowTimer = true
+        wentToBackground = false
+        lifecycleScope.launch {
+            navController?.navigate("timer") {
+                popUpTo("root") { inclusive = true }
             }
         }
     }
 
-    private fun isLauncherHomeIntent(intent: Intent): Boolean {
-        return intent.action == Intent.ACTION_MAIN &&
-            intent.hasCategory(Intent.CATEGORY_HOME) &&
-            !intent.getBooleanExtra(EXTRA_OPEN_TIMER_PREFILL, false) &&
-            !intent.getBooleanExtra(
-                com.mindfulhome.receiver.ScreenUnlockReceiver.EXTRA_FROM_UNLOCK,
-                false,
-            ) &&
-            !intent.getBooleanExtra(EXTRA_FORCE_TIMER, false)
+    private fun applyNavigateDefaultFromLauncher() {
+        clearPendingPrefill()
+        shouldShowTimer = false
+        wentToBackground = false
+        lifecycleScope.launch {
+            navController?.navigate("default") {
+                popUpTo("root") { inclusive = true }
+            }
+        }
+    }
+
+    private fun applyNavigateShouldYouBeHere() {
+        wentToBackground = false
+        shouldShowTimer = false
+        lifecycleScope.launch {
+            navController?.navigate("should_you_be_here") {
+                popUpTo("root") { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+
+    private fun applyNavigateUnlockOrForce(decision: IncomingIntentDecision.NavigateUnlockOrForce) {
+        if (decision.forceTimer) {
+            TimerService.stop(this)
+        }
+        wentToBackground = false
+        shouldShowTimer = false
+        sessionHandle = if (decision.fromUnlock) {
+            SessionLogger.startSession("Phone unlocked")
+        } else {
+            SessionLogger.startSession("Session resumed from timer alert")
+        }
+        lifecycleScope.launch {
+            Log.d("MainActivity", "Navigating to ${decision.destination} from handleIncomingIntent")
+            navController?.navigate(decision.destination) {
+                popUpTo("root") { inclusive = true }
+            }
+        }
     }
 
     override fun onStop() {
         super.onStop()
         Log.d("MainActivity", "onStop: timerState=${TimerService.timerState.value}")
+        maybeSaveRunningSessionOnStop()
+        markBackgroundAfterOnboarding()
+        shouldShowTimer = false
+    }
 
-        // Save the running session before the activity may be destroyed
+    private fun maybeSaveRunningSessionOnStop() {
         val timerState = TimerService.timerState.value
         val currentPkg = TimerService.currentPackage.value
-        if (timerState is TimerState.Counting && currentPkg.isNotEmpty()) {
-            val startedAtMs = TimerService.sessionStartedAtMs.value.takeIf { it > 0L }
-                ?: (System.currentTimeMillis() - (timerState.totalMs - timerState.remainingMs).coerceAtLeast(0L))
-            val totalDurationMs = timerState.totalMs.coerceAtLeast(1_000L)
-            if (totalDurationMs >= 1_000L) {
-                SettingsManager.saveLastSession(
-                    context = this,
-                    packageName = currentPkg,
-                    totalDurationMs = totalDurationMs,
-                    startedAtMs = startedAtMs,
-                    suspendedAtMs = null,
-                )
-            }
-        }
+        if (timerState !is TimerState.Counting || currentPkg.isEmpty()) return
+        val startedAtMs = TimerService.sessionStartedAtMs.value.takeIf { it > 0L }
+            ?: (System.currentTimeMillis() - (timerState.totalMs - timerState.remainingMs).coerceAtLeast(0L))
+        val totalDurationMs = timerState.totalMs.coerceAtLeast(1_000L)
+        if (totalDurationMs < 1_000L) return
+        SettingsManager.saveLastSession(
+            context = this,
+            packageName = currentPkg,
+            totalDurationMs = totalDurationMs,
+            startedAtMs = startedAtMs,
+            suspendedAtMs = null,
+        )
+    }
 
-        // Opening system Settings (usage access, overlay, default launcher, etc.) stops this
-        // activity. If we mark that as "went to background", onResume navigates to default and
-        // pops the graph — which aborts onboarding and loses step state while onboarding_done
-        // is still false. Only track background after onboarding is finished.
+    private fun markBackgroundAfterOnboarding() {
         val onboardingDone = getSharedPreferences("mindfulhome", MODE_PRIVATE)
             .getBoolean("onboarding_done", false)
-        if (onboardingDone) {
-            wentToBackground = true
-            backgroundTimestampMs = System.currentTimeMillis()
-            if (SettingsManager.isQuickLaunchSessionActive(this)) {
-                TimerService.probeQuickLaunchForeground(
-                    this,
-                    reason = "launcher-background",
-                    sessionHandle = ensureSessionHandle(),
-                )
-            }
+        if (!onboardingDone) return
+        wentToBackground = true
+        backgroundTimestampMs = System.currentTimeMillis()
+        if (SettingsManager.isQuickLaunchSessionActive(this)) {
+            TimerService.probeQuickLaunchForeground(
+                this,
+                reason = "launcher-background",
+                sessionHandle = ensureSessionHandle(),
+            )
         }
-        shouldShowTimer = false
     }
 
     override fun onResume() {
         super.onResume()
         Log.d("MainActivity", "onResume: wentToBackground=$wentToBackground navController=${navController != null}")
-
         val quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this)
-
-        if (quickLaunchSessionActive && shouldShowTimer) {
+        if (MainActivityLogic.onResumeShouldClearTimerFlag(quickLaunchSessionActive, shouldShowTimer)) {
             shouldShowTimer = false
         }
-
         if (wentToBackground) {
             wentToBackground = false
-
-            val onboardingDoneNow = getSharedPreferences("mindfulhome", MODE_PRIVATE)
-                .getBoolean("onboarding_done", false)
-            if (!onboardingDoneNow) {
-                Log.d("MainActivity", "onResume: skipping post-background navigation (onboarding in progress)")
-            } else {
-                val awayMs = System.currentTimeMillis() - backgroundTimestampMs
-                val timerWasRunning = TimerService.timerState.value is TimerState.Counting
-                val quickReturnMs =
-                    SettingsManager.getQuickReturnMinutes(this) * 60_000L
-                Log.d("MainActivity", "onResume: awayMs=$awayMs timerWasRunning=$timerWasRunning quickReturnMs=$quickReturnMs")
-
-                when (val destination = postBackgroundDestination(
-                    quickLaunchSessionActive = quickLaunchSessionActive,
-                    awayMs = awayMs,
-                    timerWasRunning = timerWasRunning,
-                    quickReturnMs = quickReturnMs,
-                )) {
-                    null -> {
-                        // While Quick Launch is active, do not reroute the user on resume.
-                        // This preserves whichever foreground app they are currently using.
-                        Log.d("MainActivity", "onResume: quick launch session active, leaving current app/screen unchanged")
-                        shouldShowTimer = false
-                    }
-                    "home" -> {
-                    shouldShowTimer = false
-                    SessionLogger.log(
-                        ensureSessionHandle(),
-                        "Quick return (${awayMs / 1000}s) — back to $destination"
-                    )
-                    lifecycleScope.launch {
-                        navController?.navigate(destination) {
-                            popUpTo("root") { inclusive = true }
-                        }
-                    }
-                    }
-                    else -> {
-                    Log.d("MainActivity", "onResume: navigating to $destination")
-                    shouldShowTimer = false
-                    lifecycleScope.launch {
-                        navController?.navigate(destination) {
-                            popUpTo("root") { inclusive = true }
-                        }
-                    }
-                    }
-                }
-            }
+            handlePostBackgroundResume(quickLaunchSessionActive)
         }
         maybePromptForMissingPermission()
     }
 
-    private enum class MissingPermission {
-        Notifications,
-        UsageAccess,
-        Overlay,
+    private fun handlePostBackgroundResume(quickLaunchSessionActive: Boolean) {
+        val onboardingDoneNow = getSharedPreferences("mindfulhome", MODE_PRIVATE)
+            .getBoolean("onboarding_done", false)
+        val awayMs = System.currentTimeMillis() - backgroundTimestampMs
+        val destination = postBackgroundDestination(
+            quickLaunchSessionActive = quickLaunchSessionActive,
+            awayMs = awayMs,
+            timerWasRunning = TimerService.timerState.value is TimerState.Counting,
+            quickReturnMs = SettingsManager.getQuickReturnMinutes(this) * 60_000L,
+        )
+        when (val action = MainActivityLogic.decideOnResumeBackground(onboardingDoneNow, destination)) {
+            MainActivityLogic.OnResumeBackgroundAction.SkipOnboarding ->
+                Log.d("MainActivity", "onResume: skipping post-background navigation (onboarding in progress)")
+            MainActivityLogic.OnResumeBackgroundAction.StayOnQuickLaunch -> {
+                Log.d("MainActivity", "onResume: quick launch session active, leaving current app/screen unchanged")
+                shouldShowTimer = false
+            }
+            is MainActivityLogic.OnResumeBackgroundAction.Navigate -> {
+                shouldShowTimer = false
+                if (action.logQuickReturn) {
+                    SessionLogger.log(
+                        ensureSessionHandle(),
+                        "Quick return (${awayMs / 1000}s) — back to ${action.destination}",
+                    )
+                } else {
+                    Log.d("MainActivity", "onResume: navigating to ${action.destination}")
+                }
+                lifecycleScope.launch {
+                    navController?.navigate(action.destination) {
+                        popUpTo("root") { inclusive = true }
+                    }
+                }
+            }
+        }
     }
 
     private fun maybePromptForMissingPermission() {
-        if (permissionDialogShowing || isFinishing || isDestroyed) return
-
         val onboardingDone = getSharedPreferences("mindfulhome", MODE_PRIVATE)
             .getBoolean("onboarding_done", false)
-        if (!onboardingDone) return
-
+        if (MainActivityLogic.shouldSkipPermissionPrompt(
+                dialogShowing = permissionDialogShowing,
+                finishing = isFinishing,
+                destroyed = isDestroyed,
+                onboardingDone = onboardingDone,
+            )
+        ) {
+            return
+        }
         val hasNotifications = hasNotificationPermission()
         val hasUsageAccess = UsageTracker.hasUsageStatsPermission(this)
         val hasOverlay = Settings.canDrawOverlays(this)
-
-        if (hasNotifications) {
-            SettingsManager.setPermissionPromptSuppressed(
-                this,
-                SettingsManager.PermissionPrompt.NOTIFICATIONS,
-                false,
-            )
-        }
-        if (hasUsageAccess) {
-            SettingsManager.setPermissionPromptSuppressed(
-                this,
-                SettingsManager.PermissionPrompt.USAGE_ACCESS,
-                false,
-            )
-        }
-        if (hasOverlay) {
-            SettingsManager.setPermissionPromptSuppressed(
-                this,
-                SettingsManager.PermissionPrompt.OVERLAY,
-                false,
-            )
-        }
-
-        val missingPermission = when {
-            !hasNotifications && !SettingsManager.isPermissionPromptSuppressed(
+        clearGrantedPermissionSuppressions(hasNotifications, hasUsageAccess, hasOverlay)
+        val missingPermission = MainActivityLogic.nextMissingPermission(
+            hasNotifications = hasNotifications,
+            hasUsageAccess = hasUsageAccess,
+            hasOverlay = hasOverlay,
+            notificationsSuppressed = SettingsManager.isPermissionPromptSuppressed(
                 this, SettingsManager.PermissionPrompt.NOTIFICATIONS
-            ) -> MissingPermission.Notifications
-            !hasUsageAccess && !SettingsManager.isPermissionPromptSuppressed(
+            ),
+            usageSuppressed = SettingsManager.isPermissionPromptSuppressed(
                 this, SettingsManager.PermissionPrompt.USAGE_ACCESS
-            ) -> MissingPermission.UsageAccess
-            !hasOverlay && !SettingsManager.isPermissionPromptSuppressed(
+            ),
+            overlaySuppressed = SettingsManager.isPermissionPromptSuppressed(
                 this, SettingsManager.PermissionPrompt.OVERLAY
-            ) -> MissingPermission.Overlay
-            else -> null
-        } ?: return
-
+            ),
+        ) ?: return
         showMissingPermissionDialog(missingPermission)
     }
 
-    private fun showMissingPermissionDialog(missingPermission: MissingPermission) {
-        permissionDialogShowing = true
-
-        val (title, message, promptKey) = when (missingPermission) {
-            MissingPermission.Notifications -> Triple(
-                "Allow notifications",
-                "MindfulHome needs notification permission to show timer and nudge alerts.",
-                SettingsManager.PermissionPrompt.NOTIFICATIONS,
-            )
-            MissingPermission.UsageAccess -> Triple(
-                "Grant Usage Access",
-                "MindfulHome needs Usage Access to detect your foreground app for timer and karma tracking.",
-                SettingsManager.PermissionPrompt.USAGE_ACCESS,
-            )
-            MissingPermission.Overlay -> Triple(
-                "Allow overlay permission",
-                "MindfulHome can show nudge overlays and chat heads over apps. Without it, only notifications are used.",
-                SettingsManager.PermissionPrompt.OVERLAY,
-            )
+    private fun clearGrantedPermissionSuppressions(
+        hasNotifications: Boolean,
+        hasUsageAccess: Boolean,
+        hasOverlay: Boolean,
+    ) {
+        for (kind in MainActivityLogic.permissionSuppressionsToClear(
+            hasNotifications, hasUsageAccess, hasOverlay,
+        )) {
+            val prompt = when (kind) {
+                MissingPermissionKind.Notifications -> SettingsManager.PermissionPrompt.NOTIFICATIONS
+                MissingPermissionKind.UsageAccess -> SettingsManager.PermissionPrompt.USAGE_ACCESS
+                MissingPermissionKind.Overlay -> SettingsManager.PermissionPrompt.OVERLAY
+            }
+            SettingsManager.setPermissionPromptSuppressed(this, prompt, false)
         }
+    }
 
+    private fun showMissingPermissionDialog(missingPermission: MissingPermissionKind) {
+        permissionDialogShowing = true
+        val copy = MainActivityLogic.permissionDialogCopy(missingPermission)
+        val promptKey = when (missingPermission) {
+            MissingPermissionKind.Notifications -> SettingsManager.PermissionPrompt.NOTIFICATIONS
+            MissingPermissionKind.UsageAccess -> SettingsManager.PermissionPrompt.USAGE_ACCESS
+            MissingPermissionKind.Overlay -> SettingsManager.PermissionPrompt.OVERLAY
+        }
         AlertDialog.Builder(this)
-            .setTitle(title)
-            .setMessage(message)
+            .setTitle(copy.title)
+            .setMessage(copy.message)
             .setCancelable(true)
             .setPositiveButton("Grant") { dialog, _ ->
                 permissionDialogShowing = false
                 dialog.dismiss()
-                when (missingPermission) {
-                    MissingPermission.Notifications -> {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    }
-                    MissingPermission.UsageAccess -> {
-                        startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                    }
-                    MissingPermission.Overlay -> {
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                "package:$packageName".toUri(),
-                            )
-                        )
-                    }
-                }
+                openPermissionSettings(missingPermission)
             }
             .setNegativeButton("Skip for now") { dialog, _ ->
                 SettingsManager.setPermissionPromptSuppressed(this, promptKey, true)
@@ -881,6 +781,27 @@ class MainActivity : ComponentActivity() {
                 permissionDialogShowing = false
             }
             .show()
+    }
+
+    private fun openPermissionSettings(missingPermission: MissingPermissionKind) {
+        when (missingPermission) {
+            MissingPermissionKind.Notifications -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+            MissingPermissionKind.UsageAccess -> {
+                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            }
+            MissingPermissionKind.Overlay -> {
+                startActivity(
+                    Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        "package:$packageName".toUri(),
+                    ),
+                )
+            }
+        }
     }
 
     private fun hasNotificationPermission(): Boolean {
@@ -1009,62 +930,53 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun maybePreflightBackendAuth() {
-        if (backendAuthPreflightInProgress) return
-        if (SettingsManager.getAIMode(this) != SettingsManager.AI_MODE_BACKEND) return
-
-        val now = System.currentTimeMillis()
-        if (now - backendAuthPreflightLastAttemptMs < 15_000L) return
-        backendAuthPreflightLastAttemptMs = now
-        backendAuthPreflightInProgress = true
-
+        val gate = MainActivityLogic.authPreflightGate(
+            inProgress = backendAuthPreflightInProgress,
+            isBackendMode = SettingsManager.getAIMode(this) == SettingsManager.AI_MODE_BACKEND,
+            nowMs = System.currentTimeMillis(),
+            lastAttemptMs = backendAuthPreflightLastAttemptMs,
+        )
+        when (gate) {
+            is AuthPreflightGate.Skip -> return
+            is AuthPreflightGate.Start -> {
+                backendAuthPreflightLastAttemptMs = gate.updatedLastAttemptMs
+                backendAuthPreflightInProgress = true
+            }
+        }
         lifecycleScope.launch {
             try {
-                val hasSession = ApiKeyManager.getSessionToken(this@MainActivity) != null
-                val sessionNearingExpiry = ApiKeyManager.isSessionExpiringSoon(this@MainActivity)
-                // Fast exit: a healthy session that isn't close to expiry means nothing
-                // to do. No Google round-trip, no network call.
-                if (hasSession && !sessionNearingExpiry) {
-                    backendAuthPreflightInProgress = false
-                    return@launch
-                }
-
-                val backendAuth = buildBackendAuthHelper()
-
-                if (hasSession && sessionNearingExpiry) {
-                    // Valid session, just close to exp. Extend silently via
-                    // /api/auth/refresh — no Google involved.
-                    if (!backendAuth.refreshIfNeeded()) {
-                        Log.d(
-                            "MainActivity",
-                            "Backend preflight: refresh skipped or failed; will retry later",
-                        )
-                    }
-                    return@launch
-                }
-
-                // No session: try to mint one silently. We never show Google UI
-                // during preflight — the user can sign in explicitly from
-                // Settings or will be prompted on entering the Timer screen.
-                val signInResult = AuthManager.signInSilent(this@MainActivity)
-                if (signInResult == null) {
-                    Log.d("MainActivity", "Backend preflight: no pre-authorized account, skipping")
-                    return@launch
-                }
-                signInResult.email?.let {
-                    ApiKeyManager.saveSignedInEmail(this@MainActivity, it)
-                }
-                val ok = backendAuth.completeBackendSignIn(signInResult.idToken)
-                if (!ok) {
-                    Log.w(
-                        "MainActivity",
-                        "Backend preflight: exchange rejected, will retry on next AI call",
-                    )
-                }
+                logAuthPreflightResult(runBackendAuthPreflight())
             } catch (_: Exception) {
                 Log.d("MainActivity", "Backend preflight: silent sign-in failed, skipping")
             } finally {
                 backendAuthPreflightInProgress = false
             }
+        }
+    }
+
+    private suspend fun runBackendAuthPreflight(): AuthPreflightResult {
+        val backendAuth = buildBackendAuthHelper()
+        return MainActivityLogic.runAuthPreflight(
+            hasSession = ApiKeyManager.getSessionToken(this@MainActivity) != null,
+            sessionNearingExpiry = ApiKeyManager.isSessionExpiringSoon(this@MainActivity),
+            signInSilent = {
+                val signed = AuthManager.signInSilent(this@MainActivity)
+                signed?.let { AuthPreflightSignIn(it.idToken, it.email) }
+            },
+            refreshIfNeeded = { backendAuth.refreshIfNeeded() },
+            completeBackendSignIn = { token -> backendAuth.completeBackendSignIn(token) },
+            saveSignedInEmail = { email ->
+                ApiKeyManager.saveSignedInEmail(this@MainActivity, email)
+            },
+        )
+    }
+
+    private fun logAuthPreflightResult(result: AuthPreflightResult) {
+        val message = MainActivityLogic.authPreflightLogMessage(result) ?: return
+        if (MainActivityLogic.authPreflightLogIsWarning(result)) {
+            Log.w("MainActivity", message)
+        } else {
+            Log.d("MainActivity", message)
         }
     }
 

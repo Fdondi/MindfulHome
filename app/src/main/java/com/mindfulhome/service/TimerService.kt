@@ -37,9 +37,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Date
-import kotlin.math.abs
 import kotlin.math.max
-import kotlin.math.min
 
 class TimerService : Service() {
 
@@ -132,11 +130,12 @@ class TimerService : Service() {
         val deadlineMs: Long,
         val phaseMs: Long,
         val karmaScore: Int,
-    )
-
-    private enum class NudgeStage {
-        WAITING_AFTER_NOTIFICATION,
-        BUBBLES,
+    ) {
+        fun toLogicSnapshot() = QuickLaunchExitResumeSnapshot(
+            deadlineMs = deadlineMs,
+            phaseMs = phaseMs,
+            karmaScore = karmaScore,
+        )
     }
 
     private val screenOffReceiver = object : BroadcastReceiver() {
@@ -183,124 +182,201 @@ class TimerService : Service() {
             "onStartCommand action=$action startId=$startId flags=$flags sessionToken=${sessionTokenForLogs()}",
         )
         logSessionEvent("Service command received: ${action ?: "null"}")
+        handleCommand(mapIntentExtrasToCommand(intent, action), intent)
+        return START_STICKY
+    }
 
-        if (action == null) {
-            // Service can be recreated with a null intent after process death.
-            // Restore quick-launch monitoring if it was active.
-            if (SettingsManager.isQuickLaunchSessionActive(this)) {
+    private fun mapIntentExtrasToCommand(intent: Intent?, action: String?): TimerServiceCommand =
+        mapIntentToCommand(
+            action = action,
+            quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(this),
+            durationMsExtra = intent?.getLongExtra(EXTRA_DURATION_MS, -1L) ?: -1L,
+            durationMinutes = intent?.getIntExtra(EXTRA_DURATION_MINUTES, 5) ?: 5,
+            packageName = intent?.getStringExtra(EXTRA_PACKAGE_NAME) ?: "",
+            hardDeadlineRaw = intent?.getLongExtra(EXTRA_HARD_DEADLINE_AT_MS, 0L) ?: 0L,
+            allowedPackages = intent?.getStringArrayListExtra(EXTRA_ALLOWED_PACKAGES),
+            probeReason = intent?.getStringExtra(EXTRA_PROBE_REASON) ?: "probe",
+        )
+
+    private fun handleCommand(command: TimerServiceCommand, intent: Intent?) {
+        if (dispatchStartCommands(command)) return
+        if (dispatchQuickLaunchCommands(command)) return
+        if (dispatchSessionCommands(command, intent)) return
+    }
+
+    private fun dispatchStartCommands(command: TimerServiceCommand): Boolean = when (command) {
+        is TimerServiceCommand.Start -> {
+            handleStartCommand(command); true
+        }
+        is TimerServiceCommand.StartQuickLaunch -> {
+            handleStartQuickLaunchCommand(command); true
+        }
+        is TimerServiceCommand.Extend, TimerServiceCommand.Stop -> {
+            handleExtendOrStop(command); true
+        }
+        else -> false
+    }
+
+    private fun handleStartCommand(command: TimerServiceCommand.Start) {
+        logSessionEvent(
+            "ACTION_START requested: durationMs=${command.durationMs} " +
+                "package=${command.packageName.ifBlank { "<none>" }} " +
+                "hardDeadlineAtMs=${command.hardDeadlineAtMs ?: 0L}",
+        )
+        startTimer(command.durationMs, command.packageName, command.hardDeadlineAtMs)
+    }
+
+    private fun handleStartQuickLaunchCommand(command: TimerServiceCommand.StartQuickLaunch) {
+        logSessionEvent(
+            "ACTION_START_QUICK_LAUNCH_SESSION requested: " +
+                "initial=${command.packageName.ifBlank { "<none>" }} " +
+                "allowed=${command.allowedPackages.size}",
+        )
+        startQuickLaunchSession(command.packageName, command.allowedPackages)
+    }
+
+    private fun handleExtendOrStop(command: TimerServiceCommand) {
+        when (command) {
+            is TimerServiceCommand.Extend -> {
+                logSessionEvent("ACTION_EXTEND requested: +${command.extraMinutes} min")
+                if (!extendTimer(command.extraMinutes)) {
+                    logWithSession("Extension blocked due to hard deadline proximity")
+                }
+            }
+            TimerServiceCommand.Stop -> {
+                logSessionEvent("ACTION_STOP requested")
+                stopTimer()
+            }
+            else -> Unit
+        }
+    }
+
+    private fun dispatchQuickLaunchCommands(command: TimerServiceCommand): Boolean = when (command) {
+        TimerServiceCommand.ResumeQuickLaunch,
+        TimerServiceCommand.IgnoreResumeQuickLaunch,
+        TimerServiceCommand.RestoreQuickLaunch,
+        -> {
+            handleQlSessionCommand(command); true
+        }
+        is TimerServiceCommand.ProbeQuickLaunch -> {
+            handleProbeQuickLaunch(command.reason); true
+        }
+        is TimerServiceCommand.TrackApp -> {
+            handleTrackAppCommand(command.packageName); true
+        }
+        is TimerServiceCommand.ForegroundAppChanged -> {
+            handleForegroundAppChanged(command.packageName); true
+        }
+        else -> false
+    }
+
+    private fun handleQlSessionCommand(command: TimerServiceCommand) {
+        when (command) {
+            TimerServiceCommand.ResumeQuickLaunch -> {
+                logSessionEvent("ACTION_RESUME_QUICK_LAUNCH_MONITORING requested")
+                restoreQuickLaunchMonitoring(reason = "unlock")
+            }
+            TimerServiceCommand.IgnoreResumeQuickLaunch ->
+                logSessionEvent("Ignoring quick-launch resume: session not active")
+            TimerServiceCommand.RestoreQuickLaunch -> {
                 Log.w(TAG, "Null intent restart - restoring quick launch monitoring")
                 logSessionEvent("Service restarted with null intent — restoring quick launch monitor")
                 restoreQuickLaunchMonitoring(reason = "null-intent restart")
             }
-            return START_STICKY
+            else -> Unit
+        }
+    }
+
+    private fun dispatchSessionCommands(command: TimerServiceCommand, intent: Intent?): Boolean =
+        when (command) {
+            TimerServiceCommand.DismissShouldYouBeHere,
+            TimerServiceCommand.EngageExtendChat,
+            TimerServiceCommand.ClearVisibleNudges,
+            TimerServiceCommand.HandleReply,
+            TimerServiceCommand.NullIntentNoOp,
+            TimerServiceCommand.Unknown,
+            -> {
+                handleSessionSideCommand(command, intent); true
+            }
+            else -> false
         }
 
-        when (action) {
-            ACTION_START -> {
-                val explicitDurationMs = intent.getLongExtra(EXTRA_DURATION_MS, -1L)
-                val durationMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
-                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
-                val hardDeadlineRaw = intent.getLongExtra(EXTRA_HARD_DEADLINE_AT_MS, 0L)
-                val hardDeadlineAtMs = hardDeadlineRaw.takeIf { it > 0L }
-                val durationMs = if (explicitDurationMs > 0L) {
-                    explicitDurationMs
-                } else {
-                    durationMinutes * 60 * 1000L
-                }
-                logSessionEvent(
-                    "ACTION_START requested: durationMs=$durationMs package=${packageName.ifBlank { "<none>" }} hardDeadlineAtMs=${hardDeadlineAtMs ?: 0L}"
-                )
-                startTimer(durationMs, packageName, hardDeadlineAtMs)
-            }
-            ACTION_START_QUICK_LAUNCH_SESSION -> {
-                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
-                val allowedPackages = intent.getStringArrayListExtra(EXTRA_ALLOWED_PACKAGES)
-                    ?.toSet()
-                    ?: emptySet()
-                logSessionEvent(
-                    "ACTION_START_QUICK_LAUNCH_SESSION requested: initial=${packageName.ifBlank { "<none>" }} allowed=${allowedPackages.size}"
-                )
-                startQuickLaunchSession(packageName, allowedPackages)
-            }
-            ACTION_RESUME_QUICK_LAUNCH_MONITORING -> {
-                if (SettingsManager.isQuickLaunchSessionActive(this)) {
-                    logSessionEvent("ACTION_RESUME_QUICK_LAUNCH_MONITORING requested")
-                    restoreQuickLaunchMonitoring(reason = "unlock")
-                } else {
-                    logSessionEvent("Ignoring quick-launch resume: session not active")
-                }
-            }
-            ACTION_PROBE_QUICK_LAUNCH_FOREGROUND -> {
-                val reason = intent.getStringExtra(EXTRA_PROBE_REASON) ?: "probe"
-                logSessionEvent("ACTION_PROBE_QUICK_LAUNCH_FOREGROUND requested (reason=$reason)")
-                runQuickLaunchForegroundProbe(reason)
-                if (reason == "launcher-background") {
-                    launcherBackgroundProbeJob?.cancel()
-                    launcherBackgroundProbeJob = serviceScope.launch {
-                        delay(500L)
-                        runQuickLaunchForegroundProbe("launcher-background+500ms")
-                        delay(1_000L)
-                        runQuickLaunchForegroundProbe("launcher-background+1500ms")
-                        delay(1_500L)
-                        runQuickLaunchForegroundProbe("launcher-background+3000ms")
-                    }
-                }
-            }
-            ACTION_TRACK_APP -> {
-                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
-                Log.d(TAG, "track app package=$packageName")
-                UsageTracker.invalidateForegroundCache()
-                if (packageName.isNotBlank() && packageName != _currentPackage.value) {
-                    val appLabel = getAppLabel(packageName)
-                    logWithSession("Foreground app detected: **$appLabel** (`$packageName`)")
-                }
-                _currentPackage.value = packageName
-                serviceScope.launch {
-                    handleForegroundPackage(packageName, packageChanged = true)
-                }
-            }
-            ACTION_FOREGROUND_APP_CHANGED -> {
-                val packageName = intent.getStringExtra(EXTRA_PACKAGE_NAME) ?: ""
-                handleForegroundAppChanged(packageName)
-            }
-            ACTION_EXTEND -> {
-                val extraMinutes = intent.getIntExtra(EXTRA_DURATION_MINUTES, 5)
-                logSessionEvent("ACTION_EXTEND requested: +$extraMinutes min")
-                val extended = extendTimer(extraMinutes)
-                if (!extended) {
-                    logWithSession("Extension blocked due to hard deadline proximity")
-                }
-            }
-            ACTION_STOP -> {
-                logSessionEvent("ACTION_STOP requested")
-                stopTimer()
-            }
-            ACTION_DISMISS_SHOULD_YOU_BE_HERE -> {
-                logSessionEvent("ACTION_DISMISS_SHOULD_YOU_BE_HERE requested")
-                dismissShouldYouBeHereAndStop()
-            }
-            ACTION_ENGAGE_EXTEND_CHAT -> {
-                logSessionEvent("ACTION_ENGAGE_EXTEND_CHAT requested")
-                engageExtendChat()
-            }
-            ACTION_CLEAR_VISIBLE_NUDGES -> {
-                val cleared = overlayManager.dismissAllNudgesIfPresent()
-                if (cleared) {
-                    Log.d(TAG, "ACTION_CLEAR_VISIBLE_NUDGES: removed visible nudges")
-                } else {
-                    Log.d(TAG, "ACTION_CLEAR_VISIBLE_NUDGES: no-op (nothing visible)")
-                }
-            }
-            ACTION_HANDLE_REPLY -> {
-                handleNudgeReply(intent)
-            }
+    private fun handleSessionSideCommand(command: TimerServiceCommand, intent: Intent?) {
+        when (command) {
+            TimerServiceCommand.DismissShouldYouBeHere -> dismissShouldYouBeHereCommand()
+            TimerServiceCommand.EngageExtendChat -> engageExtendChatCommand()
+            TimerServiceCommand.ClearVisibleNudges -> clearVisibleNudgesCommand()
+            TimerServiceCommand.HandleReply -> handleReplyCommand(intent)
+            else -> Unit
         }
-        return START_STICKY
+    }
+
+    private fun handleReplyCommand(intent: Intent?) {
+        if (intent != null) handleNudgeReply(intent)
+    }
+
+    private fun dismissShouldYouBeHereCommand() {
+        logSessionEvent("ACTION_DISMISS_SHOULD_YOU_BE_HERE requested")
+        dismissShouldYouBeHereAndStop()
+    }
+
+    private fun engageExtendChatCommand() {
+        logSessionEvent("ACTION_ENGAGE_EXTEND_CHAT requested")
+        engageExtendChat()
+    }
+
+    private fun clearVisibleNudgesCommand() {
+        val cleared = overlayManager.dismissAllNudgesIfPresent()
+        Log.d(
+            TAG,
+            if (cleared) "ACTION_CLEAR_VISIBLE_NUDGES: removed visible nudges"
+            else "ACTION_CLEAR_VISIBLE_NUDGES: no-op (nothing visible)",
+        )
+    }
+
+
+    private fun handleProbeQuickLaunch(reason: String) {
+        logSessionEvent("ACTION_PROBE_QUICK_LAUNCH_FOREGROUND requested (reason=$reason)")
+        runQuickLaunchForegroundProbe(reason)
+        if (reason != "launcher-background") return
+        launcherBackgroundProbeJob?.cancel()
+        launcherBackgroundProbeJob = serviceScope.launch {
+            delay(500L)
+            runQuickLaunchForegroundProbe("launcher-background+500ms")
+            delay(1_000L)
+            runQuickLaunchForegroundProbe("launcher-background+1500ms")
+            delay(1_500L)
+            runQuickLaunchForegroundProbe("launcher-background+3000ms")
+        }
+    }
+
+    private fun handleTrackAppCommand(packageName: String) {
+        Log.d(TAG, "track app package=$packageName")
+        UsageTracker.invalidateForegroundCache()
+        if (packageName.isNotBlank() && packageName != _currentPackage.value) {
+            val appLabel = getAppLabel(packageName)
+            logWithSession("Foreground app detected: **$appLabel** (`$packageName`)")
+        }
+        _currentPackage.value = packageName
+        serviceScope.launch {
+            handleForegroundPackage(packageName, packageChanged = true)
+        }
     }
 
     // ── Timer lifecycle ──────────────────────────────────────────────
 
     private fun startTimer(durationMs: Long, packageName: String, hardDeadlineAtMs: Long?) {
+        prepareNewTimedSession(durationMs, packageName, hardDeadlineAtMs)
+        startForeground(TIMER_NOTIFICATION_ID, buildTimerNotification(durationMs))
+        timerJob?.cancel()
+        timerJob = serviceScope.launch { runCountdownLoop(packageName) }
+    }
+
+    private fun prepareNewTimedSession(
+        durationMs: Long,
+        packageName: String,
+        hardDeadlineAtMs: Long?,
+    ) {
         sessionGeneration++
         awaitHomeSettleAfterGateLeave = false
         // Committing to a timed session — expiry from here is birds/notification, not the gate.
@@ -321,37 +397,38 @@ class TimerService : Service() {
         timerEndAtMs = System.currentTimeMillis() + durationMs
         _timerState.value = TimerState.Counting(durationMs, durationMs)
         logSessionEvent(
-            "Timer state -> Counting (totalMs=$durationMs, startedAtMs=${_sessionStartedAtMs.value}, package=${packageName.ifBlank { "<none>" }}, hardDeadlineAtMs=${hardDeadlineAtMs ?: 0L})"
+            "Timer state -> Counting (totalMs=$durationMs, startedAtMs=${_sessionStartedAtMs.value}, " +
+                "package=${packageName.ifBlank { "<none>" }}, hardDeadlineAtMs=${hardDeadlineAtMs ?: 0L})",
         )
+    }
 
-        val durationMinutesDisplay = ((durationMs + 59_999L) / 60_000L).toInt()
-        val appLabel = getAppLabel(packageName)
-
-        startForeground(TIMER_NOTIFICATION_ID, buildTimerNotification(durationMs))
-
-        timerJob?.cancel()
-        timerJob = serviceScope.launch {
-            val tickFloor = 1_000L
-            while (true) {
-                val endAt = timerEndAtMs
-                if (endAt <= 0L) return@launch
-                val now = System.currentTimeMillis()
-                if (now >= endAt) break
-                val remaining = endAt - now
-                _timerState.value = TimerState.Counting(remaining, timerSessionTotalMs)
-                updateTimerNotification(remaining)
-                val tick = SettingsManager.getTimerCountdownTickMs(this@TimerService)
-                    .coerceAtLeast(tickFloor)
-                val untilEnd = endAt - System.currentTimeMillis()
-                if (untilEnd <= 0L) break
-                delay(min(tick, untilEnd).coerceAtLeast(1L))
-            }
-            if (timerEndAtMs > 0L && System.currentTimeMillis() >= timerEndAtMs) {
-                _timerState.value = TimerState.Counting(0, timerSessionTotalMs)
-                updateTimerNotification(0)
-                onTimerExpired(packageName)
-            }
+    private suspend fun runCountdownLoop(packageName: String) {
+        val tickFloor = 1_000L
+        while (true) {
+            val endAt = timerEndAtMs
+            if (countdownShouldAbort(endAt)) return
+            if (!runOneCountdownTick(endAt, tickFloor)) break
         }
+        if (shouldFireCountdownExpiry(timerEndAtMs, System.currentTimeMillis())) {
+            _timerState.value = TimerState.Counting(0, timerSessionTotalMs)
+            updateTimerNotification(0)
+            onTimerExpired(packageName)
+        }
+    }
+
+    /** @return false when the loop should break (time reached). */
+    private suspend fun runOneCountdownTick(endAt: Long, tickFloor: Long): Boolean {
+        val now = System.currentTimeMillis()
+        if (now >= endAt) return false
+        val remaining = endAt - now
+        _timerState.value = TimerState.Counting(remaining, timerSessionTotalMs)
+        updateTimerNotification(remaining)
+        val tick = SettingsManager.getTimerCountdownTickMs(this@TimerService)
+            .coerceAtLeast(tickFloor)
+        val untilEnd = endAt - System.currentTimeMillis()
+        if (untilEnd <= 0L) return false
+        delay(countdownDelayMs(tick, untilEnd))
+        return true
     }
 
     private fun resetNudgesForNewTimer() {
@@ -440,144 +517,156 @@ class TimerService : Service() {
     ) {
         if (!SettingsManager.isQuickLaunchSessionActive(this)) return
         if (packageName.isBlank()) return
-
         val label = getAppLabel(packageName)
         val allowedPackages = SettingsManager.getQuickLaunchPackages(this) + this.packageName
-        val utilityReason = systemOrUtilityReason(packageName)
         val now = System.currentTimeMillis()
+        val decision = decideQuickLaunchSwitch(
+            packageName = packageName,
+            previousPackage = previousPackage,
+            selfPackageName = this.packageName,
+            allowedPackages = allowedPackages,
+            utilityReason = systemOrUtilityReason(packageName),
+            previousIsUtilityOrSystem = previousPackage.isNotBlank() &&
+                systemOrUtilityReason(previousPackage) != null,
+            awaitHomeSettleAfterGateLeave = awaitHomeSettleAfterGateLeave,
+            currentExitCandidatePackage = quickLaunchExitCandidatePackage,
+            resume = quickLaunchExitResumeByPackage[packageName]?.toLogicSnapshot(),
+            nowMs = now,
+        )
+        dispatchQuickLaunchSwitch(decision, packageName, previousPackage, label, now, allowedPackages.size)
+    }
 
-        when {
-            packageName in allowedPackages -> {
-                if (awaitHomeSettleAfterGateLeave) {
-                    awaitHomeSettleAfterGateLeave = false
-                    logSessionEvent("Home settled after ShouldYouBeHere leave — monitoring armed")
-                }
-                clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
-                rememberQuickLaunchDetection(
-                    packageName = packageName,
-                    label = label,
-                    status = "Detected $label — allowed Quick Launch app",
-                )
-                Log.v(TAG, "quick-launch app allowed: $packageName")
-                logDeveloperQuickLaunch(
-                    "detected package=$packageName label=$label decision=allowed reason=in_quick_launch_allowlist allowlistSize=${allowedPackages.size}",
-                )
-                refreshQuickLaunchMonitoringNotification()
-            }
-            utilityReason != null -> {
-                if (awaitHomeSettleAfterGateLeave) {
-                    // System UI / Recents chrome while returning home — keep waiting for home.
-                    rememberQuickLaunchDetection(
-                        packageName = packageName,
-                        label = label,
-                        status = "Detected $label — ignored ($utilityReason, awaiting home)",
-                    )
-                    logDeveloperQuickLaunch(
-                        "detected package=$packageName label=$label decision=ignored reason=$utilityReason awaiting_home_settle=true",
-                    )
-                    refreshQuickLaunchMonitoringNotification()
-                    return
-                }
-                clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
-                rememberQuickLaunchDetection(
-                    packageName = packageName,
-                    label = label,
-                    status = "Detected $label — ignored ($utilityReason)",
-                )
-                Log.v(TAG, "quick-launch system/utility app ignored: $packageName ($utilityReason)")
-                logDeveloperQuickLaunch(
-                    "detected package=$packageName label=$label decision=ignored reason=$utilityReason",
-                )
-                refreshQuickLaunchMonitoringNotification()
-            }
-            else -> {
-                if (awaitHomeSettleAfterGateLeave) {
-                    // Still seeing the left app (or any restricted) before home is confirmed —
-                    // not a new switch; do nothing until home settles then app changes again.
-                    rememberQuickLaunchDetection(
-                        packageName = packageName,
-                        label = label,
-                        status = "Detected $label — ignored (awaiting home after gate leave)",
-                    )
-                    logDeveloperQuickLaunch(
-                        "detected package=$packageName label=$label decision=ignored reason=awaiting_home_settle",
-                    )
-                    refreshQuickLaunchMonitoringNotification()
-                    return
-                }
-                // From our launcher or through Recents/system UI into a restricted app: no grace.
-                // Accidental switches from an allowed QL app still get green→yellow→red.
-                val fromLauncherOrRecents = previousPackage == this.packageName ||
-                    previousPackage.isBlank() ||
-                    systemOrUtilityReason(previousPackage) != null
-                val resume = quickLaunchExitResumeByPackage[packageName]
-                val graceAlreadyUsedUp = resume != null && resume.deadlineMs > 0L && now >= resume.deadlineMs
-                if (fromLauncherOrRecents || graceAlreadyUsedUp) {
-                    rememberQuickLaunchExitProgress(now)
-                    quickLaunchExitCandidatePackage = packageName
-                    quickLaunchExitCandidateLabel = label
-                    if (resume != null) {
-                        quickLaunchExitDeadlineMs = resume.deadlineMs
-                        quickLaunchSemaphorePhaseMs = resume.phaseMs
-                        quickLaunchExitCandidateKarmaScore = resume.karmaScore
-                    } else {
-                        quickLaunchExitDeadlineMs = now
-                        quickLaunchExitCandidateStartedAtMs = now
-                    }
-                    rememberQuickLaunchDetection(
-                        packageName = packageName,
-                        label = label,
-                        status = "Detected $label — instant ShouldYouBeHere",
-                    )
-                    logWithSession(
-                        "Restricted app from launcher/Recents: **$label** — opening gate now",
-                    )
-                    logDeveloperQuickLaunch(
-                        "detected package=$packageName label=$label decision=instant_gate " +
-                            "previous=$previousPackage fromLauncherOrRecents=$fromLauncherOrRecents " +
-                            "graceAlreadyUsedUp=$graceAlreadyUsedUp",
-                    )
-                    triggerQuickLaunchExit(packageName)
-                    return
-                }
-                if (quickLaunchExitCandidatePackage != packageName) {
-                    rememberQuickLaunchExitProgress(now)
-                    quickLaunchExitCandidatePackage = packageName
-                    quickLaunchExitCandidateLabel = label
-                    quickLaunchExitDeadlineMs = 0L
-                    cancelQuickLaunchExitDeadlineJob()
-                    rememberQuickLaunchDetection(
-                        packageName = packageName,
-                        label = label,
-                        status = "Detected $label — starting grace",
-                    )
-                    serviceScope.launch {
-                        configureQuickLaunchExitGrace(packageName, now)
-                    }
-                    logWithSession(
-                        "Quick Launch switch observed: **$label** — green → yellow → red, then gate",
-                    )
-                    logSessionEvent(
-                        "Quick Launch grace window started for package=$packageName",
-                    )
-                    logDeveloperQuickLaunch(
-                        "detected package=$packageName label=$label decision=monitor reason=not_allowed_not_utility starting_grace=true",
-                    )
-                    refreshQuickLaunchMonitoringNotification()
-                } else {
-                    rememberQuickLaunchDetection(
-                        packageName = packageName,
-                        label = label,
-                        status = "Detected $label — monitoring",
-                    )
-                    logDeveloperQuickLaunch(
-                        "detected package=$packageName label=$label decision=monitor reason=same_exit_candidate enforcing_if_due=true",
-                    )
-                    enforceQuickLaunchExitIfDue(now)
-                    refreshQuickLaunchMonitoringNotification()
-                }
-            }
+    private fun dispatchQuickLaunchSwitch(
+        decision: QuickLaunchSwitchDecision,
+        packageName: String,
+        previousPackage: String,
+        label: String,
+        now: Long,
+        allowlistSize: Int,
+    ) {
+        when (decision) {
+            QuickLaunchSwitchDecision.Allowed ->
+                handleQlAllowed(packageName, label, now, allowlistSize)
+            is QuickLaunchSwitchDecision.Ignore ->
+                handleQlIgnored(decision, packageName, label, now)
+            is QuickLaunchSwitchDecision.InstantGate ->
+                handleQlInstantGate(decision, packageName, previousPackage, label, now)
+            QuickLaunchSwitchDecision.StartGrace ->
+                handleQlStartGrace(packageName, label, now)
+            QuickLaunchSwitchDecision.ContinueMonitor ->
+                handleQlContinueMonitor(packageName, label, now)
         }
+    }
+
+    private fun handleQlAllowed(packageName: String, label: String, now: Long, allowlistSize: Int) {
+        if (awaitHomeSettleAfterGateLeave) {
+            awaitHomeSettleAfterGateLeave = false
+            logSessionEvent("Home settled after ShouldYouBeHere leave — monitoring armed")
+        }
+        clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
+        rememberQuickLaunchDetection(
+            packageName = packageName,
+            label = label,
+            status = "Detected $label — allowed Quick Launch app",
+        )
+        Log.v(TAG, "quick-launch app allowed: $packageName")
+        logDeveloperQuickLaunch(
+            "detected package=$packageName label=$label decision=allowed " +
+                "reason=in_quick_launch_allowlist allowlistSize=$allowlistSize",
+        )
+        refreshQuickLaunchMonitoringNotification()
+    }
+
+    private fun handleQlIgnored(
+        decision: QuickLaunchSwitchDecision.Ignore,
+        packageName: String,
+        label: String,
+        now: Long,
+    ) {
+        val statusReason = quickLaunchIgnoreStatusReason(decision.reason, decision.awaitingHome)
+        rememberQuickLaunchDetection(
+            packageName = packageName,
+            label = label,
+            status = "Detected $label — ignored ($statusReason)",
+        )
+        if (decision.awaitingHome) {
+            logDeveloperQuickLaunch(
+                "detected package=$packageName label=$label decision=ignored " +
+                    "reason=${decision.reason} awaiting_home_settle=true",
+            )
+            refreshQuickLaunchMonitoringNotification()
+            return
+        }
+        clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
+        Log.v(TAG, "quick-launch system/utility app ignored: $packageName (${decision.reason})")
+        logDeveloperQuickLaunch(
+            "detected package=$packageName label=$label decision=ignored reason=${decision.reason}",
+        )
+        refreshQuickLaunchMonitoringNotification()
+    }
+
+    private fun handleQlInstantGate(
+        decision: QuickLaunchSwitchDecision.InstantGate,
+        packageName: String,
+        previousPackage: String,
+        label: String,
+        now: Long,
+    ) {
+        rememberQuickLaunchExitProgress(now)
+        quickLaunchExitCandidatePackage = packageName
+        quickLaunchExitCandidateLabel = label
+        val fields = instantGateResumeFields(decision.resume, now)
+        quickLaunchExitDeadlineMs = fields.deadlineMs
+        fields.phaseMs?.let { quickLaunchSemaphorePhaseMs = it }
+        fields.karmaScore?.let { quickLaunchExitCandidateKarmaScore = it }
+        fields.startedAtMs?.let { quickLaunchExitCandidateStartedAtMs = it }
+        rememberQuickLaunchDetection(
+            packageName = packageName,
+            label = label,
+            status = "Detected $label — instant ShouldYouBeHere",
+        )
+        logWithSession("Restricted app from launcher/Recents: **$label** — opening gate now")
+        logDeveloperQuickLaunch(
+            "detected package=$packageName label=$label decision=instant_gate " +
+                "previous=$previousPackage fromLauncherOrRecents=${decision.fromLauncherOrRecents} " +
+                "graceAlreadyUsedUp=${decision.graceAlreadyUsedUp}",
+        )
+        triggerQuickLaunchExit(packageName)
+    }
+
+    private fun handleQlStartGrace(packageName: String, label: String, now: Long) {
+        rememberQuickLaunchExitProgress(now)
+        quickLaunchExitCandidatePackage = packageName
+        quickLaunchExitCandidateLabel = label
+        quickLaunchExitDeadlineMs = 0L
+        cancelQuickLaunchExitDeadlineJob()
+        rememberQuickLaunchDetection(
+            packageName = packageName,
+            label = label,
+            status = "Detected $label — starting grace",
+        )
+        serviceScope.launch { configureQuickLaunchExitGrace(packageName, now) }
+        logWithSession("Quick Launch switch observed: **$label** — green → yellow → red, then gate")
+        logSessionEvent("Quick Launch grace window started for package=$packageName")
+        logDeveloperQuickLaunch(
+            "detected package=$packageName label=$label decision=monitor " +
+                "reason=not_allowed_not_utility starting_grace=true",
+        )
+        refreshQuickLaunchMonitoringNotification()
+    }
+
+    private fun handleQlContinueMonitor(packageName: String, label: String, now: Long) {
+        rememberQuickLaunchDetection(
+            packageName = packageName,
+            label = label,
+            status = "Detected $label — monitoring",
+        )
+        logDeveloperQuickLaunch(
+            "detected package=$packageName label=$label decision=monitor " +
+                "reason=same_exit_candidate enforcing_if_due=true",
+        )
+        enforceQuickLaunchExitIfDue(now)
+        refreshQuickLaunchMonitoringNotification()
     }
 
     private fun rememberQuickLaunchDetection(packageName: String, label: String, status: String) {
@@ -596,58 +685,55 @@ class TimerService : Service() {
     private suspend fun configureQuickLaunchExitGrace(packageName: String, nowMs: Long) {
         val k = repository.getKarma(packageName)
         val normalPhaseMs = SettingsManager.getQuickLaunchSemaphorePhaseNormalMs(this@TimerService)
-        val baseGraceMs = normalPhaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES
-
-        val (phaseMs, graceMs) = when {
-            k.isOptedOut -> normalPhaseMs to baseGraceMs
-            k.karmaScore > 0 -> {
-                val multiplier = SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(this@TimerService)
-                val phase = (normalPhaseMs * multiplier).toLong().coerceAtLeast(5_000L)
-                phase to phase * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES
-            }
-            k.karmaScore < 0 -> {
-                val grace = KarmaManager.quickLaunchAllowedStayMs(k.karmaScore, baseGraceMs)
-                val phase = (grace / QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES).coerceAtLeast(1_000L)
-                phase to grace
-            }
-            else -> normalPhaseMs to baseGraceMs
-        }
+        val positiveMultiplier =
+            SettingsManager.getQuickLaunchSemaphoreKarmaPositiveMultiplier(this@TimerService)
+        val timing = computeQuickLaunchGraceTiming(
+            karmaScore = k.karmaScore,
+            isOptedOut = k.isOptedOut,
+            normalPhaseMs = normalPhaseMs,
+            positiveMultiplier = positiveMultiplier,
+        )
+        val phaseMs = timing.phaseMs
+        val graceMs = timing.graceMs
 
         quickLaunchSemaphorePhaseMs = phaseMs
         quickLaunchExitCandidateKarmaScore = k.karmaScore
 
-        val existingSnapshot = quickLaunchExitResumeByPackage[packageName]
-        if (existingSnapshot != null) {
-            if (existingSnapshot.deadlineMs > nowMs) {
-                quickLaunchExitDeadlineMs = existingSnapshot.deadlineMs
-                quickLaunchSemaphorePhaseMs = existingSnapshot.phaseMs
-                quickLaunchExitCandidateKarmaScore = existingSnapshot.karmaScore
-                quickLaunchExitCandidateStartedAtMs =
-                    existingSnapshot.deadlineMs - (existingSnapshot.phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES)
+        val existingSnapshot = quickLaunchExitResumeByPackage[packageName]?.toLogicSnapshot()
+        when (val resumeAction = decideQuickLaunchGraceResume(existingSnapshot, nowMs)) {
+            is QuickLaunchGraceResumeAction.ResumeExisting -> {
+                quickLaunchExitDeadlineMs = resumeAction.deadlineMs
+                quickLaunchSemaphorePhaseMs = resumeAction.phaseMs
+                quickLaunchExitCandidateKarmaScore = resumeAction.karmaScore
+                quickLaunchExitCandidateStartedAtMs = resumeAction.startedAtMs
                 logSessionEvent(
                     "Quick Launch grace resumed for package=$packageName (wall-clock deadline preserved)"
                 )
                 logDeveloperQuickLaunch(
-                    "grace resumed package=$packageName karma=${existingSnapshot.karmaScore} phaseMs=${existingSnapshot.phaseMs} deadlineMs=${existingSnapshot.deadlineMs} remainingMs=${existingSnapshot.deadlineMs - nowMs}",
+                    "grace resumed package=$packageName karma=${resumeAction.karmaScore} phaseMs=${resumeAction.phaseMs} deadlineMs=${resumeAction.deadlineMs} remainingMs=${resumeAction.deadlineMs - nowMs}",
                 )
                 scheduleQuickLaunchExitEnforcement(packageName)
                 refreshQuickLaunchMonitoringNotification()
                 return
             }
-            logSessionEvent(
-                "Quick Launch grace expired for package=$packageName while away — enforcing exit"
-            )
-            logDeveloperQuickLaunch(
-                "grace expired_while_away package=$packageName karma=${existingSnapshot.karmaScore} enforcing_exit=true",
-            )
-            quickLaunchExitDeadlineMs = existingSnapshot.deadlineMs
-            quickLaunchSemaphorePhaseMs = existingSnapshot.phaseMs
-            quickLaunchExitCandidateKarmaScore = existingSnapshot.karmaScore
-            quickLaunchExitCandidateStartedAtMs =
-                existingSnapshot.deadlineMs - (existingSnapshot.phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES)
-            quickLaunchExitResumeByPackage.remove(packageName)
-            triggerQuickLaunchExit(packageName)
-            return
+            is QuickLaunchGraceResumeAction.EnforceExpired -> {
+                logSessionEvent(
+                    "Quick Launch grace expired for package=$packageName while away — enforcing exit"
+                )
+                logDeveloperQuickLaunch(
+                    "grace expired_while_away package=$packageName karma=${resumeAction.karmaScore} enforcing_exit=true",
+                )
+                quickLaunchExitDeadlineMs = resumeAction.deadlineMs
+                quickLaunchSemaphorePhaseMs = resumeAction.phaseMs
+                quickLaunchExitCandidateKarmaScore = resumeAction.karmaScore
+                quickLaunchExitCandidateStartedAtMs = resumeAction.startedAtMs
+                quickLaunchExitResumeByPackage.remove(packageName)
+                triggerQuickLaunchExit(packageName)
+                return
+            }
+            QuickLaunchGraceResumeAction.ConfigureNew -> {
+                // fall through to fresh configuration
+            }
         }
 
         val configuredAtMs = System.currentTimeMillis()
@@ -754,7 +840,7 @@ class TimerService : Service() {
             return
         }
 
-        val level = quickLaunchFrameLevelForNow(nowMs)
+        val level = resolveQuickLaunchFrameLevel(nowMs)
         overlayManager.showQuickLaunchFrame(level)
         if (quickLaunchFrameSuppressedForSensitiveApp) {
             logSessionEvent("Quick Launch frame restored after leaving sensitive app")
@@ -777,15 +863,17 @@ class TimerService : Service() {
         return packageName !in allowedPackages && !isSystemOrUtilityPackage(packageName)
     }
 
-    private fun quickLaunchFrameLevelForNow(nowMs: Long): OverlayNudgeManager.QuickLaunchFrameLevel {
-        val startedAtMs = quickLaunchExitCandidateStartedAtMs
-        if (startedAtMs <= 0L) return OverlayNudgeManager.QuickLaunchFrameLevel.GREEN
-        val elapsedMs = (nowMs - startedAtMs).coerceAtLeast(0L)
-        val phaseMs = quickLaunchSemaphorePhaseMs
-        return when {
-            elapsedMs < phaseMs -> OverlayNudgeManager.QuickLaunchFrameLevel.GREEN
-            elapsedMs < phaseMs * 2 -> OverlayNudgeManager.QuickLaunchFrameLevel.YELLOW
-            else -> OverlayNudgeManager.QuickLaunchFrameLevel.RED
+    private fun resolveQuickLaunchFrameLevel(nowMs: Long): OverlayNudgeManager.QuickLaunchFrameLevel {
+        return when (
+            quickLaunchFrameLevelForNow(
+                nowMs = nowMs,
+                startedAtMs = quickLaunchExitCandidateStartedAtMs,
+                phaseMs = quickLaunchSemaphorePhaseMs,
+            )
+        ) {
+            QuickLaunchFrameLevel.GREEN -> OverlayNudgeManager.QuickLaunchFrameLevel.GREEN
+            QuickLaunchFrameLevel.YELLOW -> OverlayNudgeManager.QuickLaunchFrameLevel.YELLOW
+            QuickLaunchFrameLevel.RED -> OverlayNudgeManager.QuickLaunchFrameLevel.RED
         }
     }
 
@@ -912,15 +1000,10 @@ class TimerService : Service() {
     private suspend fun maybeStartTimedQuickLaunchTimer(packageName: String): Boolean {
         if (packageName.isBlank() || packageName == this.packageName) return false
         if (systemOrUtilityReason(packageName) != null) return false
-
         val limitMinutes = repository.quickLaunchLimitMinutesFor(packageName) ?: return false
-
-        when (_timerState.value) {
-            is TimerState.Counting -> return false
-            is TimerState.Expired -> return false
-            is TimerState.Idle -> Unit
+        if (!shouldStartTimedQuickLaunchFromTimerState(_timerState.value is TimerState.Idle)) {
+            return false
         }
-
         val label = getAppLabel(packageName)
         logSessionEvent(
             "Timed Quick Launch auto-start: $label ($limitMinutes min) package=$packageName",
@@ -938,12 +1021,8 @@ class TimerService : Service() {
         previousPackage: String = "",
     ) {
         if (packageName.isBlank()) return
-        if (packageChanged && maybeStartTimedQuickLaunchTimer(packageName)) {
-            return
-        }
-        if (_timerState.value is TimerState.Expired && packageChanged) {
-            maybeForceShouldYouBeHere(packageName)
-        }
+        if (packageChanged && maybeStartTimedQuickLaunchTimer(packageName)) return
+        handleExpiredForegroundRedirect(packageName, packageChanged)
         if (!SettingsManager.isQuickLaunchSessionActive(this)) return
         if (packageChanged) {
             maybeForceTimerForQuickLaunchSwitch(packageName, previousPackage)
@@ -952,22 +1031,38 @@ class TimerService : Service() {
         refreshQuickLaunchMonitoringNotification()
     }
 
+    private suspend fun handleExpiredForegroundRedirect(packageName: String, packageChanged: Boolean) {
+        if (_timerState.value is TimerState.Expired && packageChanged) {
+            maybeForceShouldYouBeHere(packageName)
+        }
+    }
+
     /**
      * Instant redirect when Recents returns to a restricted app while the *pre-timer*
      * ShouldYouBeHere gate is active. Normal countdown expiry must not use this path.
      */
     private suspend fun maybeForceShouldYouBeHere(packageName: String) {
-        if (!shouldYouBeHereGateActive) return
-        if (shouldYouBeHereDismissed) return
-        if (_timerState.value !is TimerState.Expired) return
-        if (packageName.isBlank() || packageName == this.packageName) return
-        if (systemOrUtilityReason(packageName) != null) return
         val quickLaunchPackages = repository.allQuickLaunchPackages()
-        if (packageName in quickLaunchPackages) {
-            Log.d(TAG, "expired allowlist: $packageName is Quick Launch — no redirect")
+        if (!shouldForceShouldYouBeHere(
+                gateActive = shouldYouBeHereGateActive,
+                gateDismissed = shouldYouBeHereDismissed,
+                timerIsExpired = _timerState.value is TimerState.Expired,
+                packageName = packageName,
+                ownPackageName = this.packageName,
+                isSystemOrUtility = systemOrUtilityReason(packageName) != null,
+                isQuickLaunchPackage = packageName in quickLaunchPackages,
+                overtimeForceInFlight = overtimeForceInFlight,
+            )
+        ) {
+            if (packageName in quickLaunchPackages &&
+                shouldYouBeHereGateActive &&
+                !shouldYouBeHereDismissed &&
+                _timerState.value is TimerState.Expired
+            ) {
+                Log.d(TAG, "expired allowlist: $packageName is Quick Launch — no redirect")
+            }
             return
         }
-        if (overtimeForceInFlight) return
         overtimeForceInFlight = true
         val label = getAppLabel(packageName)
         _currentPackage.value = packageName
@@ -988,15 +1083,30 @@ class TimerService : Service() {
         val foregroundPackage = UsageTracker.getForegroundAppForQuickLaunchMonitor(this)
             ?: quickLaunchLastSeenPackage.ifBlank { _currentPackage.value }
         if (foregroundPackage.isBlank()) return
+        applyForegroundPackageChange(foregroundPackage, reason)
+    }
+
+    /**
+     * Event-driven counterpart to [runQuickLaunchForegroundProbe]: the foreground package is
+     * supplied by [ForegroundAppAccessibilityService] instead of being polled from UsageStats.
+     */
+    private fun handleForegroundAppChanged(foregroundPackage: String) {
+        if (foregroundPackage.isBlank()) return
+        applyForegroundPackageChange(foregroundPackage, "a11y-event")
+    }
+
+    private fun applyForegroundPackageChange(foregroundPackage: String, reason: String) {
         val previousPackage = quickLaunchLastSeenPackage
         val packageChanged = foregroundPackage != previousPackage
         if (packageChanged) {
-            if (awaitHomeSettleAfterGateLeave &&
-                foregroundPackage != packageName &&
-                systemOrUtilityReason(foregroundPackage) == null &&
-                foregroundPackage !in SettingsManager.getQuickLaunchPackages(this)
+            if (shouldIgnoreForegroundWhileAwaitingHome(
+                    awaitHomeSettle = awaitHomeSettleAfterGateLeave,
+                    foregroundPackage = foregroundPackage,
+                    ownPackageName = packageName,
+                    isSystemOrUtility = systemOrUtilityReason(foregroundPackage) != null,
+                    isQuickLaunchPackage = foregroundPackage in SettingsManager.getQuickLaunchPackages(this),
+                )
             ) {
-                // Stale restricted reading before home is confirmed — not a real switch.
                 Log.d(
                     TAG,
                     "foreground ignored ($reason): $previousPackage -> $foregroundPackage (awaiting home settle)",
@@ -1004,36 +1114,6 @@ class TimerService : Service() {
                 return
             }
             Log.d(TAG, "foreground changed ($reason): $previousPackage -> $foregroundPackage")
-            quickLaunchLastSeenPackage = foregroundPackage
-            _currentPackage.value = foregroundPackage
-        }
-        serviceScope.launch {
-            handleForegroundPackage(foregroundPackage, packageChanged, previousPackage)
-        }
-    }
-
-    /**
-     * Event-driven counterpart to [runQuickLaunchForegroundProbe]: the foreground package is
-     * supplied by [ForegroundAppAccessibilityService] instead of being polled from UsageStats.
-     * Same downstream logic (allowed/utility filtering, semaphore, forced return).
-     */
-    private fun handleForegroundAppChanged(foregroundPackage: String) {
-        if (foregroundPackage.isBlank()) return
-        val previousPackage = quickLaunchLastSeenPackage
-        val packageChanged = foregroundPackage != previousPackage
-        if (packageChanged) {
-            if (awaitHomeSettleAfterGateLeave &&
-                foregroundPackage != packageName &&
-                systemOrUtilityReason(foregroundPackage) == null &&
-                foregroundPackage !in SettingsManager.getQuickLaunchPackages(this)
-            ) {
-                Log.d(
-                    TAG,
-                    "foreground ignored (a11y-event): $previousPackage -> $foregroundPackage (awaiting home settle)",
-                )
-                return
-            }
-            Log.d(TAG, "foreground changed (a11y-event): $previousPackage -> $foregroundPackage")
             quickLaunchLastSeenPackage = foregroundPackage
             _currentPackage.value = foregroundPackage
         }
@@ -1106,193 +1186,236 @@ class TimerService : Service() {
     private fun startNudging(packageName: String) {
         nudgeJob?.cancel()
         nudgeJob = serviceScope.launch {
-            var overrunMs = 0L
-            var bubbleCount = 0
-            var predatoryPenaltyPending = false
-            var lastUserActivityAtMs: Long? = UsageTracker.getLastUserActivityTimestampMs(
-                context = this@TimerService,
-                lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
-                includeForegroundTransitions = false,
-            )
-            var awaySignalUnavailableLogged = false
+            val appLabel = getAppLabel(packageName)
             val initialDelayMs = SettingsManager
                 .getNudgeInitialNotificationDelayMinutes(this@TimerService)
                 .coerceAtLeast(0) * 60_000L
             val bubbleIntervalMs = SettingsManager
                 .getNudgeBubbleIntervalSeconds(this@TimerService)
                 .coerceAtLeast(1) * 1_000L
-            val appLabel = getAppLabel(packageName)
-            logWithSession(
-                "Nudge schedule: notify now, wait ${initialDelayMs / 60000}m, " +
-                    "bubble every ${bubbleIntervalMs / 1000}s (no banner escalation)"
-            )
-            logSessionEvent(
-                "Nudge loop started (initialDelayMs=$initialDelayMs, bubbleIntervalMs=$bubbleIntervalMs, package=${packageName.ifBlank { "<none>" }})"
-            )
-
-            var stage = NudgeStage.WAITING_AFTER_NOTIFICATION
-            var stageElapsedMs = 0L
-            var activeElapsedMs = 0L
-            val nudgeStartedAtMs = System.currentTimeMillis()
-
-            while (true) {
-                val nudgeTickMs = SettingsManager.getNudgeLoopTickMs(this@TimerService)
-                    .coerceAtLeast(1_000L)
-                delay(nudgeTickMs)
-                val now = System.currentTimeMillis()
-                if (now - nudgeStartedAtMs >= MAX_NUDGE_LOOP_DURATION_MS) {
-                    logSessionEvent("Nudge loop timed out after ${(MAX_NUDGE_LOOP_DURATION_MS / 60_000L)}m; stopping service")
-                    logWithSession("Nudge session ended after a long overrun — returning to normal")
-                    stopTimer()
-                    return@launch
-                }
-                val detectedActivityAtMs = UsageTracker.getLastUserActivityTimestampMs(
+            logNudgeLoopStarted(packageName, initialDelayMs, bubbleIntervalMs)
+            var state = NudgeLoopMutableState(
+                lastUserActivityAtMs = UsageTracker.getLastUserActivityTimestampMs(
                     context = this@TimerService,
                     lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
                     includeForegroundTransitions = false,
-                )
-                if (detectedActivityAtMs != null) {
-                    val current = lastUserActivityAtMs
-                    lastUserActivityAtMs = if (current == null) {
-                        detectedActivityAtMs
-                    } else {
-                        max(current, detectedActivityAtMs)
-                    }
-                }
-                val tapActivityAtMs = lastAwayOverlayTapAtMs
-                if (tapActivityAtMs > 0L) {
-                    val current = lastUserActivityAtMs
-                    lastUserActivityAtMs = if (current == null) {
-                        tapActivityAtMs
-                    } else {
-                        max(current, tapActivityAtMs)
-                    }
-                }
-                val lastActivityAtMs = lastUserActivityAtMs
-                if (lastActivityAtMs == null) {
-                    if (userAwayOverlayActive) {
-                        userAwayOverlayActive = false
-                        overlayManager.dismissAwayShield()
-                        logSessionEvent("Away shield hidden: USER_INTERACTION signal unavailable")
-                    }
-                    awayShieldShownForCurrentAwayEpisode = false
-                    if (!awaySignalUnavailableLogged) {
-                        awaySignalUnavailableLogged = true
-                        logSessionEvent(
-                            "Away detection disabled: no USER_INTERACTION signal available on this device/interval",
-                        )
-                    }
-                }
-                val inactivityMs = lastActivityAtMs?.let { (now - it).coerceAtLeast(0L) } ?: 0L
-                val isUserAway =
-                    lastActivityAtMs != null && inactivityMs >= USER_AWAY_INACTIVITY_THRESHOLD_MS
-                if (isUserAway) {
-                    if (!awayShieldShownForCurrentAwayEpisode) {
-                        awayShieldShownForCurrentAwayEpisode = true
-                        userAwayOverlayActive = true
-                        overlayManager.showAwayShield()
-                        logSessionEvent(
-                            "User away inferred from inactivity (${inactivityMs / 1000}s); showing away shield",
-                        )
-                        logWithSession(
-                            "User appears away (${inactivityMs / 1000}s idle) — pausing nudge escalation and overrun",
-                        )
-                    }
-                    continue
-                } else if (userAwayOverlayActive) {
-                    userAwayOverlayActive = false
-                    overlayManager.dismissAwayShield()
-                    logSessionEvent("User activity resumed; hiding away shield")
-                    awayShieldShownForCurrentAwayEpisode = false
-                } else {
-                    awayShieldShownForCurrentAwayEpisode = false
-                }
-                if (nudgeResetRequested) {
-                    stage = NudgeStage.WAITING_AFTER_NOTIFICATION
-                    stageElapsedMs = 0L
-                    bubbleCount = 0
-                    _nudgeCount.value = 0
-                    nudgeResetRequested = false
-                    nudgePauseUntilMs = max(nudgePauseUntilMs, now + initialDelayMs)
-                    logSessionEvent(
-                        "Nudge loop reset after interaction; pauseUntilMs=$nudgePauseUntilMs"
-                    )
-                }
-                if (now < nudgePauseUntilMs) {
-                    continue
-                }
-                activeElapsedMs += nudgeTickMs
-                stageElapsedMs += nudgeTickMs
-                overrunMs = activeElapsedMs
-                _timerState.value = TimerState.Expired(overrunMs)
-
-                when (stage) {
-                    NudgeStage.WAITING_AFTER_NOTIFICATION -> {
-                        if (stageElapsedMs >= initialDelayMs) {
-                            stage = NudgeStage.BUBBLES
-                            stageElapsedMs = max(0L, stageElapsedMs - initialDelayMs)
-                            logSessionEvent("Nudge stage -> BUBBLES")
-                        }
-                    }
-                    NudgeStage.BUBBLES -> {
-                        if (stageElapsedMs >= bubbleIntervalMs) {
-                            val nextBubbleIndex = bubbleCount + 1
-                            Log.d(
-                                TAG,
-                                "Bubble timer trigger: next=$nextBubbleIndex " +
-                                    "stageElapsedMs=$stageElapsedMs intervalMs=$bubbleIntervalMs " +
-                                    "pkg=$packageName"
-                            )
-                            stageElapsedMs = max(0L, stageElapsedMs - bubbleIntervalMs)
-
-                            if (predatoryPenaltyPending) {
-                                karmaManager.onNudgeIgnored(packageName)
-                                predatoryPenaltyPending = false
-                                logWithSession(
-                                    "Karma -1: predatory bird was ignored until the next bird ($appLabel)"
-                                )
-                                logSessionEvent("Predatory bird penalty applied at nudge #$nextBubbleIndex")
-                            }
-
-                            bubbleCount++
-                            _nudgeCount.value = bubbleCount
-                            val isPredatoryBird =
-                                bubbleCount % PREDATORY_BIRD_EVERY_N_BIRDS == 0
-                            if (isPredatoryBird) {
-                                predatoryPenaltyPending = true
-                                logWithSession(
-                                    "Predatory bird #$bubbleCount is hunting. " +
-                                        "Close before the next bird to avoid karma -1."
-                                )
-                                logSessionEvent(
-                                    "Predatory bird shown at nudge #$bubbleCount; penalty pending"
-                                )
-                            }
-
-                            val canOverlayNow = overlayManager.canDrawOverlay()
-                            Log.d(
-                                TAG,
-                                "Bubble trigger dispatch: canOverlay=$canOverlayNow count=$bubbleCount"
-                            )
-                            if (canOverlayNow) {
-                                overlayManager.showBubble(
-                                    nudgeCount = bubbleCount,
-                                    isPredatory = isPredatoryBird,
-                                )
-                                overlayManager.updateConversationMessage("", bubbleCount)
-                            } else {
-                                logSessionEvent("Bubble fallback notification suppressed (single notification mode)")
-                            }
-
-                            logWithSession(
-                                "${if (isPredatoryBird) "Predatory" else "Small"} bird nudge #$bubbleCount shown for $appLabel " +
-                                    "(overrun ${overrunMs / 1000}s)"
-                            )
-                        }
-                    }
+                ),
+            )
+            val nudgeStartedAtMs = System.currentTimeMillis()
+            while (true) {
+                if (!runOneNudgeLoopTick(state, nudgeStartedAtMs, initialDelayMs, bubbleIntervalMs, packageName, appLabel)) {
+                    return@launch
                 }
             }
         }
+    }
+
+    /** @return false when the nudge loop should stop. */
+    private suspend fun runOneNudgeLoopTick(
+        state: NudgeLoopMutableState,
+        nudgeStartedAtMs: Long,
+        initialDelayMs: Long,
+        bubbleIntervalMs: Long,
+        packageName: String,
+        appLabel: String,
+    ): Boolean {
+        val nudgeTickMs = SettingsManager.getNudgeLoopTickMs(this@TimerService)
+            .coerceAtLeast(1_000L)
+        delay(nudgeTickMs)
+        val now = System.currentTimeMillis()
+        if (shouldStopNudgeLoop(now, nudgeStartedAtMs, MAX_NUDGE_LOOP_DURATION_MS)) {
+            logAndStopNudgeTimeout()
+            return false
+        }
+        if (tickAwayShield(state, now)) return true
+        if (tickNudgePauseOrReset(state, now, initialDelayMs)) return true
+        tickNudgeEscalation(state, now, nudgeTickMs, initialDelayMs, bubbleIntervalMs, packageName, appLabel)
+        return true
+    }
+
+    private class NudgeLoopMutableState(
+        var lastUserActivityAtMs: Long?,
+        var awaySignalUnavailableLogged: Boolean = false,
+        var stage: NudgeStageLogic = NudgeStageLogic.WAITING_AFTER_NOTIFICATION,
+        var stageElapsedMs: Long = 0L,
+        var activeElapsedMs: Long = 0L,
+        var bubbleCount: Int = 0,
+        var predatoryPenaltyPending: Boolean = false,
+    )
+
+    private fun logNudgeLoopStarted(packageName: String, initialDelayMs: Long, bubbleIntervalMs: Long) {
+        logWithSession(
+            "Nudge schedule: notify now, wait ${initialDelayMs / 60000}m, " +
+                "bubble every ${bubbleIntervalMs / 1000}s (no banner escalation)",
+        )
+        logSessionEvent(
+            "Nudge loop started (initialDelayMs=$initialDelayMs, bubbleIntervalMs=$bubbleIntervalMs, " +
+                "package=${packageName.ifBlank { "<none>" }})",
+        )
+    }
+
+    private fun logAndStopNudgeTimeout() {
+        logSessionEvent(
+            "Nudge loop timed out after ${(MAX_NUDGE_LOOP_DURATION_MS / 60_000L)}m; stopping service",
+        )
+        logWithSession("Nudge session ended after a long overrun — returning to normal")
+        stopTimer()
+    }
+
+    /** @return true when the loop should `continue` (user away). */
+    private fun tickAwayShield(state: NudgeLoopMutableState, now: Long): Boolean {
+        val detectedActivityAtMs = UsageTracker.getLastUserActivityTimestampMs(
+            context = this,
+            lookbackMs = USER_AWAY_SIGNAL_LOOKBACK_MS,
+            includeForegroundTransitions = false,
+        )
+        state.lastUserActivityAtMs = mergeLastUserActivityAtMs(
+            previous = state.lastUserActivityAtMs,
+            detectedActivityAtMs = detectedActivityAtMs,
+            tapActivityAtMs = lastAwayOverlayTapAtMs,
+        )
+        val away = inferAwayState(state.lastUserActivityAtMs, now)
+        applyAwayShieldAction(
+            decideAwayShieldAction(
+                inference = away,
+                shieldShownForEpisode = awayShieldShownForCurrentAwayEpisode,
+                overlayActive = userAwayOverlayActive,
+            ),
+        )
+        if (away.signalUnavailable && !state.awaySignalUnavailableLogged) {
+            state.awaySignalUnavailableLogged = true
+            logSessionEvent(
+                "Away detection disabled: no USER_INTERACTION signal available on this device/interval",
+            )
+        }
+        return away.isUserAway
+    }
+
+    private fun applyAwayShieldAction(shieldAction: AwayShieldAction) {
+        when (shieldAction) {
+            is AwayShieldAction.Show -> {
+                awayShieldShownForCurrentAwayEpisode = true
+                userAwayOverlayActive = true
+                overlayManager.showAwayShield()
+                logSessionEvent(
+                    "User away inferred from inactivity (${shieldAction.inactivityMs / 1000}s); showing away shield",
+                )
+                logWithSession(
+                    "User appears away (${shieldAction.inactivityMs / 1000}s idle) — pausing nudge escalation and overrun",
+                )
+            }
+            AwayShieldAction.HideUnavailableSignal -> {
+                userAwayOverlayActive = false
+                overlayManager.dismissAwayShield()
+                logSessionEvent("Away shield hidden: USER_INTERACTION signal unavailable")
+                awayShieldShownForCurrentAwayEpisode = false
+            }
+            AwayShieldAction.HideActivityResumed -> {
+                userAwayOverlayActive = false
+                overlayManager.dismissAwayShield()
+                logSessionEvent("User activity resumed; hiding away shield")
+                awayShieldShownForCurrentAwayEpisode = false
+            }
+            AwayShieldAction.ClearEpisodeOnly -> {
+                awayShieldShownForCurrentAwayEpisode = false
+            }
+            AwayShieldAction.None -> Unit
+        }
+    }
+
+    /** @return true when the loop should `continue` (paused). */
+    private fun tickNudgePauseOrReset(
+        state: NudgeLoopMutableState,
+        now: Long,
+        initialDelayMs: Long,
+    ): Boolean {
+        if (nudgeResetRequested) {
+            state.stage = NudgeStageLogic.WAITING_AFTER_NOTIFICATION
+            state.stageElapsedMs = 0L
+            state.bubbleCount = 0
+            _nudgeCount.value = 0
+            nudgeResetRequested = false
+            nudgePauseUntilMs = max(nudgePauseUntilMs, now + initialDelayMs)
+            logSessionEvent("Nudge loop reset after interaction; pauseUntilMs=$nudgePauseUntilMs")
+        }
+        return now < nudgePauseUntilMs
+    }
+
+    private fun tickNudgeEscalation(
+        state: NudgeLoopMutableState,
+        now: Long,
+        nudgeTickMs: Long,
+        initialDelayMs: Long,
+        bubbleIntervalMs: Long,
+        packageName: String,
+        appLabel: String,
+    ) {
+        state.activeElapsedMs += nudgeTickMs
+        state.stageElapsedMs += nudgeTickMs
+        _timerState.value = TimerState.Expired(state.activeElapsedMs)
+        when (
+            val tick = tickNudgeStage(
+                stage = state.stage,
+                stageElapsedMs = state.stageElapsedMs,
+                initialDelayMs = initialDelayMs,
+                bubbleIntervalMs = bubbleIntervalMs,
+                bubbleCount = state.bubbleCount,
+                predatoryPenaltyPending = state.predatoryPenaltyPending,
+            )
+        ) {
+            NudgeStageTickResult.NoOp -> Unit
+            is NudgeStageTickResult.AdvanceToBubbles -> {
+                state.stage = NudgeStageLogic.BUBBLES
+                state.stageElapsedMs = tick.stageElapsedMs
+                logSessionEvent("Nudge stage -> BUBBLES")
+            }
+            is NudgeStageTickResult.FireBubble ->
+                fireNudgeBubble(state, tick, packageName, appLabel, state.activeElapsedMs)
+        }
+    }
+
+    private fun fireNudgeBubble(
+        state: NudgeLoopMutableState,
+        tick: NudgeStageTickResult.FireBubble,
+        packageName: String,
+        appLabel: String,
+        overrunMs: Long,
+    ) {
+        Log.d(
+            TAG,
+            "Bubble timer trigger: next=${tick.newBubbleCount} " +
+                "stageElapsedMs=${state.stageElapsedMs} intervalMs=tick pkg=$packageName",
+        )
+        state.stageElapsedMs = tick.stageElapsedMs
+        if (tick.applyPendingPredatoryPenalty) {
+            serviceScope.launch {
+                karmaManager.onNudgeIgnored(packageName)
+            }
+            logWithSession("Karma -1: predatory bird was ignored until the next bird ($appLabel)")
+            logSessionEvent("Predatory bird penalty applied at nudge #${tick.newBubbleCount}")
+        }
+        state.bubbleCount = tick.newBubbleCount
+        state.predatoryPenaltyPending = tick.predatoryPenaltyPendingAfter
+        _nudgeCount.value = state.bubbleCount
+        if (tick.isPredatory) {
+            logWithSession(
+                "Predatory bird #${state.bubbleCount} is hunting. " +
+                    "Close before the next bird to avoid karma -1.",
+            )
+            logSessionEvent("Predatory bird shown at nudge #${state.bubbleCount}; penalty pending")
+        }
+        val canOverlayNow = overlayManager.canDrawOverlay()
+        Log.d(TAG, "Bubble trigger dispatch: canOverlay=$canOverlayNow count=${state.bubbleCount}")
+        if (canOverlayNow) {
+            overlayManager.showBubble(nudgeCount = state.bubbleCount, isPredatory = tick.isPredatory)
+            overlayManager.updateConversationMessage("", state.bubbleCount)
+        } else {
+            logSessionEvent("Bubble fallback notification suppressed (single notification mode)")
+        }
+        logWithSession(
+            "${if (tick.isPredatory) "Predatory" else "Small"} bird nudge #${state.bubbleCount} " +
+                "shown for $appLabel (overrun ${overrunMs / 1000}s)",
+        )
     }
 
     private fun onOverlayDismissed() {
@@ -1431,7 +1554,6 @@ class TimerService : Service() {
         timerSessionTotalMs = 0L
         nudgeJob?.cancel()
         quickLaunchMonitorJob?.cancel()
-        // Make leave races impossible: leave Expired immediately, before async cleanup.
         val stateSnapshot = _timerState.value
         if (stateSnapshot !is TimerState.Idle) {
             _timerState.value = TimerState.Idle
@@ -1439,74 +1561,93 @@ class TimerService : Service() {
         }
         overlayManager.dismissAllNudges()
         overlayManager.dismissQuickLaunchFrame()
+        serviceScope.launch { finishStopTimerCleanup(generationAtStop, pkgAtStop, stateSnapshot) }
+    }
 
-        serviceScope.launch {
-            val pkg = pkgAtStop
-            val state = stateSnapshot
-            val appLabel = getAppLabel(pkg)
-
-            when (state) {
-                is TimerState.Counting -> {
-                    karmaManager.onClosedOnTime(pkg)
-                    logWithSession("App closed on time: $appLabel (karma +1)")
-
-                    val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
-                        ?: (System.currentTimeMillis() - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
-                    if (pkg.isNotEmpty()) {
-                        SettingsManager.saveLastSession(
-                            context = this@TimerService,
-                            packageName = pkg,
-                            totalDurationMs = state.totalMs,
-                            startedAtMs = startedAtMs,
-                            suspendedAtMs = null,
-                        )
-                        val remainingMinutes = ((state.remainingMs + 59_999L) / 60_000L).toInt()
-                        logWithSession(
-                            "Saved resumable session: $appLabel ($remainingMinutes min left)"
-                        )
-                    }
-                }
-                is TimerState.Expired -> {
-                    if (state.overrunMs <= KarmaManager.GRACE_WINDOW_MS) {
-                        karmaManager.onClosedInGraceWindow(pkg)
-                        logWithSession(
-                            "App closed in grace window: $appLabel " +
-                                "(overrun ${state.overrunMs / 1000}s)"
-                        )
-                    } else {
-                        logWithSession(
-                            "App closed after overrun: $appLabel " +
-                                "(overrun ${state.overrunMs / 60000} min)"
-                        )
-                    }
-                }
-                is TimerState.Idle -> { }
-            }
-
-            // Home's onScreenShown often restarts Quick Launch immediately after dismiss.
-            // Do not tear down that newer session.
-            if (generationAtStop != sessionGeneration) {
-                logSessionEvent(
-                    "Timer service stop cleanup aborted — newer session gen=$sessionGeneration (was $generationAtStop)",
-                )
-                return@launch
-            }
-
-            _sessionStartedAtMs.value = 0L
-            _currentPackage.value = ""
-            _nudgeCount.value = 0
-            softDeadlineAtMs = null
-            hardDeadlineAtMs = null
-            overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
-            SettingsManager.setTimerRunning(this@TimerService, false)
-            SettingsManager.clearQuickLaunchSession(this@TimerService)
-            quickLaunchExitResumeByPackage.clear()
-
-            endNudgeConversation()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            logSessionEvent("Timer service stop completed")
+    private suspend fun finishStopTimerCleanup(
+        generationAtStop: Int,
+        pkg: String,
+        state: TimerState,
+    ) {
+        applyStopTimerOutcome(pkg, state)
+        if (generationAtStop != sessionGeneration) {
+            logSessionEvent(
+                "Timer service stop cleanup aborted — newer session gen=$sessionGeneration (was $generationAtStop)",
+            )
+            return
         }
+        _sessionStartedAtMs.value = 0L
+        _currentPackage.value = ""
+        _nudgeCount.value = 0
+        softDeadlineAtMs = null
+        hardDeadlineAtMs = null
+        overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
+        SettingsManager.setTimerRunning(this@TimerService, false)
+        SettingsManager.clearQuickLaunchSession(this@TimerService)
+        quickLaunchExitResumeByPackage.clear()
+        endNudgeConversation()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        logSessionEvent("Timer service stop completed")
+    }
+
+    private suspend fun applyStopTimerOutcome(pkg: String, state: TimerState) {
+        val appLabel = getAppLabel(pkg)
+        val outcome = stopTimerOutcomeFromStateFlags(
+            isIdle = state is TimerState.Idle,
+            isCounting = state is TimerState.Counting,
+            remainingMs = (state as? TimerState.Counting)?.remainingMs ?: 0L,
+            totalMs = (state as? TimerState.Counting)?.totalMs ?: 0L,
+            overrunMs = (state as? TimerState.Expired)?.overrunMs ?: 0L,
+            graceWindowMs = KarmaManager.GRACE_WINDOW_MS,
+        )
+        applyClassifiedStopOutcome(pkg, appLabel, outcome)
+    }
+
+    private suspend fun applyClassifiedStopOutcome(
+        pkg: String,
+        appLabel: String,
+        outcome: StopTimerOutcome,
+    ) {
+        when (outcome) {
+            is StopTimerOutcome.ClosedOnTime -> {
+                karmaManager.onClosedOnTime(pkg)
+                logWithSession("App closed on time: $appLabel (karma +1)")
+                saveResumableSessionOnStop(pkg, appLabel, outcome.remainingMs, outcome.totalMs)
+            }
+            is StopTimerOutcome.ClosedInGrace -> {
+                karmaManager.onClosedInGraceWindow(pkg)
+                logWithSession(
+                    "App closed in grace window: $appLabel (overrun ${outcome.overrunMs / 1000}s)",
+                )
+            }
+            is StopTimerOutcome.ClosedAfterOverrun -> {
+                logWithSession(
+                    "App closed after overrun: $appLabel (overrun ${outcome.overrunMs / 60000} min)",
+                )
+            }
+            StopTimerOutcome.Idle -> Unit
+        }
+    }
+
+    private fun saveResumableSessionOnStop(
+        pkg: String,
+        appLabel: String,
+        remainingMs: Long,
+        totalMs: Long,
+    ) {
+        val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
+            ?: (System.currentTimeMillis() - (totalMs - remainingMs).coerceAtLeast(0L))
+        if (pkg.isEmpty()) return
+        SettingsManager.saveLastSession(
+            context = this,
+            packageName = pkg,
+            totalDurationMs = totalMs,
+            startedAtMs = startedAtMs,
+            suspendedAtMs = null,
+        )
+        val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
+        logWithSession("Saved resumable session: $appLabel ($remainingMinutes min left)")
     }
 
     private fun suspendForScreenOff() {
@@ -1529,37 +1670,7 @@ class TimerService : Service() {
         val quickLaunchActive = SettingsManager.isQuickLaunchSessionActive(this)
 
         serviceScope.launch {
-            when (state) {
-                is TimerState.Counting -> {
-                    val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
-                        ?: (suspendedAtMs - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
-                    if (pkg.isNotEmpty()) {
-                        SettingsManager.saveLastSession(
-                            context = this@TimerService,
-                            packageName = pkg,
-                            totalDurationMs = state.totalMs,
-                            startedAtMs = startedAtMs,
-                            suspendedAtMs = suspendedAtMs,
-                        )
-                    }
-                    val elapsedMs = (suspendedAtMs - startedAtMs).coerceAtLeast(0L)
-                    val remainingMs = (state.totalMs - elapsedMs).coerceAtLeast(0L)
-                    val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
-                    logWithSession(
-                        "Session suspended (screen off): $appLabel " +
-                            "($remainingMinutes min remaining)"
-                    )
-                }
-                is TimerState.Expired -> {
-                    karmaManager.onClosedInGraceWindow(pkg)
-                    logWithSession(
-                        "Screen off during overrun: $appLabel — positive signal " +
-                            "(overrun ${state.overrunMs / 1000}s)"
-                    )
-                }
-                is TimerState.Idle -> { }
-            }
-
+            persistScreenOffSessionState(state, pkg, appLabel, suspendedAtMs)
             _timerState.value = TimerState.Idle
             logSessionEvent("Timer state -> Idle (screen off suspend)")
             _sessionStartedAtMs.value = 0L
@@ -1570,19 +1681,68 @@ class TimerService : Service() {
             SettingsManager.setTimerRunning(this@TimerService, false)
 
             endNudgeConversation()
-            if (quickLaunchActive) {
-                // Screen off should not end Quick Launch; keep session alive so unlock
-                // doesn't steal focus back into the launcher.
-                logSessionEvent("Screen off during Quick Launch — session preserved; monitoring paused")
-            } else {
-                SettingsManager.clearQuickLaunchSession(this@TimerService)
-                quickLaunchExitResumeByPackage.clear()
-                _currentPackage.value = ""
-                stopForeground(STOP_FOREGROUND_REMOVE)
-                stopSelf()
-                logSessionEvent("Timer service suspended and stopped")
-            }
+            finishScreenOffSuspend(quickLaunchActive)
         }
+    }
+
+    private suspend fun persistScreenOffSessionState(
+        state: TimerState,
+        pkg: String,
+        appLabel: String,
+        suspendedAtMs: Long,
+    ) {
+        when (state) {
+            is TimerState.Counting -> persistScreenOffCounting(state, pkg, appLabel, suspendedAtMs)
+            is TimerState.Expired -> {
+                karmaManager.onClosedInGraceWindow(pkg)
+                logWithSession(
+                    "Screen off during overrun: $appLabel — positive signal " +
+                        "(overrun ${state.overrunMs / 1000}s)",
+                )
+            }
+            is TimerState.Idle -> { }
+        }
+    }
+
+    private fun persistScreenOffCounting(
+        state: TimerState.Counting,
+        pkg: String,
+        appLabel: String,
+        suspendedAtMs: Long,
+    ) {
+        val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
+            ?: (suspendedAtMs - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
+        if (pkg.isNotEmpty()) {
+            SettingsManager.saveLastSession(
+                context = this@TimerService,
+                packageName = pkg,
+                totalDurationMs = state.totalMs,
+                startedAtMs = startedAtMs,
+                suspendedAtMs = suspendedAtMs,
+            )
+        }
+        val elapsedMs = (suspendedAtMs - startedAtMs).coerceAtLeast(0L)
+        val remainingMs = (state.totalMs - elapsedMs).coerceAtLeast(0L)
+        val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
+        logWithSession(
+            "Session suspended (screen off): $appLabel " +
+                "($remainingMinutes min remaining)",
+        )
+    }
+
+    private fun finishScreenOffSuspend(quickLaunchActive: Boolean) {
+        if (quickLaunchActive) {
+            // Screen off should not end Quick Launch; keep session alive so unlock
+            // doesn't steal focus back into the launcher.
+            logSessionEvent("Screen off during Quick Launch — session preserved; monitoring paused")
+            return
+        }
+        SettingsManager.clearQuickLaunchSession(this@TimerService)
+        quickLaunchExitResumeByPackage.clear()
+        _currentPackage.value = ""
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+        logSessionEvent("Timer service suspended and stopped")
     }
 
     private fun restoreQuickLaunchMonitoring(reason: String) {
@@ -1772,41 +1932,54 @@ class TimerService : Service() {
         source: String,
     ): Boolean {
         val pendingMinutes = pendingExtensionMinutes ?: return false
-        val normalized = payload.trim().lowercase()
-        val isConfirm = normalized == QUICK_REPLY_CONFIRM_EXTENSION ||
-            normalized == "y" ||
-            normalized.startsWith("${QUICK_REPLY_CONFIRM_EXTENSION} ")
-        val isDecline = normalized == QUICK_REPLY_DECLINE_EXTENSION.lowercase() ||
-            normalized.contains("i'll close")
-        if (!isConfirm && !isDecline) return false
+        return when (parseExtensionConfirmationReply(payload)) {
+            ExtensionConfirmationParse.NotADecision -> false
+            ExtensionConfirmationParse.Confirm -> applyConfirmedExtension(
+                payload, pendingMinutes, keepBannerVisible, source,
+            )
+            ExtensionConfirmationParse.Decline -> applyDeclinedExtension(
+                payload, keepBannerVisible, source,
+            )
+        }
+    }
 
+    private fun applyConfirmedExtension(
+        payload: String,
+        pendingMinutes: Int,
+        keepBannerVisible: Boolean,
+        source: String,
+    ): Boolean {
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
         logSessionEvent("Pending extension decision via $source: \"$payload\"")
         val keepPendingBannerVisible = pendingExtensionKeepBannerVisible
-
-        if (isConfirm) {
-            clearPendingExtensionConfirmation()
-            val extended = extendTimer(pendingMinutes)
-            if (extended) {
-                logSessionEvent("Applying confirmed AI extension: +$pendingMinutes min")
-                logWithSession("AI extension confirmed: **+$pendingMinutes min**")
-                endNudgeConversation()
-                return true
-            }
-
-            val blocked =
-                "I can't grant that extension now - your hard deadline is now the closest limit."
-            nudgeMessages.add(NudgeMessage(blocked, isFromUser = false))
-            showConversationNotification(alertUser = false)
-            overlayManager.updateConversationMessage(blocked, _nudgeCount.value)
-            if (keepBannerVisible || keepPendingBannerVisible) {
-                overlayManager.showConversationBanner(buildBannerPreviewLines())
-            }
-            logWithSession("Confirmed extension blocked by hard deadline")
-            logSessionEvent("Confirmed extension blocked by hard deadline")
+        clearPendingExtensionConfirmation()
+        if (extendTimer(pendingMinutes)) {
+            logSessionEvent("Applying confirmed AI extension: +$pendingMinutes min")
+            logWithSession("AI extension confirmed: **+$pendingMinutes min**")
+            endNudgeConversation()
             return true
         }
+        val blocked =
+            "I can't grant that extension now - your hard deadline is now the closest limit."
+        nudgeMessages.add(NudgeMessage(blocked, isFromUser = false))
+        showConversationNotification(alertUser = false)
+        overlayManager.updateConversationMessage(blocked, _nudgeCount.value)
+        if (keepBannerVisible || keepPendingBannerVisible) {
+            overlayManager.showConversationBanner(buildBannerPreviewLines())
+        }
+        logWithSession("Confirmed extension blocked by hard deadline")
+        logSessionEvent("Confirmed extension blocked by hard deadline")
+        return true
+    }
 
+    private fun applyDeclinedExtension(
+        payload: String,
+        keepBannerVisible: Boolean,
+        source: String,
+    ): Boolean {
+        nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
+        logSessionEvent("Pending extension decision via $source: \"$payload\"")
+        val keepPendingBannerVisible = pendingExtensionKeepBannerVisible
         clearPendingExtensionConfirmation()
         nudgeResetRequested = true
         nudgePauseUntilMs = System.currentTimeMillis() + (
@@ -1827,11 +2000,10 @@ class TimerService : Service() {
 
     private fun buildExtensionConfirmationMessage(minutes: Int): String {
         val projectedExpirationMs = calculateProjectedExpirationTimeMs(minutes)
-        if (projectedExpirationMs == null) {
-            return "This will now make your timer expire later by $minutes minutes. Are you sure?"
+        val formattedTime = projectedExpirationMs?.let {
+            DateFormat.getTimeFormat(this).format(Date(it))
         }
-        val formattedTime = DateFormat.getTimeFormat(this).format(Date(projectedExpirationMs))
-        return "This will now make your timer expire at $formattedTime. Are you sure?"
+        return formatExtensionConfirmationMessage(minutes, formattedTime)
     }
 
     private fun calculateProjectedExpirationTimeMs(extraMinutes: Int): Long? {
@@ -1839,15 +2011,14 @@ class TimerService : Service() {
         val remainingMs = when (val state = _timerState.value) {
             is TimerState.Counting -> state.remainingMs
             is TimerState.Expired -> 0L
-            is TimerState.Idle -> return null
+            is TimerState.Idle -> null
         }
-        val projected = now + remainingMs + extraMinutes.coerceAtLeast(0) * 60_000L
-        val hardDeadline = hardDeadlineAtMs
-        return if (hardDeadline != null && hardDeadline > 0L) {
-            minOf(projected, hardDeadline)
-        } else {
-            projected
-        }
+        return projectExpirationTimeMs(
+            nowMs = now,
+            remainingMs = remainingMs,
+            extraMinutes = extraMinutes,
+            hardDeadlineAtMs = hardDeadlineAtMs,
+        )
     }
 
     private fun clearPendingExtensionConfirmation() {
@@ -1874,25 +2045,57 @@ class TimerService : Service() {
     private fun showConversationNotification(alertUser: Boolean) {
         if (nudgeMessages.isEmpty()) return
         logSessionEvent(
-            "Posting conversation notification (alertUser=$alertUser, messages=${nudgeMessages.size})"
+            "Posting conversation notification (alertUser=$alertUser, messages=${nudgeMessages.size})",
         )
+        val notificationBuilder = NotificationCompat.Builder(this, MindfulHomeApp.NUDGE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_nudge_notification)
+            .setContentIntent(buildConversationTapPendingIntent())
+            .setStyle(buildConversationMessagingStyle())
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setOnlyAlertOnce(true)
+            .setSilent(!alertUser)
+            .setAutoCancel(false)
+            .setOngoing(false)
+        attachConversationActions(notificationBuilder)
+        getSystemService(NotificationManager::class.java)
+            .notify(NUDGE_NOTIFICATION_ID, notificationBuilder.build())
+    }
 
-        // Tapping the notification brings the user directly to the timer screen.
+    private fun buildConversationTapPendingIntent(): PendingIntent {
         val tapIntent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(MainActivity.EXTRA_FORCE_TIMER, true)
             putExtra(MainActivity.EXTRA_FORCE_TIMER_REASON, MainActivity.FORCE_TIMER_REASON_EXPIRED)
         }
-        val tapPendingIntent = PendingIntent.getActivity(
+        return PendingIntent.getActivity(
             this, NUDGE_NOTIFICATION_ID, tapIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+    }
 
-        // RemoteInput for inline reply
-        val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY)
-            .setLabel("Reply...")
-            .build()
+    private fun buildConversationMessagingStyle(): NotificationCompat.MessagingStyle {
+        val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
+        for (msg in nudgeMessages) {
+            val sender = if (msg.isFromUser) null else aiPerson
+            messagingStyle.addMessage(
+                NotificationCompat.MessagingStyle.Message(msg.text, msg.timestamp, sender),
+            )
+        }
+        return messagingStyle
+    }
 
+    private fun attachConversationActions(builder: NotificationCompat.Builder) {
+        val replyAction = buildConversationReplyAction()
+        if (conversationNotificationIncludesExtensionActions(pendingExtensionMinutes != null)) {
+            builder.addAction(buildQuickConfirmExtensionAction())
+            builder.addAction(buildQuickDeclineExtensionAction())
+        }
+        builder.addAction(replyAction)
+    }
+
+    private fun buildConversationReplyAction(): NotificationCompat.Action {
+        val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY).setLabel("Reply...").build()
         val replyIntent = Intent(this, TimerService::class.java).apply {
             action = ACTION_HANDLE_REPLY
         }
@@ -1900,76 +2103,40 @@ class TimerService : Service() {
             this, NUDGE_NOTIFICATION_ID, replyIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
         )
-
-        val replyAction = NotificationCompat.Action.Builder(
+        return NotificationCompat.Action.Builder(
             R.drawable.ic_nudge_notification, "Reply", replyPendingIntent,
         )
             .addRemoteInput(remoteInput)
             .setAllowGeneratedReplies(true)
             .build()
-        val hasPendingExtensionDecision = pendingExtensionMinutes != null
-        val quickConfirmIntent = Intent(this, TimerService::class.java).apply {
+    }
+
+    private fun buildQuickConfirmExtensionAction(): NotificationCompat.Action {
+        val intent = Intent(this, TimerService::class.java).apply {
             action = ACTION_HANDLE_REPLY
             putExtra(EXTRA_QUICK_REPLY_TEXT, QUICK_REPLY_CONFIRM_EXTENSION)
         }
-        val quickConfirmPendingIntent = PendingIntent.getService(
-            this,
-            NUDGE_NOTIFICATION_ID + 1,
-            quickConfirmIntent,
+        val pending = PendingIntent.getService(
+            this, NUDGE_NOTIFICATION_ID + 1, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val quickConfirmAction = NotificationCompat.Action.Builder(
-            R.drawable.ic_nudge_notification,
-            QUICK_REPLY_CONFIRM_EXTENSION,
-            quickConfirmPendingIntent,
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_nudge_notification, QUICK_REPLY_CONFIRM_EXTENSION, pending,
         ).build()
-        val quickDeclineIntent = Intent(this, TimerService::class.java).apply {
+    }
+
+    private fun buildQuickDeclineExtensionAction(): NotificationCompat.Action {
+        val intent = Intent(this, TimerService::class.java).apply {
             action = ACTION_HANDLE_REPLY
             putExtra(EXTRA_QUICK_REPLY_TEXT, QUICK_REPLY_DECLINE_EXTENSION)
         }
-        val quickDeclinePendingIntent = PendingIntent.getService(
-            this,
-            NUDGE_NOTIFICATION_ID + 2,
-            quickDeclineIntent,
+        val pending = PendingIntent.getService(
+            this, NUDGE_NOTIFICATION_ID + 2, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        val quickDeclineAction = NotificationCompat.Action.Builder(
-            R.drawable.ic_nudge_notification,
-            QUICK_REPLY_DECLINE_EXTENSION,
-            quickDeclinePendingIntent,
+        return NotificationCompat.Action.Builder(
+            R.drawable.ic_nudge_notification, QUICK_REPLY_DECLINE_EXTENSION, pending,
         ).build()
-
-        // Build the conversation as a MessagingStyle notification
-        val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
-        for (msg in nudgeMessages) {
-            // In MessagingStyle, null sender = message from the device user
-            val sender = if (msg.isFromUser) null else aiPerson
-            messagingStyle.addMessage(
-                NotificationCompat.MessagingStyle.Message(msg.text, msg.timestamp, sender)
-            )
-        }
-
-        val notificationBuilder = NotificationCompat.Builder(this, MindfulHomeApp.NUDGE_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_nudge_notification)
-            .setContentIntent(tapPendingIntent)
-            .setStyle(messagingStyle)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
-            .setOnlyAlertOnce(true)
-            .setSilent(!alertUser)
-            .setAutoCancel(false)
-            .setOngoing(false)
-        if (hasPendingExtensionDecision) {
-            notificationBuilder.addAction(quickConfirmAction)
-            notificationBuilder.addAction(quickDeclineAction)
-            notificationBuilder.addAction(replyAction)
-        } else {
-            notificationBuilder.addAction(replyAction)
-        }
-        val notification = notificationBuilder.build()
-
-        val notificationManager = getSystemService(NotificationManager::class.java)
-        notificationManager.notify(NUDGE_NOTIFICATION_ID, notification)
     }
 
     private fun armNotificationInteractionWatch(source: String) {
@@ -2089,55 +2256,54 @@ class TimerService : Service() {
 
     private fun buildQuickLaunchMonitoringStatusText(): String {
         val candidatePackage = quickLaunchExitCandidatePackage
-        if (candidatePackage.isNullOrBlank() || quickLaunchExitDeadlineMs <= 0L) {
-            return if (quickLaunchDetectedPackage.isNotBlank()) {
-                quickLaunchDetectedStatus
-            } else {
-                DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT
-            }
-        }
-
-        val candidateLabel = quickLaunchExitCandidateLabel
-            ?: quickLaunchDetectedLabel.takeIf { quickLaunchDetectedPackage == candidatePackage }
-            ?: getAppLabel(candidatePackage)
-        val phaseMs = quickLaunchSemaphorePhaseMs
-        val elapsedMs = if (quickLaunchExitDeadlineMs > 0L) {
-            (phaseMs * QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES) -
-                (quickLaunchExitDeadlineMs - System.currentTimeMillis()).coerceAtLeast(0L)
+        val candidateLabel = if (candidatePackage.isNullOrBlank()) {
+            null
         } else {
-            0L
+            quickLaunchExitCandidateLabel
+                ?: quickLaunchDetectedLabel.takeIf { quickLaunchDetectedPackage == candidatePackage }
+                ?: getAppLabel(candidatePackage)
         }
-        val phase = when {
-            elapsedMs < phaseMs -> "green"
-            elapsedMs < phaseMs * 2 -> "yellow"
-            else -> "red"
-        }
-        val remainingMs = (quickLaunchExitDeadlineMs - System.currentTimeMillis()).coerceAtLeast(0L)
-        val remainingSeconds = (remainingMs + 999L) / 1_000L
-        val countdownLabel = if (remainingMs <= 0L) {
-            "opening timer now"
-        } else {
-            "opening timer in ${remainingSeconds}s"
-        }
-        return "Detected $candidateLabel. Phase $phase, $countdownLabel."
+        return formatQuickLaunchMonitoringStatusText(
+            candidatePackage = candidatePackage,
+            candidateLabel = candidateLabel,
+            deadlineMs = quickLaunchExitDeadlineMs,
+            phaseMs = quickLaunchSemaphorePhaseMs,
+            nowMs = System.currentTimeMillis(),
+            detectedPackage = quickLaunchDetectedPackage,
+            detectedStatus = quickLaunchDetectedStatus,
+        )
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
 
     private fun isHardDeadlineCloserThanSessionDeadline(nowMs: Long = System.currentTimeMillis()): Boolean {
-        val hardDeadline = hardDeadlineAtMs ?: return false
-        val softDistanceMs = currentSessionDeadlineDistanceMs(nowMs) ?: return false
-        val hardDistanceMs = abs(hardDeadline - nowMs)
-        return hardDistanceMs < softDistanceMs
+        return hardDeadlineIsCloserThanSession(
+            nowMs = nowMs,
+            hardDeadlineAtMs = hardDeadlineAtMs,
+            sessionDeadlineDistanceMs = currentSessionDeadlineDistanceMs(nowMs),
+        )
     }
 
     private fun currentSessionDeadlineDistanceMs(nowMs: Long): Long? {
         return when (val state = _timerState.value) {
-            is TimerState.Counting -> state.remainingMs.coerceAtLeast(0L)
-            is TimerState.Expired -> state.overrunMs.coerceAtLeast(0L)
+            is TimerState.Counting -> sessionDeadlineDistanceMs(
+                remainingOrOverrunMs = state.remainingMs,
+                idleElapsedMs = null,
+            )
+            is TimerState.Expired -> sessionDeadlineDistanceMs(
+                remainingOrOverrunMs = state.overrunMs,
+                idleElapsedMs = null,
+            )
             is TimerState.Idle -> {
                 val startedAt = _sessionStartedAtMs.value
-                if (startedAt <= 0L) null else (nowMs - startedAt).coerceAtLeast(0L)
+                if (startedAt <= 0L) {
+                    null
+                } else {
+                    sessionDeadlineDistanceMs(
+                        remainingOrOverrunMs = null,
+                        idleElapsedMs = nowMs - startedAt,
+                    )
+                }
             }
         }
     }
@@ -2195,15 +2361,10 @@ class TimerService : Service() {
         private const val TIMER_NOTIFICATION_ID = 1001
         private const val NUDGE_NOTIFICATION_ID = 1002
         private const val QUICK_LAUNCH_NOTIFICATION_ID = 1003
-        private const val QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES = 3
-        private const val USER_AWAY_INACTIVITY_THRESHOLD_MS = 60_000L
         private const val USER_AWAY_SIGNAL_LOOKBACK_MS = 10 * 60_000L
         private const val MAX_NUDGE_LOOP_DURATION_MS = 30 * 60_000L
         /** Slow safety poll used while the accessibility service supplies switch events. */
         private const val EVENT_DRIVEN_SAFETY_POLL_MS = 30_000L
-        private const val PREDATORY_BIRD_EVERY_N_BIRDS = 10
-        private const val DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT =
-            "Quick Launch active - monitoring app switches"
         private val QUICK_LAUNCH_FRAME_RESTRICTED_PACKAGES_EXACT = setOf(
             "com.samsung.knox.securefolder",
         )
@@ -2233,8 +2394,6 @@ class TimerService : Service() {
 
         private const val KEY_TEXT_REPLY = "key_text_reply"
         private const val EXTRA_QUICK_REPLY_TEXT = "extra_quick_reply_text"
-        private const val QUICK_REPLY_CONFIRM_EXTENSION = "yes"
-        private const val QUICK_REPLY_DECLINE_EXTENSION = "oh, it IS late, I'll close"
 
         private val _timerState = MutableStateFlow<TimerState>(TimerState.Idle)
         val timerState: StateFlow<TimerState> = _timerState

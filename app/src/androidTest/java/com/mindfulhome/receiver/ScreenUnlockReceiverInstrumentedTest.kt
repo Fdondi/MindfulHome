@@ -80,17 +80,19 @@ class ScreenUnlockReceiverInstrumentedTest {
         val launchIntent = packageManager.getLaunchIntentForPackage(targetPackage)
         assumeNotNull("No launch intent for $targetPackage", launchIntent)
 
+        // Bring the QL app to foreground before starting the session so a leftover
+        // restricted app (e.g. Twitter from a prior test) cannot Instant-Gate the session.
+        appContext.startActivity(
+            launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+        assertForegroundEventually(targetPackage)
+
         TimerService.startQuickLaunchSession(
             context = appContext,
             initialPackageName = targetPackage,
             allowedQuickLaunchPackages = listOf(targetPackage),
         )
         assertQuickLaunchSessionEventually(expected = true)
-
-        appContext.startActivity(
-            launchIntent?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        )
-        assertForegroundEventually(targetPackage)
 
         execShell("input keyevent 26")
         Thread.sleep(800L)

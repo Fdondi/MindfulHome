@@ -97,23 +97,14 @@ class DragDropState {
         hoverStartMs = 0L
     }
 
-    private fun findTargetAt(position: Offset): DropTarget {
-        for ((slot, bounds) in favoriteSlotBounds) {
-            if (bounds.contains(position)) {
-                return DropTarget.OnFavoriteSlot(slot)
-            }
-        }
-        if (dockBounds.contains(position)) {
-            return DropTarget.Dock
-        }
-        val draggedKey = draggedItem?.key ?: return DropTarget.None
-        for ((key, bounds) in itemBounds) {
-            if (key != draggedKey && bounds.contains(position)) {
-                return DropTarget.OnItem(key)
-            }
-        }
-        return DropTarget.None
-    }
+    private fun findTargetAt(position: Offset): DropTarget =
+        findHomeDropTargetAt(
+            position = position,
+            favoriteSlotBounds = favoriteSlotBounds,
+            dockBounds = dockBounds,
+            itemBounds = itemBounds,
+            draggedKey = draggedItem?.key,
+        )
 }
 
 sealed class DropTarget {

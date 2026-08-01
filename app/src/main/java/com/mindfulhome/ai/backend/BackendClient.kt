@@ -229,18 +229,21 @@ object BackendClient {
     private fun parseErrorMessage(body: String, code: Int): String {
         return try {
             val obj = json.parseToJsonElement(body).jsonObject
-            val detail = obj["detail"]
-            when (detail) {
-                is JsonPrimitive -> detail.contentOrNull ?: "HTTP $code"
-                is JsonObject -> detail["message"]?.let {
-                    (it as? JsonPrimitive)?.contentOrNull
-                } ?: "HTTP $code"
-                else -> "HTTP $code"
-            }
+            formatErrorDetail(obj["detail"], code)
         } catch (_: Exception) {
             "HTTP $code"
         }
     }
+
+    private fun formatErrorDetail(detail: kotlinx.serialization.json.JsonElement?, code: Int): String =
+        when (detail) {
+            is JsonPrimitive -> detail.contentOrNull ?: "HTTP $code"
+            is JsonObject -> messageFromDetailObject(detail, code)
+            else -> "HTTP $code"
+        }
+
+    private fun messageFromDetailObject(detail: JsonObject, code: Int): String =
+        detail["message"]?.let { (it as? JsonPrimitive)?.contentOrNull } ?: "HTTP $code"
 
     private fun parseErrorCode(body: String): String? {
         return try {

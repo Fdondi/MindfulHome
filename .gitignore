@@ -44,3 +44,6 @@ open-worktree.bat
 
 .env*
 *.env
+
+# Generated CRAP reports
+results/crap/*.md

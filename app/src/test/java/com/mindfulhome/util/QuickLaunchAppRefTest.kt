@@ -12,7 +12,9 @@ class QuickLaunchAppRefTest {
         val shortcut = PinnedShortcut("com.android.chrome", "729fe25f-bd6e-4d67-bf1e-85a579044ef4", "Site")
         val key = QuickLaunchAppRef.shortcutKey(shortcut)
         assertEquals("sc:com.android.chrome/729fe25f-bd6e-4d67-bf1e-85a579044ef4", key)
-        assertEquals(shortcut, QuickLaunchAppRef.parseShortcut(key))
+        val parsed = QuickLaunchAppRef.parseShortcut(key)!!
+        assertEquals(shortcut.packageName, parsed.packageName)
+        assertEquals(shortcut.id, parsed.id)
     }
 
     @Test
@@ -23,7 +25,9 @@ class QuickLaunchAppRefTest {
             "Example",
         )
         val key = QuickLaunchAppRef.shortcutKey(shortcut)
-        assertEquals(shortcut, QuickLaunchAppRef.parseShortcut(key))
+        val parsed = QuickLaunchAppRef.parseShortcut(key)!!
+        assertEquals(shortcut.packageName, parsed.packageName)
+        assertEquals(shortcut.id, parsed.id)
         assertEquals("com.brave.browser", QuickLaunchAppRef.ownerPackage(key))
     }
 

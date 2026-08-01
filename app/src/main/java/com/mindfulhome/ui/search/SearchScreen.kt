@@ -62,8 +62,7 @@ fun SearchOverlay(
         val focusRequester = remember { FocusRequester() }
 
         val filteredApps = remember(query, apps) {
-            if (query.isBlank()) apps
-            else apps.filter { it.label.contains(query, ignoreCase = true) }
+            filterSearchApps(query, apps)
         }
 
         LaunchedEffect(visible) {
@@ -153,4 +152,9 @@ fun SearchOverlay(
             }
         }
     }
+}
+
+internal fun filterSearchApps(query: String, apps: List<AppInfo>): List<AppInfo> {
+    if (query.isBlank()) return apps
+    return apps.filter { it.label.contains(query, ignoreCase = true) }
 }

@@ -118,35 +118,73 @@ internal object QuickLaunchJson {
         } catch (_: Exception) {
             return emptyList()
         }
-        return arr.mapNotNull { el ->
-            when {
-                el is JsonPrimitive && el.isString ->
-                    QuickLaunchSlot.Single(el.content)
-                el is JsonObject -> {
-                    val apps = el["apps"]?.jsonArray?.mapNotNull { decodeFolderApp(it) }
-                        ?.let { normalizeFolderApps(it) }
-                        ?: emptyList()
-                    val name = el["name"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-                    val symbolIcon =
-                        el["symbolIcon"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-                    val shortcuts = el["shortcuts"]?.jsonArray?.mapNotNull { shortcutEl ->
-                        val obj = shortcutEl.jsonObject
-                        val pkg = obj["pkg"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-                        val id = obj["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-                        if (pkg.isBlank() || id.isBlank()) return@mapNotNull null
-                        val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-                        val intentUri = obj["intentUri"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
-                        PinnedShortcut(pkg, id, label, intentUri)
-                    } ?: emptyList()
-                    when {
-                        apps.isEmpty() && shortcuts.isEmpty() && name == null -> return@mapNotNull null
-                        intentMode || apps.size != 1 || name != null || shortcuts.isNotEmpty() ->
-                            QuickLaunchSlot.Folder(name, apps, symbolIcon, shortcuts)
-                        else -> QuickLaunchSlot.Single(apps[0].packageName)
-                    }
-                }
-                else -> null
-            }
+        return arr.mapNotNull { el -> decodeSlotElement(el, intentMode) }
+    }
+
+    private fun decodeSlotElement(
+        el: kotlinx.serialization.json.JsonElement,
+        intentMode: Boolean,
+    ): QuickLaunchSlot? = when {
+        el is JsonPrimitive && el.isString -> QuickLaunchSlot.Single(el.content)
+        el is JsonObject -> decodeObjectSlot(el, intentMode)
+        else -> null
+    }
+
+    private fun decodeObjectSlot(el: JsonObject, intentMode: Boolean): QuickLaunchSlot? {
+        val apps = decodeObjectApps(el)
+        val name = optionalTrimmedString(el, "name")
+        val symbolIcon = optionalTrimmedString(el, "symbolIcon")
+        val shortcuts = decodeShortcuts(el["shortcuts"]?.jsonArray)
+        return materializeObjectSlot(apps, name, symbolIcon, shortcuts, intentMode)
+    }
+
+    private fun decodeObjectApps(el: JsonObject): List<QuickLaunchFolderApp> =
+        el["apps"]?.jsonArray?.mapNotNull { decodeFolderApp(it) }
+            ?.let { normalizeFolderApps(it) }
+            ?: emptyList()
+
+    private fun optionalTrimmedString(el: JsonObject, key: String): String? =
+        el[key]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+
+    private fun materializeObjectSlot(
+        apps: List<QuickLaunchFolderApp>,
+        name: String?,
+        symbolIcon: String?,
+        shortcuts: List<PinnedShortcut>,
+        intentMode: Boolean,
+    ): QuickLaunchSlot? {
+        if (isEmptyAnonymousFolder(apps, shortcuts, name)) return null
+        if (shouldKeepAsFolder(intentMode, apps, name, shortcuts)) {
+            return QuickLaunchSlot.Folder(name, apps, symbolIcon, shortcuts)
+        }
+        return QuickLaunchSlot.Single(apps[0].packageName)
+    }
+
+    private fun isEmptyAnonymousFolder(
+        apps: List<QuickLaunchFolderApp>,
+        shortcuts: List<PinnedShortcut>,
+        name: String?,
+    ): Boolean = apps.isEmpty() && shortcuts.isEmpty() && name == null
+
+    private fun shouldKeepAsFolder(
+        intentMode: Boolean,
+        apps: List<QuickLaunchFolderApp>,
+        name: String?,
+        shortcuts: List<PinnedShortcut>,
+    ): Boolean = intentMode || apps.size != 1 || name != null || shortcuts.isNotEmpty()
+
+    private fun decodeShortcuts(
+        arr: kotlinx.serialization.json.JsonArray?,
+    ): List<PinnedShortcut> {
+        if (arr == null) return emptyList()
+        return arr.mapNotNull { shortcutEl ->
+            val obj = shortcutEl.jsonObject
+            val pkg = obj["pkg"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            val id = obj["id"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            if (pkg.isBlank() || id.isBlank()) return@mapNotNull null
+            val label = obj["label"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+            val intentUri = obj["intentUri"]?.jsonPrimitive?.contentOrNull?.trim()?.takeIf { it.isNotEmpty() }
+            PinnedShortcut(pkg, id, label, intentUri)
         }
     }
 }

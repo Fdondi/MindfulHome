@@ -34,6 +34,16 @@ Open the project in Android Studio. It will sync Gradle automatically. Use Run/D
 
 - `:app` - MindfulHome launcher
 
+### CRAP metric (coverage × complexity)
+
+To rank methods by change risk (cyclomatic complexity + unit-test coverage):
+
+```bat
+gradlew crapCheck
+```
+
+See [docs/crap.md](docs/crap.md) for the formula, report paths, and optional threshold gate.
+
 ## Todo Companion integration
 
 - Todo Companion is integrated directly inside MindfulHome's default page as a built-in widget card.

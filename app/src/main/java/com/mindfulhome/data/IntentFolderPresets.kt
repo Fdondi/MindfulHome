@@ -144,44 +144,59 @@ object IntentFolderPresets {
     ): List<QuickLaunchSlot.Folder> {
         val presetSlots = buildInitialSlots(installedPackages).associateBy { it.name!! }.toMutableMap()
         val utilApps = mutableListOf<String>()
-
-        for (slot in slots) {
-            val packages = slot.flattenPackages()
-            when (slot) {
-                is QuickLaunchSlot.Folder -> {
-                    val name = slot.name?.trim()?.takeIf { it.isNotEmpty() }
-                    if (name != null && name in presetSlots) {
-                        val existing = presetSlots[name]!!
-                        val preset = all.firstOrNull { it.name == name }
-                        presetSlots[name] = existing.copy(
-                            apps = mergeFolderApps(existing.apps, slot.apps),
-                            symbolIconName = existing.symbolIconName
-                                ?: slot.symbolIconName
-                                ?: preset?.symbolIconName,
-                        )
-                    } else if (name != null) {
-                        val preset = all.firstOrNull { it.name == name }
-                        presetSlots[name] = QuickLaunchSlot.Folder(
-                            name,
-                            mergeFolderApps(presetSlots[name]?.apps.orEmpty(), slot.apps),
-                            slot.symbolIconName ?: preset?.symbolIconName,
-                        )
-                    } else {
-                        packages.forEach { pkg -> assignPackage(pkg, presetSlots, utilApps) }
-                    }
-                }
-                is QuickLaunchSlot.Single -> {
-                    assignPackage(slot.packageName, presetSlots, utilApps)
-                }
-            }
-        }
-
+        slots.forEach { absorbLegacySlot(it, presetSlots, utilApps) }
         if (utilApps.isNotEmpty()) {
             val util = presetSlots["Util"]!!
             presetSlots["Util"] = util.copy(apps = mergeFolderApps(util.apps, utilApps.toUnlimitedFolderApps()))
         }
-
         return all.mapNotNull { preset -> presetSlots[preset.name] }
+    }
+
+    private fun absorbLegacySlot(
+        slot: QuickLaunchSlot,
+        presetSlots: MutableMap<String, QuickLaunchSlot.Folder>,
+        utilApps: MutableList<String>,
+    ) {
+        when (slot) {
+            is QuickLaunchSlot.Folder -> absorbLegacyFolder(slot, presetSlots, utilApps)
+            is QuickLaunchSlot.Single -> assignPackage(slot.packageName, presetSlots, utilApps)
+        }
+    }
+
+    private fun absorbLegacyFolder(
+        slot: QuickLaunchSlot.Folder,
+        presetSlots: MutableMap<String, QuickLaunchSlot.Folder>,
+        utilApps: MutableList<String>,
+    ) {
+        val name = slot.name?.trim()?.takeIf { it.isNotEmpty() }
+        if (name == null) {
+            slot.flattenPackages().forEach { pkg -> assignPackage(pkg, presetSlots, utilApps) }
+            return
+        }
+        mergeNamedLegacyFolder(name, slot, presetSlots)
+    }
+
+    private fun mergeNamedLegacyFolder(
+        name: String,
+        slot: QuickLaunchSlot.Folder,
+        presetSlots: MutableMap<String, QuickLaunchSlot.Folder>,
+    ) {
+        val preset = all.firstOrNull { it.name == name }
+        val existing = presetSlots[name]
+        if (existing != null) {
+            presetSlots[name] = existing.copy(
+                apps = mergeFolderApps(existing.apps, slot.apps),
+                symbolIconName = existing.symbolIconName
+                    ?: slot.symbolIconName
+                    ?: preset?.symbolIconName,
+            )
+        } else {
+            presetSlots[name] = QuickLaunchSlot.Folder(
+                name,
+                mergeFolderApps(emptyList(), slot.apps),
+                slot.symbolIconName ?: preset?.symbolIconName,
+            )
+        }
     }
 
     private fun assignPackage(
@@ -191,15 +206,14 @@ object IntentFolderPresets {
     ) {
         if (packageName.isBlank()) return
         val preset = presetForPackage(packageName)
-        if (preset != null) {
-            val existing = presetSlots[preset.name]!!
-            if (packageName !in existing.packageNames()) {
-                presetSlots[preset.name] = existing.copy(
-                    apps = existing.apps + QuickLaunchFolderApp.unlimited(packageName),
-                )
-            }
-        } else {
+        if (preset == null) {
             utilApps.add(packageName)
+            return
         }
+        val existing = presetSlots[preset.name]!!
+        if (packageName in existing.packageNames()) return
+        presetSlots[preset.name] = existing.copy(
+            apps = existing.apps + QuickLaunchFolderApp.unlimited(packageName),
+        )
     }
 }

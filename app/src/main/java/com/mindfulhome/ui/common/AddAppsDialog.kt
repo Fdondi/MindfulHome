@@ -127,39 +127,44 @@ private fun AddAppListRow(
             modifier = Modifier.weight(1f)
         )
         if (placements.isNotEmpty()) {
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                    tint = MaterialTheme.colorScheme.primary,
-                )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    placements.forEach { p ->
-                        when (p) {
-                            is AppSlotPlacement.Root -> {
-                                Icon(
-                                    imageVector = Icons.Outlined.Home,
-                                    contentDescription = "On strip",
-                                    modifier = Modifier.size(14.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            is AppSlotPlacement.InFolder -> {
-                                MaterialSymbolGlyph(
-                                    symbolIconName = p.symbolIconName ?: "folder",
-                                    size = 14.dp,
-                                    contentDescription = "In folder",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                        }
+            AddAppPlacementBadges(placements)
+        }
+    }
+}
+
+@Composable
+private fun AddAppPlacementBadges(placements: List<AppSlotPlacement>) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Default.Check,
+            contentDescription = null,
+            modifier = Modifier.size(18.dp),
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            placements.forEach { p ->
+                when (p) {
+                    is AppSlotPlacement.Root -> {
+                        Icon(
+                            imageVector = Icons.Outlined.Home,
+                            contentDescription = "On strip",
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    is AppSlotPlacement.InFolder -> {
+                        MaterialSymbolGlyph(
+                            symbolIconName = p.symbolIconName ?: "folder",
+                            size = 14.dp,
+                            contentDescription = "In folder",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }

@@ -2,6 +2,7 @@ package com.mindfulhome.data
 
 import android.database.Cursor
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -12,8 +13,9 @@ import kotlinx.serialization.json.put
  */
 internal object QuickLaunchLegacyMigration {
 
+    private data class Row(val pkg: String, val slot: Int, val order: Int, val folderName: String?)
+
     fun buildJsonFromLegacyCursor(cursor: Cursor): String {
-        data class Row(val pkg: String, val slot: Int, val order: Int, val folderName: String?)
         val rows = mutableListOf<Row>()
         while (cursor.moveToNext()) {
             rows.add(
@@ -30,26 +32,20 @@ internal object QuickLaunchLegacyMigration {
         val bySlot = rows.groupBy { it.slot }.toSortedMap()
         return buildJsonArray {
             for ((_, slotRows) in bySlot) {
-                val sorted = slotRows.sortedBy { it.order }
-                when (sorted.size) {
-                    1 -> add(JsonPrimitive(sorted[0].pkg))
-                    else -> {
-                        val name = sorted
-                            .firstOrNull { !it.folderName.isNullOrBlank() }
-                            ?.folderName?.trim()
-                            ?.takeIf { it.isNotEmpty() }
-                        add(
-                            buildJsonObject {
-                                if (name != null) put("name", name)
-                                put(
-                                    "apps",
-                                    JsonArray(sorted.map { JsonPrimitive(it.pkg) }),
-                                )
-                            },
-                        )
-                    }
-                }
+                add(encodeLegacySlot(slotRows.sortedBy { it.order }))
             }
         }.toString()
+    }
+
+    private fun encodeLegacySlot(sorted: List<Row>): JsonElement {
+        if (sorted.size == 1) return JsonPrimitive(sorted[0].pkg)
+        val name = sorted
+            .firstOrNull { !it.folderName.isNullOrBlank() }
+            ?.folderName?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        return buildJsonObject {
+            if (name != null) put("name", name)
+            put("apps", JsonArray(sorted.map { JsonPrimitive(it.pkg) }))
+        }
     }
 }

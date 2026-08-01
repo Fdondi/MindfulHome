@@ -1,0 +1,10 @@
+# Minimal detekt config used only to dump per-method cyclomatic complexity for CRAP.
+# allowedComplexity: 0 makes CyclomaticComplexMethod report every method (CC >= 1).
+complexity:
+  active: true
+  CyclomaticComplexMethod:
+    active: true
+    allowedComplexity: 0
+    ignoreSingleWhenExpression: false
+    ignoreLocalFunctions: false
+    ignoreNestingFunctions: false

@@ -1,10 +1,15 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import dev.detekt.gradle.Detekt
+import dev.detekt.gradle.extensions.FailOnSeverity
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
     id("com.google.devtools.ksp")
+    id("org.jetbrains.kotlinx.kover")
+    id("dev.detekt")
 }
 
 android {
@@ -108,4 +113,106 @@ dependencies {
     androidTestImplementation(libs.runner)
     androidTestImplementation(libs.room.testing)
     androidTestImplementation(libs.kotlinx.coroutines.android)
+}
+
+kover {
+    reports {
+        filters {
+            excludes {
+                classes(
+                    "*BuildConfig",
+                    "*_Impl",
+                    "*_Impl\$*",
+                    "**/databinding/**",
+                    "*ComposableSingletons*",
+                )
+                annotatedBy("androidx.compose.ui.tooling.preview.Preview")
+            }
+        }
+    }
+}
+
+detekt {
+    toolVersion = "2.0.0-alpha.5"
+    parallel = true
+    buildUponDefaultConfig = true
+    ignoreFailures = true
+    basePath.set(rootProject.layout.projectDirectory)
+    ignoredBuildTypes = listOf("release")
+}
+
+tasks.withType<Detekt>().configureEach {
+    jvmTarget.set("17")
+    exclude("**/build/**")
+}
+
+// Metrics-only dump: every method’s cyclomatic complexity for the CRAP combiner.
+tasks.register<Detekt>("detektCrap") {
+    description = "Dump CyclomaticComplexMethod findings for CRAP scoring"
+    parallel = true
+    setSource(files("src/main/java", "src/main/kotlin"))
+    config.setFrom(rootProject.file("config/detekt/detekt-crap.yml"))
+    buildUponDefaultConfig.set(false)
+    ignoreFailures.set(true)
+    failOnSeverity.set(FailOnSeverity.Never)
+    basePath.set(rootProject.projectDir.absolutePath)
+    include("**/*.kt", "**/*.kts")
+    exclude("**/build/**")
+    reports {
+        checkstyle.required.set(true)
+        checkstyle.outputLocation.set(file("build/reports/detekt/detektCrap.xml"))
+        html.required.set(false)
+        markdown.required.set(false)
+        sarif.required.set(false)
+    }
+}
+
+tasks.register<Exec>("crapCheck") {
+    group = "verification"
+    description = "Compute CRAP scores from Kover coverage + detekt complexity"
+    dependsOn("koverXmlReportDebug", "detektCrap")
+
+    val koverXml = layout.buildDirectory.file("reports/kover/reportDebug.xml")
+    val detektXml = layout.buildDirectory.file("reports/detekt/detektCrap.xml")
+    val reportOut = rootProject.layout.projectDirectory.file("results/crap/crap-report.md")
+    val script = rootProject.layout.projectDirectory.file("scripts/crap/compute_crap.py")
+    val maxCrap = providers.gradleProperty("crapMax")
+
+    workingDir = rootProject.projectDir
+    inputs.files(koverXml, detektXml, script)
+    outputs.file(reportOut)
+
+    commandLine(
+        "python",
+        script.asFile.absolutePath,
+        "--kover",
+        koverXml.get().asFile.absolutePath,
+        "--detekt",
+        detektXml.get().asFile.absolutePath,
+        "--out",
+        reportOut.asFile.absolutePath,
+        "--top",
+        "50",
+    )
+
+    if (maxCrap.isPresent) {
+        args("--max-crap", maxCrap.get())
+    }
+}
+
+// Collect full coverage for CRAP even when some unit tests assert-fail.
+gradle.taskGraph.whenReady {
+    val runningCrap = allTasks.any { it.path.endsWith(":crapCheck") || it.name == "crapCheck" }
+    if (runningCrap) {
+        tasks.named<Test>("testDebugUnitTest").configure {
+            ignoreFailures = true
+        }
+    }
+}
+
+// Keep CRAP/detekt optional: do not fail `check` on the default detekt task.
+tasks.named("check").configure {
+    setDependsOn(dependsOn.filterNot {
+        it is TaskProvider<*> && it.name == "detekt"
+    })
 }

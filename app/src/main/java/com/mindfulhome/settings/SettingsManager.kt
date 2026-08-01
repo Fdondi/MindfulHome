@@ -424,14 +424,19 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         val existingTotalMs = p.getLong(LAST_SESSION_TOTAL_DURATION_MS_KEY, 0L)
         val existingStartedAtMs = p.getLong(LAST_SESSION_STARTED_AT_MS_KEY, 0L)
         val existingSuspendedAtMs = p.getLong(LAST_SESSION_SUSPENDED_AT_MS_KEY, 0L)
-        val isSameSession = existingPackage == packageName &&
-            existingTotalMs == totalDurationMs &&
-            existingStartedAtMs == startedAtMs
-        val persistedSuspendedAtMs = when {
-            suspendedAtMs != null -> suspendedAtMs
-            isSameSession && existingSuspendedAtMs > 0L -> existingSuspendedAtMs
-            else -> 0L
-        }
+        val same = isSameSavedSession(
+            existingPackage,
+            existingTotalMs,
+            existingStartedAtMs,
+            packageName,
+            totalDurationMs,
+            startedAtMs,
+        )
+        val persistedSuspendedAtMs = resolvePersistedSuspendedAtMs(
+            suspendedAtMs,
+            same,
+            existingSuspendedAtMs,
+        )
         p.edit {
             putString(LAST_SESSION_PACKAGE_KEY, packageName)
             putLong(LAST_SESSION_TOTAL_DURATION_MS_KEY, totalDurationMs)
@@ -442,29 +447,12 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
 
     fun getLastSession(context: Context): SavedSession? {
         val p = prefs(context)
-        val pkg = p.getString(LAST_SESSION_PACKAGE_KEY, null) ?: return null
-        val totalDurationMs = p.getLong(LAST_SESSION_TOTAL_DURATION_MS_KEY, 0L)
-        val startedAtMs = p.getLong(LAST_SESSION_STARTED_AT_MS_KEY, 0L)
-        val suspendedAtMsRaw = p.getLong(LAST_SESSION_SUSPENDED_AT_MS_KEY, 0L)
-        if (pkg.isEmpty() || totalDurationMs <= 0L || startedAtMs <= 0L) return null
-
-        val referenceNowMs = if (suspendedAtMsRaw > 0L) {
-            suspendedAtMsRaw
-        } else {
-            System.currentTimeMillis()
-        }
-        val elapsedMs = (referenceNowMs - startedAtMs).coerceAtLeast(0L)
-        val remainingMs = (totalDurationMs - elapsedMs).coerceAtLeast(0L)
-        if (remainingMs <= 0L) return null
-        val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
-
-        return SavedSession(
-            packageName = pkg,
-            remainingMs = remainingMs,
-            remainingMinutes = remainingMinutes,
-            totalDurationMs = totalDurationMs,
-            startedAtMs = startedAtMs,
-            suspendedAtMs = suspendedAtMsRaw.takeIf { it > 0L },
+        return buildSavedSession(
+            pkg = p.getString(LAST_SESSION_PACKAGE_KEY, null).orEmpty(),
+            totalDurationMs = p.getLong(LAST_SESSION_TOTAL_DURATION_MS_KEY, 0L),
+            startedAtMs = p.getLong(LAST_SESSION_STARTED_AT_MS_KEY, 0L),
+            suspendedAtMsRaw = p.getLong(LAST_SESSION_SUSPENDED_AT_MS_KEY, 0L),
+            nowMs = System.currentTimeMillis(),
         )
     }
 
@@ -537,38 +525,7 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
 
     fun getLastTimerUsageSnapshot(context: Context): LastTimerUsageSnapshot? {
         val raw = prefs(context).getString(LAST_TIMER_USAGE_SNAPSHOT_KEY, null) ?: return null
-        return try {
-            val payload = JSONObject(raw)
-            val capturedAtMs = payload.optLong("capturedAtMs", 0L)
-            if (capturedAtMs <= 0L) return null
-            val appsJson = payload.optJSONArray("topApps") ?: JSONArray()
-            val apps = buildList {
-                for (i in 0 until appsJson.length()) {
-                    val appJson = appsJson.optJSONObject(i) ?: continue
-                    val packageName = appJson.optString("packageName", "").trim()
-                    val foregroundTimeMs = appJson.optLong("foregroundTimeMs", 0L)
-                    if (packageName.isBlank() || foregroundTimeMs <= 0L) continue
-                    val chunksJson = appJson.optJSONArray("longestSessionsMsDesc") ?: JSONArray()
-                    val chunks = buildList {
-                        for (j in 0 until chunksJson.length()) {
-                            val value = chunksJson.optLong(j, 0L)
-                            if (value > 0L) add(value)
-                        }
-                    }
-                    add(
-                        LastTimerUsageApp(
-                            packageName = packageName,
-                            foregroundTimeMs = foregroundTimeMs,
-                            longestSessionsMsDesc = chunks,
-                        )
-                    )
-                }
-            }
-            if (apps.isEmpty()) return null
-            LastTimerUsageSnapshot(capturedAtMs = capturedAtMs, topApps = apps)
-        } catch (_: Exception) {
-            null
-        }
+        return parseLastTimerUsageSnapshotJson(raw)
     }
 
     fun clearLastTimerUsageSnapshot(context: Context) {

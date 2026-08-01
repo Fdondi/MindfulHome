@@ -13,36 +13,38 @@ class ScreenUnlockReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "onReceive: action=${intent.action}")
-
         if (intent.action != Intent.ACTION_USER_PRESENT) return
+        if (handleQuickLaunchUnlock(context)) return
+        if (shouldSkipTimerForQuickReturn(context)) return
+        launchTimerFromUnlock(context)
+    }
 
-        if (SettingsManager.isQuickLaunchSessionActive(context)) {
-            Log.d(TAG, "Quick Launch session active on unlock — skipping timer")
-            // Resume quick-launch monitoring (if the service was paused/killed while locked)
-            TimerService.resumeQuickLaunchMonitoring(context, SessionLogger.getActiveSessionHandle())
-            return
-        }
+    private fun handleQuickLaunchUnlock(context: Context): Boolean {
+        if (!SettingsManager.isQuickLaunchSessionActive(context)) return false
+        Log.d(TAG, "Quick Launch session active on unlock — skipping timer")
+        TimerService.resumeQuickLaunchMonitoring(context, SessionLogger.getActiveSessionHandle())
+        return true
+    }
 
+    private fun shouldSkipTimerForQuickReturn(context: Context): Boolean {
         val screenOffTimestamp = SettingsManager.getScreenOffTimestamp(context)
         val awayMs = if (screenOffTimestamp > 0)
             System.currentTimeMillis() - screenOffTimestamp
         else
             Long.MAX_VALUE
-
-        val thresholdMs =
-            SettingsManager.getQuickReturnMinutes(context) * 60_000L
+        val thresholdMs = SettingsManager.getQuickReturnMinutes(context) * 60_000L
         val savedSession = SettingsManager.getLastSession(context)
-
         Log.d(TAG, "awayMs=$awayMs thresholdMs=$thresholdMs savedSession=$savedSession")
-
         if (awayMs < thresholdMs && savedSession != null) {
             Log.d(TAG, "Quick return with saved session — skipping timer")
-            return
+            return true
         }
+        return false
+    }
 
+    private fun launchTimerFromUnlock(context: Context) {
         Log.d(TAG, "Launching MainActivity with timer screen")
         MainActivity.shouldShowTimer = true
-
         val launch = Intent(context, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(EXTRA_FROM_UNLOCK, true)

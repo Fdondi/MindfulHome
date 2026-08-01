@@ -34,60 +34,72 @@ class PinShortcutActivity : ComponentActivity() {
 
         val launcherApps = getSystemService(LauncherApps::class.java)
         val pinRequest = launcherApps?.getPinItemRequest(intent)
-        if (pinRequest != null && pinRequest.isValid &&
-            pinRequest.requestType == LauncherApps.PinItemRequest.REQUEST_TYPE_SHORTCUT
-        ) {
-            val shortcutInfo = pinRequest.shortcutInfo
-            if (shortcutInfo == null) {
-                Log.w(TAG, "Pin request valid but ShortcutInfo is null")
-                finish()
-                return
-            }
-            showFolderPicker(
-                label = shortcutLabel(shortcutInfo),
-                iconDrawable = launcherApps.getShortcutIconDrawable(shortcutInfo, 0),
-                pinned = pinnedShortcutFrom(shortcutInfo, shortcutLabel(shortcutInfo)),
-                onComplete = { shortcut, slotIndex, newFolderName, toastFolderName ->
-                    completeModernPin(pinRequest, shortcut, slotIndex, newFolderName, toastFolderName)
-                },
+        when (
+            classifyPinShortcutIntent(
+                pinRequestValid = pinRequest?.isValid == true,
+                pinRequestType = pinRequest?.requestType,
+                shortcutRequestType = LauncherApps.PinItemRequest.REQUEST_TYPE_SHORTCUT,
+                hasShortcutInfo = pinRequest?.shortcutInfo != null,
+                legacyIntentUri = intent.getStringExtra(EXTRA_LEGACY_INTENT_URI),
+                legacyLabel = intent.getStringExtra(EXTRA_LEGACY_LABEL),
+                legacyPackage = intent.getStringExtra(EXTRA_LEGACY_PACKAGE),
             )
-            return
-        }
-
-        if (pinRequest != null && pinRequest.isValid &&
-            pinRequest.requestType != LauncherApps.PinItemRequest.REQUEST_TYPE_SHORTCUT
         ) {
-            Toast.makeText(this, "Widget pinning is not supported yet.", Toast.LENGTH_SHORT).show()
+            is PinShortcutPath.ModernShortcut -> handleModernPin(launcherApps!!, pinRequest!!)
+            PinShortcutPath.UnsupportedPinType -> {
+                Toast.makeText(this, "Widget pinning is not supported yet.", Toast.LENGTH_SHORT).show()
+                finish()
+            }
+            is PinShortcutPath.LegacyShortcut -> handleLegacyPin(
+                intentUri = intent.getStringExtra(EXTRA_LEGACY_INTENT_URI)!!,
+                label = intent.getStringExtra(EXTRA_LEGACY_LABEL),
+                packageName = intent.getStringExtra(EXTRA_LEGACY_PACKAGE)!!,
+            )
+            PinShortcutPath.None -> {
+                Log.w(TAG, "No pin request or legacy shortcut data in intent")
+                finish()
+            }
+        }
+    }
+
+    private fun handleModernPin(
+        launcherApps: LauncherApps,
+        pinRequest: LauncherApps.PinItemRequest,
+    ) {
+        val shortcutInfo = pinRequest.shortcutInfo
+        if (shortcutInfo == null) {
+            Log.w(TAG, "Pin request valid but ShortcutInfo is null")
             finish()
             return
         }
+        showFolderPicker(
+            label = shortcutLabel(shortcutInfo),
+            iconDrawable = launcherApps.getShortcutIconDrawable(shortcutInfo, 0),
+            pinned = pinnedShortcutFrom(shortcutInfo, shortcutLabel(shortcutInfo)),
+            onComplete = { shortcut, slotIndex, newFolderName, toastFolderName ->
+                completeModernPin(pinRequest, shortcut, slotIndex, newFolderName, toastFolderName)
+            },
+        )
+    }
 
-        val legacyIntentUri = intent.getStringExtra(EXTRA_LEGACY_INTENT_URI)
-        val legacyLabel = intent.getStringExtra(EXTRA_LEGACY_LABEL)
-        val legacyPackage = intent.getStringExtra(EXTRA_LEGACY_PACKAGE)
-        if (legacyIntentUri != null && legacyPackage != null) {
-            val label = legacyLabel?.takeIf { it.isNotBlank() } ?: legacyPackage
-            val syntheticId = legacyShortcutId(legacyIntentUri)
-            val pinned = PinnedShortcut(
-                packageName = legacyPackage,
-                id = syntheticId,
-                label = label,
-                intentUri = legacyIntentUri,
-            )
-            Log.d(TAG, "Legacy INSTALL_SHORTCUT pkg=$legacyPackage id=$syntheticId")
-            showFolderPicker(
-                label = label,
-                iconDrawable = PackageManagerHelper.getAppIcon(this, legacyPackage),
-                pinned = pinned,
-                onComplete = { shortcut, slotIndex, newFolderName, toastFolderName ->
-                    completeLegacyPin(shortcut, slotIndex, newFolderName, toastFolderName)
-                },
-            )
-            return
-        }
-
-        Log.w(TAG, "No pin request or legacy shortcut data in intent")
-        finish()
+    private fun handleLegacyPin(intentUri: String, label: String?, packageName: String) {
+        val resolvedLabel = resolveLegacyShortcutLabel(label, packageName)
+        val syntheticId = legacyShortcutId(intentUri)
+        val pinned = PinnedShortcut(
+            packageName = packageName,
+            id = syntheticId,
+            label = resolvedLabel,
+            intentUri = intentUri,
+        )
+        Log.d(TAG, "Legacy INSTALL_SHORTCUT pkg=$packageName id=$syntheticId")
+        showFolderPicker(
+            label = resolvedLabel,
+            iconDrawable = PackageManagerHelper.getAppIcon(this, packageName),
+            pinned = pinned,
+            onComplete = { shortcut, slotIndex, newFolderName, toastFolderName ->
+                completeLegacyPin(shortcut, slotIndex, newFolderName, toastFolderName)
+            },
+        )
     }
 
     private fun showFolderPicker(

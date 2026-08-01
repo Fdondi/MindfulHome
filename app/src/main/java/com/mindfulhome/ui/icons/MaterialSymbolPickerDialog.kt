@@ -66,12 +66,9 @@ fun MaterialSymbolPickerDialog(
     }
 
     LaunchedEffect(initialSelection) {
-        selected = initialSelection
-        val initial = initialSelection?.trim().orEmpty()
-        emojiInput = if (initial.isNotEmpty() && MaterialIconCatalog.codepoint(context, initial) == null) {
-            initial
-        } else {
-            ""
+        applyInitialSymbolSelection(context, initialSelection) { sel, emoji ->
+            selected = sel
+            emojiInput = emoji
         }
     }
 
@@ -203,4 +200,18 @@ fun MaterialSymbolPickerDialog(
             }
         }
     }
+}
+
+private fun applyInitialSymbolSelection(
+    context: android.content.Context,
+    initialSelection: String?,
+    apply: (selected: String?, emojiInput: String) -> Unit,
+) {
+    val initial = initialSelection?.trim().orEmpty()
+    val emoji = if (initial.isNotEmpty() && MaterialIconCatalog.codepoint(context, initial) == null) {
+        initial
+    } else {
+        ""
+    }
+    apply(initialSelection, emoji)
 }

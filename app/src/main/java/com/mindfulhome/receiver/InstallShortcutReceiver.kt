@@ -14,21 +14,25 @@ class InstallShortcutReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != ACTION_INSTALL_SHORTCUT) return
-
         val shortcutIntent = readShortcutIntent(intent) ?: run {
             Log.w(TAG, "INSTALL_SHORTCUT missing shortcut intent")
             return
         }
         val label = readShortcutName(intent).ifBlank { "Shortcut" }
-        val ownerPackage = shortcutIntent.`package`
-            ?: shortcutIntent.component?.packageName
-            ?: run {
-                Log.w(TAG, "INSTALL_SHORTCUT could not resolve owner package")
-                return
-            }
+        val ownerPackage = resolveOwnerPackage(shortcutIntent) ?: run {
+            Log.w(TAG, "INSTALL_SHORTCUT could not resolve owner package")
+            return
+        }
+        launchPinShortcutPicker(context, shortcutIntent, label, ownerPackage)
+    }
 
+    private fun launchPinShortcutPicker(
+        context: Context,
+        shortcutIntent: Intent,
+        label: String,
+        ownerPackage: String,
+    ) {
         Log.d(TAG, "INSTALL_SHORTCUT from $ownerPackage label=$label")
-
         val pickerIntent = Intent(context, PinShortcutActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             putExtra(PinShortcutActivity.EXTRA_LEGACY_INTENT_URI, shortcutIntent.toUri(Intent.URI_INTENT_SCHEME))
@@ -37,6 +41,9 @@ class InstallShortcutReceiver : BroadcastReceiver() {
         }
         context.startActivity(pickerIntent)
     }
+
+    private fun resolveOwnerPackage(shortcutIntent: Intent): String? =
+        shortcutIntent.`package` ?: shortcutIntent.component?.packageName
 
     private fun readShortcutIntent(intent: Intent): Intent? {
         @Suppress("DEPRECATION")

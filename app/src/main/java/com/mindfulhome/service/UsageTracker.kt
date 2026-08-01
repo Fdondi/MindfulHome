@@ -35,56 +35,75 @@ object UsageTracker {
         lookbackMs: Long = DEFAULT_FOREGROUND_LOOKBACK_MS,
     ): String? {
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
-                as? UsageStatsManager ?: return null
-
+            as? UsageStatsManager ?: return null
         val now = System.currentTimeMillis()
-        if (!bypassCache) {
-            val cacheTtlMs = SettingsManager.getUsageForegroundCacheTtlMs(context)
-            val cached = foregroundCache
-            if (cached != null && now - cached.observedAtMs <= cacheTtlMs) {
-                return cached.packageName
-            }
-        }
+        val cached = foregroundCache
+        UsageTrackerLogic.cachedPackageIfFresh(
+            cachedPackage = cached?.packageName,
+            cachedObservedAtMs = cached?.observedAtMs,
+            nowMs = now,
+            cacheTtlMs = SettingsManager.getUsageForegroundCacheTtlMs(context),
+            bypassCache = bypassCache,
+        )?.let { return it }
 
-        // Prefer UsageEvents for near-real-time foreground transitions (recents/home switches).
-        val events = usageStatsManager.queryEvents(
-            now - lookbackMs.coerceAtLeast(DEFAULT_FOREGROUND_LOOKBACK_MS),
+        val fromEvents = latestForegroundFromEvents(
+            usageStatsManager,
             now,
+            UsageTrackerLogic.coerceLookbackMs(lookbackMs, DEFAULT_FOREGROUND_LOOKBACK_MS),
         )
+        if (!fromEvents.isNullOrBlank()) {
+            foregroundCache = ForegroundCache(fromEvents, now)
+            return fromEvents
+        }
+        return fallbackForegroundFromStats(usageStatsManager, now)?.also {
+            foregroundCache = ForegroundCache(it, now)
+        }
+    }
+
+    private fun latestForegroundFromEvents(
+        usageStatsManager: UsageStatsManager,
+        now: Long,
+        lookbackMs: Long,
+    ): String? {
+        val events = usageStatsManager.queryEvents(now - lookbackMs, now)
         var latestPackage: String? = null
         var latestTimestamp = 0L
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            val isForegroundEvent =
-                event.eventType == UsageEvents.Event.ACTIVITY_RESUMED ||
-                    event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND
-            if (isForegroundEvent && event.packageName != null && event.timeStamp >= latestTimestamp) {
+            val isFg = UsageTrackerLogic.isForegroundTransitionEvent(
+                event.eventType,
+                UsageEvents.Event.ACTIVITY_RESUMED,
+                UsageEvents.Event.MOVE_TO_FOREGROUND,
+            )
+            if (UsageTrackerLogic.shouldReplaceLatestForeground(
+                    event.packageName,
+                    event.timeStamp,
+                    latestTimestamp,
+                    isFg,
+                )
+            ) {
                 latestTimestamp = event.timeStamp
                 latestPackage = event.packageName
             }
         }
-        if (!latestPackage.isNullOrBlank()) {
-            foregroundCache = ForegroundCache(latestPackage, now)
-            return latestPackage
-        }
+        return latestPackage?.takeIf { it.isNotBlank() }
+    }
 
-        // Fallback for devices where event stream is sparse.
-        // This path is significantly heavier than querying events; keep it rare.
+    private fun fallbackForegroundFromStats(
+        usageStatsManager: UsageStatsManager,
+        now: Long,
+    ): String? {
         val stats = usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_DAILY,
             now - 60 * 1000,
             now,
         )
-
-        val fallback = stats
+        return stats
             ?.filter { it.totalTimeInForeground > 0 }
             ?.maxByOrNull { it.lastTimeUsed }
             ?.packageName
-        if (!fallback.isNullOrBlank()) {
-            foregroundCache = ForegroundCache(fallback, now)
-        }
-        return fallback
+            ?.takeIf { it.isNotBlank() }
     }
 
     fun getForegroundAppForQuickLaunchMonitor(context: Context): String? {
@@ -96,11 +115,12 @@ object UsageTracker {
     }
 
     fun hasUsageStatsPermission(context: Context): Boolean {
-        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager ?: return false
+        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? android.app.AppOpsManager
+            ?: return false
         val mode = appOps.checkOpNoThrow(
             android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
             android.os.Process.myUid(),
-            context.packageName
+            context.packageName,
         )
         return mode == android.app.AppOpsManager.MODE_ALLOWED
     }
@@ -114,20 +134,20 @@ object UsageTracker {
             as? UsageStatsManager ?: return null
         val now = System.currentTimeMillis()
         val events = usageStatsManager.queryEvents(
-            now - lookbackMs.coerceAtLeast(60_000L),
+            now - UsageTrackerLogic.coerceLookbackMs(lookbackMs, 60_000L),
             now,
         )
         val event = UsageEvents.Event()
         var latestTimestamp = 0L
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            val isUserActivityEvent =
-                event.eventType == UsageEvents.Event.USER_INTERACTION ||
-                    (
-                        includeForegroundTransitions &&
-                            event.eventType == UsageEvents.Event.ACTIVITY_RESUMED
-                        )
-            if (isUserActivityEvent && event.timeStamp > latestTimestamp) {
+            if (UsageTrackerLogic.isUserActivityEvent(
+                    event.eventType,
+                    UsageEvents.Event.USER_INTERACTION,
+                    UsageEvents.Event.ACTIVITY_RESUMED,
+                    includeForegroundTransitions,
+                ) && event.timeStamp > latestTimestamp
+            ) {
                 latestTimestamp = event.timeStamp
             }
         }
@@ -137,7 +157,7 @@ object UsageTracker {
     fun getMostUsedAppsToday(context: Context, maxItems: Int = 15): List<DailyAppUsage> {
         if (maxItems <= 0) return emptyList()
         val usageStatsManager = context.getSystemService(Context.USAGE_STATS_SERVICE)
-                as? UsageStatsManager ?: return emptyList()
+            as? UsageStatsManager ?: return emptyList()
 
         val now = System.currentTimeMillis()
         val startOfDay = Calendar.getInstance().apply {
@@ -149,7 +169,7 @@ object UsageTracker {
         val stats = usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_DAILY,
             startOfDay,
-            now
+            now,
         ).orEmpty()
 
         return stats

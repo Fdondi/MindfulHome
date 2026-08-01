@@ -2,13 +2,8 @@ package com.mindfulhome.ui.quicklaunch
 
 import android.util.Log
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -17,53 +12,39 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.outlined.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.model.AppInfo
-import com.mindfulhome.ui.icons.MaterialFolderWithSymbolOverlay
 import com.mindfulhome.ui.icons.MaterialSymbolGlyph
-import androidx.compose.ui.unit.IntOffset
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 
 /** Resolved QuickLaunch tile for UI (single app or folder) with [AppInfo] for icons/labels. */
 data class QuickLaunchSlotUi(
@@ -130,12 +111,12 @@ fun IntentLabelTile(
     contentDescription: String = label,
 ) {
     val shape = RoundedCornerShape(12.dp)
-    val background = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
+    val tileBackground = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)
     Box(
         modifier = modifier
             .width(IntentTileWidth)
             .height(IntentTileHeight)
-            .background(background, shape)
+            .background(tileBackground, shape)
             .then(
                 if (onClick != null) {
                     Modifier.clickable(onClick = onClick)
@@ -256,7 +237,6 @@ internal fun verticalGapInsertionBarRect(
     )
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QuickLaunchFolderBody(
     apps: List<AppInfo>,
@@ -278,337 +258,192 @@ fun QuickLaunchFolderBody(
     var hoveringSecondaryDrop by remember { mutableStateOf(false) }
     var hoveringRemove by remember { mutableStateOf(false) }
     val useEditTimerDrop = onEditAppLimit != null
-
-    fun appByPackage(pkg: String) = apps.firstOrNull { it.packageName == pkg }
+    var folderBodyRoot by remember { mutableStateOf(Offset.Zero) }
 
     fun updateFolderHover() {
-        val finger = lastPointerInRoot
-        if (draggingPackage == null) {
-            hoveringSecondaryDrop = false
-            hoveringRemove = false
-            return
-        }
-        hoveringRemove = removeZoneBounds?.contains(finger) == true
-        hoveringSecondaryDrop = secondaryDropZoneBounds?.contains(finger) == true && !hoveringRemove
+        val (remove, secondary) = resolveFolderHoverFlags(
+            finger = lastPointerInRoot,
+            dragging = draggingPackage != null,
+            removeBounds = removeZoneBounds,
+            secondaryBounds = secondaryDropZoneBounds,
+        )
+        hoveringRemove = remove
+        hoveringSecondaryDrop = secondary
     }
 
-    val draggedApp = draggingPackage?.let { appByPackage(it) }
-    var folderBodyRoot by remember { mutableStateOf(Offset.Zero) }
+    val dragHost = FolderDragHost(
+        appCoords = appCoords,
+        getDraggingPackage = { draggingPackage },
+        setDraggingPackage = { draggingPackage = it },
+        getLastPointerInRoot = { lastPointerInRoot },
+        setLastPointerInRoot = { lastPointerInRoot = it },
+        getRemoveZoneBounds = { removeZoneBounds },
+        getSecondaryDropZoneBounds = { secondaryDropZoneBounds },
+        setHoveringRemove = { hoveringRemove = it },
+        setHoveringSecondary = { hoveringSecondaryDrop = it },
+        onUpdateHover = { updateFolderHover() },
+        onDropResolved = { app, action ->
+            dispatchFolderDrop(
+                action = action,
+                app = app,
+                useEditTimerDrop = useEditTimerDrop,
+                onDragRemove = onDragRemove,
+                onEditAppLimit = onEditAppLimit,
+                onDragExtractToOwnSlot = onDragExtractToOwnSlot,
+            )
+        },
+        findApp = { pkg -> apps.firstOrNull { it.packageName == pkg } },
+    )
+    val draggedApp = draggingPackage?.let { pkg -> apps.firstOrNull { it.packageName == pkg } }
 
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxWidth()
             .onGloballyPositioned { folderBodyRoot = it.positionInRoot() },
     ) {
-        val grid = quickLaunchAdaptiveGrid(maxWidth)
-        val minCell = grid.minCellWidth
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            apps.chunked(grid.columns).forEach { rowApps ->
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(grid.horizontalGap),
-                ) {
-                    rowApps.forEach { app ->
-                        val pkg = app.packageName
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .width(minCell)
-                                .pointerInput(pkg, apps) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = { startLocal ->
-                                            draggingPackage = pkg
-                                            val coords = appCoords[pkg]
-                                            lastPointerInRoot = coords?.localToRoot(startLocal)
-                                                ?: Offset.Zero
-                                            updateFolderHover()
-                                        },
-                                        onDrag = { change, _ ->
-                                            change.consume()
-                                            val coords = appCoords[pkg]
-                                            if (coords != null) {
-                                                lastPointerInRoot = coords.localToRoot(change.position)
-                                            }
-                                            updateFolderHover()
-                                        },
-                                        onDragCancel = {
-                                            draggingPackage = null
-                                            hoveringRemove = false
-                                            hoveringSecondaryDrop = false
-                                        },
-                                        onDragEnd = {
-                                            val draggedPkg = draggingPackage
-                                                ?: return@detectDragGesturesAfterLongPress
-                                            val droppedApp = appByPackage(draggedPkg)
-                                            draggingPackage = null
-                                            hoveringRemove = false
-                                            hoveringSecondaryDrop = false
-                                            if (droppedApp == null) return@detectDragGesturesAfterLongPress
-                                            when {
-                                                removeZoneBounds?.contains(lastPointerInRoot) == true ->
-                                                    onDragRemove(droppedApp)
-                                                secondaryDropZoneBounds?.contains(lastPointerInRoot) == true -> {
-                                                    if (useEditTimerDrop) {
-                                                        onEditAppLimit(droppedApp)
-                                                    } else {
-                                                        onDragExtractToOwnSlot(droppedApp)
-                                                    }
-                                                }
-                                                else -> { /* no drop */ }
-                                            }
-                                        },
-                                    )
-                                }
-                                .combinedClickable(
-                                    onClick = {
-                                        if (draggingPackage != null) return@combinedClickable
-                                        onLaunchApp(app)
-                                    },
-                                ),
-                        ) {
-                            Box(
-                                modifier = Modifier.onGloballyPositioned { coords ->
-                                    appCoords[pkg] = coords
-                                    if (draggingPackage != null) updateFolderHover()
-                                },
-                            ) {
-                                val limitMinutes = appLimitsByPackage[pkg]
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Box(modifier = Modifier.size(42.dp)) {
-                                        if (app.icon != null) {
-                                            Image(
-                                                painter = rememberDrawablePainter(app.icon),
-                                                contentDescription = app.label,
-                                                modifier = Modifier
-                                                    .size(42.dp)
-                                                    .then(
-                                                        if (draggingPackage == pkg) {
-                                                            Modifier.alpha(0.22f)
-                                                        } else {
-                                                            Modifier
-                                                        },
-                                                    ),
-                                            )
-                                        }
-                                        if (limitMinutes != null) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .align(Alignment.TopStart)
-                                                    .offset(x = (-3).dp, y = (-3).dp)
-                                                    .background(Color.Red, RoundedCornerShape(3.dp))
-                                                    .padding(horizontal = 2.dp, vertical = 1.dp),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Text(
-                                                    text = formatFolderAppLimitBadge(limitMinutes),
-                                                    color = Color.White,
-                                                    fontSize = 8.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    maxLines = 1,
-                                                )
-                                            }
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = app.label,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                        style = MaterialTheme.typography.labelSmall,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            if (onAddAppsClick != null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start,
-                ) {
-                    OutlinedButton(
-                        onClick = onAddAppsClick,
-                        border = BorderStroke(
-                            1.dp,
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
-                        ),
-                        modifier = Modifier.width(minCell),
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = addAppsContentDescription)
-                    }
-                }
-            }
-            if (draggingPackage != null) {
-                Text(
-                    text = dragHintText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .onGloballyPositioned { coords ->
-                                secondaryDropZoneBounds = Rect(
-                                    coords.positionInRoot(),
-                                    Size(coords.size.width.toFloat(), coords.size.height.toFloat()),
-                                )
-                                if (draggingPackage != null) updateFolderHover()
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(
-                                    if (hoveringSecondaryDrop) {
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                                    CircleShape,
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (useEditTimerDrop) {
-                                Icon(
-                                    Icons.Outlined.Timer,
-                                    contentDescription = "Drop to edit timer",
-                                    tint = if (hoveringSecondaryDrop) {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-                            } else {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.ArrowForward,
-                                    contentDescription = "Drop to move out of folder",
-                                    tint = if (hoveringSecondaryDrop) {
-                                        MaterialTheme.colorScheme.onPrimaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurfaceVariant
-                                    },
-                                )
-                            }
-                        }
-                    }
-                    Box(
-                        modifier = Modifier
-                            .onGloballyPositioned { coords ->
-                                removeZoneBounds = Rect(
-                                    coords.positionInRoot(),
-                                    Size(coords.size.width.toFloat(), coords.size.height.toFloat()),
-                                )
-                                if (draggingPackage != null) updateFolderHover()
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(48.dp)
-                                .background(
-                                    if (hoveringRemove) Color.Red else MaterialTheme.colorScheme.surfaceVariant,
-                                    CircleShape,
-                                ),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = removeDropContentDescription,
-                                tint = if (hoveringRemove) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-        if (draggedApp != null && draggingPackage != null) {
-            val rel = lastPointerInRoot - folderBodyRoot - Offset(30f, 30f)
-            Box(
-                Modifier.offset { IntOffset(rel.x.roundToInt(), rel.y.roundToInt()) },
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-                            RoundedCornerShape(12.dp),
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (draggedApp.icon != null) {
-                        Image(
-                            painter = rememberDrawablePainter(draggedApp.icon),
-                            contentDescription = draggedApp.label,
-                            modifier = Modifier.size(36.dp),
-                        )
-                    }
-                }
-            }
-        }
+        QuickLaunchFolderBodyContent(
+            maxWidth = maxWidth,
+            apps = apps,
+            draggingPackage = draggingPackage,
+            dragHost = dragHost,
+            onLaunchApp = onLaunchApp,
+            appLimitsByPackage = appLimitsByPackage,
+            onAddAppsClick = onAddAppsClick,
+            addAppsContentDescription = addAppsContentDescription,
+            dragHintText = dragHintText,
+            removeDropContentDescription = removeDropContentDescription,
+            useEditTimerDrop = useEditTimerDrop,
+            hoveringSecondaryDrop = hoveringSecondaryDrop,
+            hoveringRemove = hoveringRemove,
+            onSecondaryBounds = { secondaryDropZoneBounds = it },
+            onRemoveBounds = { removeZoneBounds = it },
+            onBoundsUpdated = {
+                if (draggingPackage != null) updateFolderHover()
+            },
+            draggedApp = draggedApp,
+            lastPointerInRoot = lastPointerInRoot,
+            folderBodyRoot = folderBodyRoot,
+        )
     }
 }
 
-private data class QuickLaunchGridTile(
-    val apps: List<AppInfo>? = null,
-    val folderName: String? = null,
-    val folderSymbolIconName: String? = null,
-    val limitMinutesByPackage: Map<String, Int> = emptyMap(),
-    val slotIndex: Int? = null,
-    val isAdd: Boolean = false,
-    val isPlaceholder: Boolean = false,
-    val auxTile: QuickLaunchAuxTile? = null,
-)
-
-private fun findGapInsertionBarRect(
-    finger: Offset,
-    rowChunks: List<List<QuickLaunchGridTile>>,
-    slotBounds: Map<Int, Rect>,
-    minGapPx: Float,
-    barThicknessPx: Float,
-): Rect? {
-    for (row in rowChunks) {
-        val slotIndices = row.mapNotNull { it.slotIndex }
-        for (i in 0 until slotIndices.size - 1) {
-            val left = slotIndices[i]
-            val right = slotIndices[i + 1]
-            val rl = slotBounds[left] ?: continue
-            val rr = slotBounds[right] ?: continue
-            val gap = quickLaunchHorizontalGapRect(rl, rr, minGapPx)
-            if (gap.contains(finger)) {
-                return horizontalGapInsertionBarRect(rl, rr, minGapPx, barThicknessPx)
+@Composable
+private fun QuickLaunchFolderBodyContent(
+    maxWidth: Dp,
+    apps: List<AppInfo>,
+    draggingPackage: String?,
+    dragHost: FolderDragHost,
+    onLaunchApp: (AppInfo) -> Unit,
+    appLimitsByPackage: Map<String, Int?>,
+    onAddAppsClick: (() -> Unit)?,
+    addAppsContentDescription: String,
+    dragHintText: String,
+    removeDropContentDescription: String,
+    useEditTimerDrop: Boolean,
+    hoveringSecondaryDrop: Boolean,
+    hoveringRemove: Boolean,
+    onSecondaryBounds: (Rect) -> Unit,
+    onRemoveBounds: (Rect) -> Unit,
+    onBoundsUpdated: () -> Unit,
+    draggedApp: AppInfo?,
+    lastPointerInRoot: Offset,
+    folderBodyRoot: Offset,
+) {
+    val grid = quickLaunchAdaptiveGrid(maxWidth)
+    val minCell = grid.minCellWidth
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        apps.chunked(grid.columns).forEach { rowApps ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(grid.horizontalGap),
+            ) {
+                rowApps.forEach { app ->
+                    FolderAppCell(
+                        app = app,
+                        apps = apps,
+                        minCellWidth = minCell,
+                        limitMinutes = appLimitsByPackage[app.packageName],
+                        isDraggingThis = draggingPackage == app.packageName,
+                        dragHost = dragHost,
+                        onLaunchApp = onLaunchApp,
+                    )
+                }
             }
         }
-    }
-    for (rowIdx in 0 until rowChunks.size - 1) {
-        val bottomSlots = rowChunks[rowIdx].mapNotNull { it.slotIndex }
-        val topSlots = rowChunks[rowIdx + 1].mapNotNull { it.slotIndex }
-        val bottomLast = bottomSlots.lastOrNull() ?: continue
-        val topFirst = topSlots.firstOrNull() ?: continue
-        val rb = slotBounds[bottomLast] ?: continue
-        val rt = slotBounds[topFirst] ?: continue
-        val vGap = quickLaunchVerticalGapRect(rb, rt, minGapPx)
-        if (vGap.contains(finger)) {
-            return verticalGapInsertionBarRect(rb, rt, minGapPx, barThicknessPx)
+        if (onAddAppsClick != null) {
+            FolderAddAppsButton(
+                onClick = onAddAppsClick,
+                minCellWidth = minCell,
+                contentDescription = addAppsContentDescription,
+            )
+        }
+        if (draggingPackage != null) {
+            FolderDropZones(
+                dragHintText = dragHintText,
+                removeDropContentDescription = removeDropContentDescription,
+                useEditTimerDrop = useEditTimerDrop,
+                hoveringSecondary = hoveringSecondaryDrop,
+                hoveringRemove = hoveringRemove,
+                onSecondaryBounds = onSecondaryBounds,
+                onRemoveBounds = onRemoveBounds,
+                onBoundsUpdated = onBoundsUpdated,
+            )
         }
     }
-    return null
+    FolderBodyDragGhostIfNeeded(
+        draggedApp = draggedApp,
+        draggingPackage = draggingPackage,
+        lastPointerInRoot = lastPointerInRoot,
+        folderBodyRoot = folderBodyRoot,
+    )
+}
+
+@Composable
+private fun FolderBodyDragGhostIfNeeded(
+    draggedApp: AppInfo?,
+    draggingPackage: String?,
+    lastPointerInRoot: Offset,
+    folderBodyRoot: Offset,
+) {
+    if (draggedApp == null || draggingPackage == null) return
+    FolderDragGhost(
+        draggedApp = draggedApp,
+        pointerInRoot = lastPointerInRoot,
+        bodyRoot = folderBodyRoot,
+    )
+}
+
+@Composable
+private fun FolderAddAppsButton(
+    onClick: () -> Unit,
+    minCellWidth: Dp,
+    contentDescription: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.Start,
+    ) {
+        OutlinedButton(
+            onClick = onClick,
+            border = BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
+            ),
+            modifier = Modifier.width(minCellWidth),
+        ) {
+            Icon(Icons.Default.Add, contentDescription = contentDescription)
+        }
+    }
 }
 
 private const val QuickLaunchDragLogTag = "QuickLaunchDrag"
 
 /** Insert-between preview (matches gap drop zone). */
-private val QuickLaunchGapBarYellow = Color(0xFFEAB308)
+internal val QuickLaunchGapBarYellow = Color(0xFFEAB308)
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QuickLaunchWrappedRow(
     slots: List<QuickLaunchSlotUi>,
@@ -635,610 +470,446 @@ fun QuickLaunchWrappedRow(
                 boxInRoot = coords.positionInRoot()
             },
     ) {
-        val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
-        val tileCoords = remember { mutableStateMapOf<Int, LayoutCoordinates>() }
-        var removeZoneBounds by remember { mutableStateOf<Rect?>(null) }
-        var draggingIndex by remember { mutableStateOf<Int?>(null) }
-        var lastPointerInRoot by remember { mutableStateOf(Offset.Zero) }
-        var mergeHoverSlot by remember { mutableStateOf<Int?>(null) }
-        var gapBarRectRoot by remember { mutableStateOf<Rect?>(null) }
-        var hoveringRemoveZone by remember { mutableStateOf(false) }
-        /** Edge reorder preview: (slotIndex, insertBefore) — sticky in middle band to avoid bar jitter. */
-        var edgePreviewSticky by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
-        /** Intent tiles: long-press without drag opens folder; with drag reorders. */
-        var pendingIntentLongPressSlot by remember { mutableStateOf<Int?>(null) }
-        var intentLongPressDragActivated by remember { mutableStateOf(false) }
-        var suppressClickSlotIndex by remember { mutableStateOf<Int?>(null) }
+        QuickLaunchWrappedRowBody(
+            maxWidth = maxWidth,
+            boxInRoot = boxInRoot,
+            slots = slots,
+            quickLaunchPackages = quickLaunchPackages,
+            onQuickLaunchApp = onQuickLaunchApp,
+            onAddQuickLaunch = onAddQuickLaunch,
+            onMoveSlot = onMoveSlot,
+            onMergeSlotInto = onMergeSlotInto,
+            onRemoveSlot = onRemoveSlot,
+            onOpenFolder = onOpenFolder,
+            addTileContentDescription = addTileContentDescription,
+            onAppSlotBounds = onAppSlotBounds,
+            maxRows = maxRows,
+            tileContent = tileContent,
+            beforeAddAuxTiles = beforeAddAuxTiles,
+            onRemoveSlotAt = onRemoveSlotAt,
+        )
+    }
+}
 
-        val minGapPx = with(LocalDensity.current) { 8.dp.toPx() }
-        val barThicknessPx = with(LocalDensity.current) { 4.dp.toPx() }
-        val intentLongPressDragThresholdPx = with(LocalDensity.current) { 10.dp.toPx() }
-        val density = LocalDensity.current
+@Composable
+private fun QuickLaunchWrappedRowBody(
+    maxWidth: Dp,
+    boxInRoot: Offset,
+    slots: List<QuickLaunchSlotUi>,
+    quickLaunchPackages: Set<String>,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
+    onAddQuickLaunch: () -> Unit,
+    onMoveSlot: (from: Int, to: Int) -> Unit,
+    onMergeSlotInto: (from: Int, into: Int) -> Unit,
+    onRemoveSlot: (List<AppInfo>) -> Unit,
+    onOpenFolder: (slotIndex: Int, apps: List<AppInfo>, folderName: String?, folderSymbolIconName: String?) -> Unit,
+    addTileContentDescription: String,
+    onAppSlotBounds: (slotIndex: Int, topLeft: Offset, size: Size) -> Unit,
+    maxRows: Int?,
+    tileContent: QuickLaunchTileContent,
+    beforeAddAuxTiles: List<QuickLaunchAuxTile>,
+    onRemoveSlotAt: ((Int) -> Unit)?,
+) {
+    val grid = quickLaunchAdaptiveGrid(maxWidth)
+    val rowChunks = remember(slots, grid.columns, beforeAddAuxTiles) {
+        buildQuickLaunchRowChunks(slots, grid.columns, beforeAddAuxTiles)
+    }
+    val displayRowChunks = remember(rowChunks, maxRows) {
+        takeQuickLaunchDisplayRows(rowChunks, maxRows)
+    }
+    QuickLaunchWrappedRowDragSession(
+        boxInRoot = boxInRoot,
+        slots = slots,
+        quickLaunchPackages = quickLaunchPackages,
+        onQuickLaunchApp = onQuickLaunchApp,
+        onAddQuickLaunch = onAddQuickLaunch,
+        onMoveSlot = onMoveSlot,
+        onMergeSlotInto = onMergeSlotInto,
+        onRemoveSlot = onRemoveSlot,
+        onOpenFolder = onOpenFolder,
+        addTileContentDescription = addTileContentDescription,
+        onAppSlotBounds = onAppSlotBounds,
+        tileContent = tileContent,
+        onRemoveSlotAt = onRemoveSlotAt,
+        displayRowChunks = displayRowChunks,
+        minCellWidth = grid.minCellWidth,
+        horizontalGap = grid.horizontalGap,
+        minGapPx = with(LocalDensity.current) { 8.dp.toPx() },
+        barThicknessPx = with(LocalDensity.current) { 4.dp.toPx() },
+        intentLongPressDragThresholdPx = with(LocalDensity.current) { 10.dp.toPx() },
+    )
+}
 
-        val grid = quickLaunchAdaptiveGrid(maxWidth)
-        val minCellWidth = grid.minCellWidth
-        val columns = grid.columns
-        val horizontalGap = grid.horizontalGap
-        val rowChunks = remember(slots, columns, beforeAddAuxTiles) {
-            val base = slots.mapIndexed { index, slot ->
-                QuickLaunchGridTile(
-                    apps = slot.apps,
-                    folderName = slot.folderName,
-                    folderSymbolIconName = slot.folderSymbolIconName,
-                    limitMinutesByPackage = slot.limitMinutesByPackage,
-                    slotIndex = index,
-                )
-            } + beforeAddAuxTiles.map { QuickLaunchGridTile(auxTile = it) } + listOf(
-                QuickLaunchGridTile(isAdd = true),
-            )
-            base.chunked(columns).map { row ->
-                if (row.size >= columns) {
-                    row
-                } else {
-                    row + List(columns - row.size) { QuickLaunchGridTile(isPlaceholder = true) }
-                }
-            }
-        }
-        val displayRowChunks = remember(rowChunks, maxRows) {
-            if (maxRows != null) rowChunks.take(maxRows.coerceAtLeast(1)) else rowChunks
-        }
-        val draggedApps = draggingIndex?.let { idx -> slots.getOrNull(idx)?.apps }
+@Composable
+private fun QuickLaunchWrappedRowDragSession(
+    boxInRoot: Offset,
+    slots: List<QuickLaunchSlotUi>,
+    quickLaunchPackages: Set<String>,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
+    onAddQuickLaunch: () -> Unit,
+    onMoveSlot: (from: Int, to: Int) -> Unit,
+    onMergeSlotInto: (from: Int, into: Int) -> Unit,
+    onRemoveSlot: (List<AppInfo>) -> Unit,
+    onOpenFolder: (slotIndex: Int, apps: List<AppInfo>, folderName: String?, folderSymbolIconName: String?) -> Unit,
+    addTileContentDescription: String,
+    onAppSlotBounds: (slotIndex: Int, topLeft: Offset, size: Size) -> Unit,
+    tileContent: QuickLaunchTileContent,
+    onRemoveSlotAt: ((Int) -> Unit)?,
+    displayRowChunks: List<List<QuickLaunchGridTile>>,
+    minCellWidth: Dp,
+    horizontalGap: Dp,
+    minGapPx: Float,
+    barThicknessPx: Float,
+    intentLongPressDragThresholdPx: Float,
+) {
+    val slotBounds = remember { mutableStateMapOf<Int, Rect>() }
+    val tileCoords = remember { mutableStateMapOf<Int, LayoutCoordinates>() }
+    var removeZoneBounds by remember { mutableStateOf<Rect?>(null) }
+    var draggingIndex by remember { mutableStateOf<Int?>(null) }
+    var lastPointerInRoot by remember { mutableStateOf(Offset.Zero) }
+    var mergeHoverSlot by remember { mutableStateOf<Int?>(null) }
+    var gapBarRectRoot by remember { mutableStateOf<Rect?>(null) }
+    var hoveringRemoveZone by remember { mutableStateOf(false) }
+    var edgePreviewSticky by remember { mutableStateOf<Pair<Int, Boolean>?>(null) }
+    var pendingIntentLongPressSlot by remember { mutableStateOf<Int?>(null) }
+    var intentLongPressDragActivated by remember { mutableStateOf(false) }
+    var suppressClickSlotIndex by remember { mutableStateOf<Int?>(null) }
 
-        fun updateHoverState() {
-            val finger = lastPointerInRoot
-            val dragIdx = draggingIndex
-            if (dragIdx == null) {
-                mergeHoverSlot = null
-                gapBarRectRoot = null
-                hoveringRemoveZone = false
-                edgePreviewSticky = null
-                return
-            }
-            if (removeZoneBounds?.contains(finger) == true) {
-                mergeHoverSlot = null
-                gapBarRectRoot = null
-                hoveringRemoveZone = true
-                edgePreviewSticky = null
-                return
-            }
-            hoveringRemoveZone = false
-            val mergeSlot = slotBounds.entries
-                .asSequence()
-                .filter { it.key != dragIdx }
-                .firstOrNull { (_, rect) -> quickLaunchMergeZoneRect(rect).contains(finger) }
-                ?.key
-            if (mergeSlot != null) {
-                mergeHoverSlot = mergeSlot
-                gapBarRectRoot = null
-                edgePreviewSticky = null
-                return
-            }
-            mergeHoverSlot = null
-            val gapBar = findGapInsertionBarRect(
+    val draggedApps = draggingIndex?.let { idx -> slots.getOrNull(idx)?.apps }
+
+    fun applyHoverUi(ui: QuickLaunchHoverUi) {
+        mergeHoverSlot = ui.mergeHoverSlot
+        gapBarRectRoot = ui.gapBarRectRoot
+        hoveringRemoveZone = ui.hoveringRemoveZone
+        edgePreviewSticky = ui.edgePreviewSticky
+    }
+
+    fun updateHoverState() {
+        applyHoverUi(
+            hoverUiFromPreview(
+                resolveHoverPreview(
+                    finger = lastPointerInRoot,
+                    dragIdx = draggingIndex,
+                    removeZoneBounds = removeZoneBounds,
+                    slotBounds = slotBounds,
+                    rowChunks = displayRowChunks,
+                    minGapPx = minGapPx,
+                    barThicknessPx = barThicknessPx,
+                    edgePreviewSticky = edgePreviewSticky,
+                ),
+            ),
+        )
+    }
+
+    fun resetDragSession() {
+        draggingIndex = null
+        mergeHoverSlot = null
+        gapBarRectRoot = null
+        hoveringRemoveZone = false
+        edgePreviewSticky = null
+        pendingIntentLongPressSlot = null
+        intentLongPressDragActivated = false
+    }
+
+    val dragHost = QuickLaunchRowDragHost(
+        tileCoords = tileCoords,
+        slotBounds = slotBounds,
+        onAppSlotBounds = onAppSlotBounds,
+        onUpdateHover = { updateHoverState() },
+        getDraggingIndex = { draggingIndex },
+        setDraggingIndex = { draggingIndex = it },
+        getLastPointerInRoot = { lastPointerInRoot },
+        setLastPointerInRoot = { lastPointerInRoot = it },
+        clearEdgePreviewSticky = { edgePreviewSticky = null },
+        getPendingIntentLongPressSlot = { pendingIntentLongPressSlot },
+        setPendingIntentLongPressSlot = { pendingIntentLongPressSlot = it },
+        getIntentLongPressDragActivated = { intentLongPressDragActivated },
+        setIntentLongPressDragActivated = { intentLongPressDragActivated = it },
+        getSuppressClickSlotIndex = { suppressClickSlotIndex },
+        setSuppressClickSlotIndex = { suppressClickSlotIndex = it },
+        getHoveringRemoveZone = { hoveringRemoveZone },
+        resetDragSession = { resetDragSession() },
+        onOpenFolder = onOpenFolder,
+        onResolvedDrop = { from, current, finger, shouldRemove ->
+            handleWrappedRowDrop(
+                from = from,
+                current = current,
                 finger = finger,
-                rowChunks = displayRowChunks,
+                shouldRemove = shouldRemove,
+                displayRowChunks = displayRowChunks,
                 slotBounds = slotBounds,
                 minGapPx = minGapPx,
-                barThicknessPx = barThicknessPx,
+                onRemoveSlotAt = onRemoveSlotAt,
+                onRemoveSlot = onRemoveSlot,
+                onMergeSlotInto = onMergeSlotInto,
+                onMoveSlot = onMoveSlot,
             )
-            if (gapBar != null) {
-                gapBarRectRoot = gapBar
-                edgePreviewSticky = null
-                return
-            }
-            var edgeBar: Rect? = null
-            for ((idx, rect) in slotBounds) {
-                if (idx == dragIdx) continue
-                if (!rect.contains(finger)) continue
-                if (quickLaunchMergeZoneRect(rect).contains(finger)) continue
-                val w = rect.width.coerceAtLeast(1f)
-                val rel = (finger.x - rect.left) / w
-                val midX = rect.center.x
-                val before = when {
-                    rel <= 0.42f -> true
-                    rel >= 0.58f -> false
-                    else -> edgePreviewSticky?.takeIf { it.first == idx }?.second ?: (finger.x < midX)
-                }
-                edgePreviewSticky = idx to before
-                edgeBar = if (before) {
-                    Rect(rect.left, rect.top, rect.left + barThicknessPx, rect.bottom)
-                } else {
-                    Rect(rect.right - barThicknessPx, rect.top, rect.right, rect.bottom)
-                }
-                break
-            }
-            if (edgeBar == null) edgePreviewSticky = null
-            gapBarRectRoot = edgeBar
-        }
+        },
+        intentLongPressDragThresholdPx = intentLongPressDragThresholdPx,
+    )
 
-        Box(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                displayRowChunks.forEach { rowTiles ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(horizontalGap),
-                    ) {
-                        rowTiles.forEach { tile ->
-                            Box(
-                                modifier = Modifier.weight(1f),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                val apps = tile.apps
-                                val slotIndex = tile.slotIndex
-                                when {
-                                    tile.isPlaceholder -> {
-                                        Spacer(
-                                            modifier = Modifier
-                                                .width(minCellWidth)
-                                                .height(1.dp),
-                                        )
-                                    }
-                                    tile.auxTile != null -> {
-                                        IntentLabelTile(
-                                            label = tile.auxTile.label,
-                                            subtitle = tile.auxTile.subtitle,
-                                            onClick = tile.auxTile.onClick,
-                                            contentDescription = tile.auxTile.contentDescription,
-                                        )
-                                    }
-                                    apps != null && slotIndex != null -> {
-                                        val folderLabel = tile.folderName?.takeIf { it.isNotBlank() }
-                                            ?: if (tileContent == QuickLaunchTileContent.IntentLabels) {
-                                                "Unnamed"
-                                            } else {
-                                                "Folder (${apps.size})"
-                                            }
-                                        val dropHighlight = draggingIndex != null &&
-                                            mergeHoverSlot == slotIndex &&
-                                            draggingIndex != slotIndex
-                                        val borderMod = if (dropHighlight) {
-                                            Modifier.border(
-                                                2.dp,
-                                                MaterialTheme.colorScheme.primary,
-                                                RoundedCornerShape(10.dp),
-                                            )
-                                        } else {
-                                            Modifier
-                                        }
-                                        Column(
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            modifier = Modifier.width(minCellWidth),
-                                        ) {
-                                            Box {
-                                                Column(
-                                                    modifier = Modifier
-                                                        .then(borderMod)
-                                                        .padding(if (dropHighlight) 4.dp else 0.dp)
-                                                        .width(minCellWidth)
-                                                        .onGloballyPositioned { coords ->
-                                                            tileCoords[slotIndex] = coords
-                                                            val rootPos = coords.positionInRoot()
-                                                            val sz = Size(
-                                                                coords.size.width.toFloat(),
-                                                                coords.size.height.toFloat(),
-                                                            )
-                                                            slotBounds[slotIndex] = Rect(rootPos, sz)
-                                                            onAppSlotBounds(slotIndex, rootPos, sz)
-                                                            if (draggingIndex != null) updateHoverState()
-                                                        }
-                                                        .pointerInput(slotIndex, slots, tileContent) {
-                                                            var longPressAccum = Offset.Zero
-                                                            detectDragGesturesAfterLongPress(
-                                                                onDragStart = { startLocal ->
-                                                                    edgePreviewSticky = null
-                                                                    longPressAccum = Offset.Zero
-                                                                    val coords = tileCoords[slotIndex]
-                                                                    lastPointerInRoot = coords?.localToRoot(startLocal)
-                                                                        ?: slotBounds[slotIndex]?.center
-                                                                        ?: Offset.Zero
-                                                                    if (tileContent == QuickLaunchTileContent.IntentLabels) {
-                                                                        pendingIntentLongPressSlot = slotIndex
-                                                                        intentLongPressDragActivated = false
-                                                                    } else {
-                                                                        draggingIndex = slotIndex
-                                                                        updateHoverState()
-                                                                    }
-                                                                    Log.d(
-                                                                        QuickLaunchDragLogTag,
-                                                                        "start slot=$slotIndex root=$lastPointerInRoot",
-                                                                    )
-                                                                },
-                                                                onDrag = { change, dragAmount ->
-                                                                    change.consume()
-                                                                    longPressAccum += dragAmount
-                                                                    val coords = tileCoords[slotIndex]
-                                                                    if (coords != null) {
-                                                                        lastPointerInRoot =
-                                                                            coords.localToRoot(change.position)
-                                                                    }
-                                                                    if (tileContent == QuickLaunchTileContent.IntentLabels &&
-                                                                        pendingIntentLongPressSlot == slotIndex
-                                                                    ) {
-                                                                        if (!intentLongPressDragActivated) {
-                                                                            val dist = kotlin.math.hypot(
-                                                                                longPressAccum.x,
-                                                                                longPressAccum.y,
-                                                                            )
-                                                                            if (dist >= intentLongPressDragThresholdPx) {
-                                                                                intentLongPressDragActivated = true
-                                                                                draggingIndex = slotIndex
-                                                                                updateHoverState()
-                                                                            }
-                                                                        } else {
-                                                                            updateHoverState()
-                                                                        }
-                                                                    } else if (draggingIndex != null) {
-                                                                        updateHoverState()
-                                                                    }
-                                                                },
-                                                                onDragCancel = {
-                                                                    Log.d(QuickLaunchDragLogTag, "cancel")
-                                                                    draggingIndex = null
-                                                                    mergeHoverSlot = null
-                                                                    gapBarRectRoot = null
-                                                                    hoveringRemoveZone = false
-                                                                    edgePreviewSticky = null
-                                                                    pendingIntentLongPressSlot = null
-                                                                    intentLongPressDragActivated = false
-                                                                },
-                                                                onDragEnd = {
-                                                                    if (tileContent == QuickLaunchTileContent.IntentLabels &&
-                                                                        pendingIntentLongPressSlot == slotIndex &&
-                                                                        !intentLongPressDragActivated
-                                                                    ) {
-                                                                        onOpenFolder(
-                                                                            slotIndex,
-                                                                            apps,
-                                                                            tile.folderName,
-                                                                            tile.folderSymbolIconName,
-                                                                        )
-                                                                        suppressClickSlotIndex = slotIndex
-                                                                        pendingIntentLongPressSlot = null
-                                                                        intentLongPressDragActivated = false
-                                                                        return@detectDragGesturesAfterLongPress
-                                                                    }
-                                                                    val from = draggingIndex
-                                                                    val finger = lastPointerInRoot
-                                                                    val current = from?.let { slots.getOrNull(it)?.apps }
-                                                                    val shouldRemove = hoveringRemoveZone
-                                                                    val intoHover = mergeHoverSlot
-                                                                    draggingIndex = null
-                                                                    mergeHoverSlot = null
-                                                                    gapBarRectRoot = null
-                                                                    hoveringRemoveZone = false
-                                                                    edgePreviewSticky = null
-                                                                    pendingIntentLongPressSlot = null
-                                                                    intentLongPressDragActivated = false
-                                                                    if (from == null || current == null) {
-                                                                        Log.d(
-                                                                            QuickLaunchDragLogTag,
-                                                                            "end aborted from=$from",
-                                                                        )
-                                                                        return@detectDragGesturesAfterLongPress
-                                                                    }
-                                                                    Log.d(
-                                                                        QuickLaunchDragLogTag,
-                                                                        "end from=$from finger=$finger remove=$shouldRemove hoverInto=$intoHover bounds=${slotBounds.keys}",
-                                                                    )
-                                                                    if (shouldRemove) {
-                                                                        if (onRemoveSlotAt != null) {
-                                                                            onRemoveSlotAt(from)
-                                                                        } else {
-                                                                            onRemoveSlot(current)
-                                                                        }
-                                                                        return@detectDragGesturesAfterLongPress
-                                                                    }
-                                                                    for (row in displayRowChunks) {
-                                                                        val slotIndices = row.mapNotNull { it.slotIndex }
-                                                                        for (i in 0 until slotIndices.size - 1) {
-                                                                            val left = slotIndices[i]
-                                                                            val right = slotIndices[i + 1]
-                                                                            val rl = slotBounds[left] ?: continue
-                                                                            val rr = slotBounds[right] ?: continue
-                                                                            val gap = quickLaunchHorizontalGapRect(rl, rr, minGapPx)
-                                                                            if (gap.contains(finger)) {
-                                                                                val to = insertIndexBeforeRight(from, right)
-                                                                                if (to != from) {
-                                                                                    Log.d(
-                                                                                        QuickLaunchDragLogTag,
-                                                                                        "gapH $from -> $to (before $right)",
-                                                                                    )
-                                                                                    onMoveSlot(from, to)
-                                                                                }
-                                                                                return@detectDragGesturesAfterLongPress
-                                                                            }
-                                                                        }
-                                                                    }
-                                                                    for (rowIdx in 0 until displayRowChunks.size - 1) {
-                                                                        val bottomSlots =
-                                                                            displayRowChunks[rowIdx].mapNotNull { it.slotIndex }
-                                                                        val topSlots =
-                                                                            displayRowChunks[rowIdx + 1].mapNotNull { it.slotIndex }
-                                                                        val bottomLast = bottomSlots.lastOrNull() ?: continue
-                                                                        val topFirst = topSlots.firstOrNull() ?: continue
-                                                                        val rb = slotBounds[bottomLast] ?: continue
-                                                                        val rt = slotBounds[topFirst] ?: continue
-                                                                        val vGap = quickLaunchVerticalGapRect(rb, rt, minGapPx)
-                                                                        if (vGap.contains(finger)) {
-                                                                            val to = insertIndexBeforeRight(from, topFirst)
-                                                                            if (to != from) {
-                                                                                Log.d(
-                                                                                    QuickLaunchDragLogTag,
-                                                                                    "gapV $from -> $to (before $topFirst)",
-                                                                                )
-                                                                                onMoveSlot(from, to)
-                                                                            }
-                                                                            return@detectDragGesturesAfterLongPress
-                                                                        }
-                                                                    }
-                                                                    val overlapTarget = slotBounds.entries
-                                                                        .asSequence()
-                                                                        .filter { it.key != from }
-                                                                        .firstOrNull { (_, rect) -> rect.contains(finger) }
-                                                                        ?.key
-                                                                    if (overlapTarget != null) {
-                                                                        val full = slotBounds[overlapTarget]!!
-                                                                        if (quickLaunchMergeZoneRect(full).contains(finger)) {
-                                                                            Log.d(
-                                                                                QuickLaunchDragLogTag,
-                                                                                "merge $from -> $overlapTarget",
-                                                                            )
-                                                                            onMergeSlotInto(from, overlapTarget)
-                                                                            return@detectDragGesturesAfterLongPress
-                                                                        }
-                                                                        val to = if (finger.x < full.center.x) {
-                                                                            insertIndexBeforeRight(from, overlapTarget)
-                                                                        } else {
-                                                                            insertIndexAfterSlot(from, overlapTarget)
-                                                                        }
-                                                                        if (to != from) {
-                                                                            Log.d(
-                                                                                QuickLaunchDragLogTag,
-                                                                                "edgeReorder $from -> $to (slot $overlapTarget)",
-                                                                            )
-                                                                            onMoveSlot(from, to)
-                                                                        }
-                                                                        return@detectDragGesturesAfterLongPress
-                                                                    }
-                                                                    val closest = slotBounds.entries
-                                                                        .asSequence()
-                                                                        .filter { it.key != from }
-                                                                        .minByOrNull { entry ->
-                                                                            val c = entry.value.center
-                                                                            val dx = c.x - finger.x
-                                                                            val dy = c.y - finger.y
-                                                                            dx * dx + dy * dy
-                                                                        }
-                                                                        ?.key
-                                                                    if (closest != null) {
-                                                                        Log.d(
-                                                                            QuickLaunchDragLogTag,
-                                                                            "move $from -> nearest $closest",
-                                                                        )
-                                                                        onMoveSlot(from, closest)
-                                                                    } else {
-                                                                        Log.d(
-                                                                            QuickLaunchDragLogTag,
-                                                                            "end no target",
-                                                                        )
-                                                                    }
-                                                                },
-                                                            )
-                                                        }
-                                                        .combinedClickable(
-                                                            onClick = {
-                                                                if (draggingIndex != null) return@combinedClickable
-                                                                if (suppressClickSlotIndex == slotIndex) {
-                                                                    suppressClickSlotIndex = null
-                                                                    return@combinedClickable
-                                                                }
-                                                                when {
-                                                                    tileContent == QuickLaunchTileContent.IntentLabels &&
-                                                                        apps.size == 1 ->
-                                                                        onQuickLaunchApp(
-                                                                            apps.single().packageName,
-                                                                            quickLaunchPackages,
-                                                                            tile.limitMinutesByPackage[apps.single().packageName],
-                                                                        )
-                                                                    tileContent == QuickLaunchTileContent.IntentLabels ||
-                                                                        apps.size > 1 ->
-                                                                        onOpenFolder(
-                                                                            slotIndex,
-                                                                            apps,
-                                                                            tile.folderName,
-                                                                            tile.folderSymbolIconName,
-                                                                        )
-                                                                    else -> onQuickLaunchApp(
-                                                                        apps.single().packageName,
-                                                                        quickLaunchPackages,
-                                                                        tile.limitMinutesByPackage[apps.single().packageName],
-                                                                    )
-                                                                }
-                                                            },
-                                                        )
-                                                        .then(
-                                                            if (draggingIndex == slotIndex) Modifier.alpha(0.18f) else Modifier,
-                                                        ),
-                                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                                ) {
-                                                    if (tileContent == QuickLaunchTileContent.IntentLabels) {
-                                                        IntentLabelTile(
-                                                            label = folderLabel,
-                                                            symbolIconName = tile.folderSymbolIconName,
-                                                            onClick = null,
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                        )
-                                                    } else if (apps.size == 1) {
-                                                        val app = apps.single()
-                                                        if (app.icon != null) {
-                                                            Image(
-                                                                painter = rememberDrawablePainter(app.icon),
-                                                                contentDescription = app.label,
-                                                                modifier = Modifier.size(42.dp),
-                                                            )
-                                                        }
-                                                        Spacer(modifier = Modifier.height(2.dp))
-                                                        Text(
-                                                            text = app.label,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                        )
-                                                    } else {
-                                                        val symbol = tile.folderSymbolIconName
-                                                        if (!symbol.isNullOrBlank()) {
-                                                            MaterialFolderWithSymbolOverlay(
-                                                                symbolIconName = symbol,
-                                                                contentDescription = folderLabel,
-                                                                modifier = Modifier.size(42.dp),
-                                                            )
-                                                        } else {
-                                                            val preview = apps.firstOrNull()
-                                                            if (preview?.icon != null) {
-                                                                Image(
-                                                                    painter = rememberDrawablePainter(preview.icon),
-                                                                    contentDescription = preview.label,
-                                                                    modifier = Modifier.size(42.dp),
-                                                                )
-                                                            }
-                                                        }
-                                                        Spacer(modifier = Modifier.height(2.dp))
-                                                        Text(
-                                                            text = folderLabel,
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis,
-                                                            style = MaterialTheme.typography.labelSmall,
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    tile.isAdd -> {
-                                        if (tileContent == QuickLaunchTileContent.IntentLabels) {
-                                            IntentLabelTile(
-                                                label = "+",
-                                                onClick = onAddQuickLaunch,
-                                                contentDescription = addTileContentDescription,
-                                            )
-                                        } else {
-                                            OutlinedButton(
-                                                onClick = onAddQuickLaunch,
-                                                border = BorderStroke(
-                                                    1.dp,
-                                                    MaterialTheme.colorScheme.outline.copy(alpha = 0.6f),
-                                                ),
-                                                modifier = Modifier.width(minCellWidth),
-                                            ) {
-                                                Icon(Icons.Default.Add, contentDescription = addTileContentDescription)
-                                            }
-                                        }
-                                    }
-                                    else -> {}
-                                }
-                            }
-                        }
-                    }
-                }
-                if (draggingIndex != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 8.dp)
-                            .onGloballyPositioned { coords ->
-                                removeZoneBounds = Rect(
-                                    coords.positionInRoot(),
-                                    Size(coords.size.width.toFloat(), coords.size.height.toFloat()),
-                                )
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
+    QuickLaunchWrappedRowOverlay(
+        displayRowChunks = displayRowChunks,
+        horizontalGap = horizontalGap,
+        minCellWidth = minCellWidth,
+        slots = slots,
+        quickLaunchPackages = quickLaunchPackages,
+        draggingIndex = draggingIndex,
+        mergeHoverSlot = mergeHoverSlot,
+        dragHost = dragHost,
+        onQuickLaunchApp = onQuickLaunchApp,
+        onAddQuickLaunch = onAddQuickLaunch,
+        addTileContentDescription = addTileContentDescription,
+        tileContent = tileContent,
+        hoveringRemoveZone = hoveringRemoveZone,
+        onRemoveZoneBounds = { removeZoneBounds = it },
+        gapBarRectRoot = gapBarRectRoot,
+        boxInRoot = boxInRoot,
+        draggedApps = draggedApps,
+        lastPointerInRoot = lastPointerInRoot,
+    )
+}
+
+private fun handleWrappedRowDrop(
+    from: Int,
+    current: List<AppInfo>,
+    finger: Offset,
+    shouldRemove: Boolean,
+    displayRowChunks: List<List<QuickLaunchGridTile>>,
+    slotBounds: Map<Int, Rect>,
+    minGapPx: Float,
+    onRemoveSlotAt: ((Int) -> Unit)?,
+    onRemoveSlot: (List<AppInfo>) -> Unit,
+    onMergeSlotInto: (from: Int, into: Int) -> Unit,
+    onMoveSlot: (from: Int, to: Int) -> Unit,
+) {
+    Log.d(
+        QuickLaunchDragLogTag,
+        "end from=$from finger=$finger remove=$shouldRemove bounds=${slotBounds.keys}",
+    )
+    val action = resolveDropAction(
+        finger = finger,
+        from = from,
+        shouldRemove = shouldRemove,
+        rowChunks = displayRowChunks,
+        slotBounds = slotBounds,
+        minGapPx = minGapPx,
+    )
+    dispatchDropAction(
+        action = action,
+        from = from,
+        currentApps = current,
+        onRemoveSlotAt = onRemoveSlotAt,
+        onRemoveSlot = onRemoveSlot,
+        onMergeSlotInto = onMergeSlotInto,
+        onMoveSlot = onMoveSlot,
+    )
+}
+
+@Composable
+private fun QuickLaunchWrappedRowOverlay(
+    displayRowChunks: List<List<QuickLaunchGridTile>>,
+    horizontalGap: Dp,
+    minCellWidth: Dp,
+    slots: List<QuickLaunchSlotUi>,
+    quickLaunchPackages: Set<String>,
+    draggingIndex: Int?,
+    mergeHoverSlot: Int?,
+    dragHost: QuickLaunchRowDragHost,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
+    onAddQuickLaunch: () -> Unit,
+    addTileContentDescription: String,
+    tileContent: QuickLaunchTileContent,
+    hoveringRemoveZone: Boolean,
+    onRemoveZoneBounds: (Rect) -> Unit,
+    gapBarRectRoot: Rect?,
+    boxInRoot: Offset,
+    draggedApps: List<AppInfo>?,
+    lastPointerInRoot: Offset,
+) {
+    Box(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            displayRowChunks.forEach { rowTiles ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(horizontalGap),
+                ) {
+                    rowTiles.forEach { tile ->
                         Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .background(
-                                    if (hoveringRemoveZone) Color.Red else MaterialTheme.colorScheme.surfaceVariant,
-                                    CircleShape,
-                                ),
+                            modifier = Modifier.weight(1f),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = "Drop to remove",
-                                tint = if (hoveringRemoveZone) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                            QuickLaunchGridCell(
+                                tile = tile,
+                                tileContent = tileContent,
+                                minCellWidth = minCellWidth,
+                                slots = slots,
+                                quickLaunchPackages = quickLaunchPackages,
+                                draggingIndex = draggingIndex,
+                                mergeHoverSlot = mergeHoverSlot,
+                                dragHost = dragHost,
+                                onQuickLaunchApp = onQuickLaunchApp,
+                                onAddQuickLaunch = onAddQuickLaunch,
+                                addTileContentDescription = addTileContentDescription,
                             )
                         }
                     }
                 }
             }
-            gapBarRectRoot?.let { bar ->
-                val ox = bar.left - boxInRoot.x
-                val oy = bar.top - boxInRoot.y
-                Box(
-                    Modifier
-                        .offset { IntOffset(ox.roundToInt(), oy.roundToInt()) }
-                        .size(
-                            width = with(density) { bar.width.toDp() },
-                            height = with(density) { bar.height.toDp() },
-                        )
-                        .background(QuickLaunchGapBarYellow, RoundedCornerShape(3.dp)),
+            if (draggingIndex != null) {
+                QuickLaunchRemoveZone(
+                    hovering = hoveringRemoveZone,
+                    onBounds = onRemoveZoneBounds,
                 )
             }
-            if (draggingIndex != null && draggedApps != null) {
-                val topLeft = lastPointerInRoot - boxInRoot - Offset(30f, 30f)
-                Box(
-                    modifier = Modifier
-                        .offset { IntOffset(topLeft.x.roundToInt(), topLeft.y.roundToInt()) }
-                        .size(60.dp)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f), RoundedCornerShape(12.dp)),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (tileContent == QuickLaunchTileContent.IntentLabels) {
-                        val label = draggingIndex?.let { idx ->
-                            slots.getOrNull(idx)?.folderName?.takeIf { !it.isNullOrBlank() }
-                        } ?: "Intent"
-                        Text(
-                            text = label,
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                        )
-                    } else if (draggedApps.size > 1) {
-                        val symbol = draggingIndex?.let { slots.getOrNull(it)?.folderSymbolIconName }
-                        if (!symbol.isNullOrBlank()) {
-                            MaterialFolderWithSymbolOverlay(
-                                symbolIconName = symbol,
-                                contentDescription = "Folder",
-                                modifier = Modifier.size(36.dp),
-                                folderSize = 36.dp,
-                            )
-                        } else {
-                            val app = draggedApps.firstOrNull()
-                            if (app?.icon != null) {
-                                Image(
-                                    painter = rememberDrawablePainter(app.icon),
-                                    contentDescription = app.label,
-                                    modifier = Modifier.size(36.dp),
-                                )
-                            }
-                        }
-                    } else {
-                        val app = draggedApps.first()
-                        if (app.icon != null) {
-                            Image(
-                                painter = rememberDrawablePainter(app.icon),
-                                contentDescription = app.label,
-                                modifier = Modifier.size(36.dp),
-                            )
-                        }
-                    }
-                }
-            }
+        }
+        gapBarRectRoot?.let { bar ->
+            GapInsertionBarOverlay(bar = bar, boxInRoot = boxInRoot, color = QuickLaunchGapBarYellow)
+        }
+        QuickLaunchDragGhostIfNeeded(
+            draggingIndex = draggingIndex,
+            draggedApps = draggedApps,
+            lastPointerInRoot = lastPointerInRoot,
+            boxInRoot = boxInRoot,
+            tileContent = tileContent,
+            slots = slots,
+        )
+    }
+}
+
+@Composable
+private fun QuickLaunchDragGhostIfNeeded(
+    draggingIndex: Int?,
+    draggedApps: List<AppInfo>?,
+    lastPointerInRoot: Offset,
+    boxInRoot: Offset,
+    tileContent: QuickLaunchTileContent,
+    slots: List<QuickLaunchSlotUi>,
+) {
+    if (draggingIndex == null || draggedApps == null) return
+    DragGhostOverlay(
+        pointerInRoot = lastPointerInRoot,
+        boxInRoot = boxInRoot,
+        tileContent = tileContent,
+        draggedApps = draggedApps,
+        folderName = slots.getOrNull(draggingIndex)?.folderName,
+        folderSymbolIconName = slots.getOrNull(draggingIndex)?.folderSymbolIconName,
+    )
+}
+
+@Composable
+private fun QuickLaunchGridCell(
+    tile: QuickLaunchGridTile,
+    tileContent: QuickLaunchTileContent,
+    minCellWidth: Dp,
+    slots: List<QuickLaunchSlotUi>,
+    quickLaunchPackages: Set<String>,
+    draggingIndex: Int?,
+    mergeHoverSlot: Int?,
+    dragHost: QuickLaunchRowDragHost,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
+    onAddQuickLaunch: () -> Unit,
+    addTileContentDescription: String,
+) {
+    if (tile.isPlaceholder) {
+        Spacer(modifier = Modifier.width(minCellWidth).height(1.dp))
+        return
+    }
+    tile.auxTile?.let {
+        QuickLaunchAuxGridCell(it)
+        return
+    }
+    if (tile.apps != null && tile.slotIndex != null) {
+        QuickLaunchSlotGridCell(
+            apps = tile.apps,
+            slotIndex = tile.slotIndex,
+            tile = tile,
+            tileContent = tileContent,
+            minCellWidth = minCellWidth,
+            slots = slots,
+            quickLaunchPackages = quickLaunchPackages,
+            draggingIndex = draggingIndex,
+            mergeHoverSlot = mergeHoverSlot,
+            dragHost = dragHost,
+            onQuickLaunchApp = onQuickLaunchApp,
+        )
+        return
+    }
+    if (tile.isAdd) {
+        QuickLaunchAddCell(
+            tileContent = tileContent,
+            minCellWidth = minCellWidth,
+            onAddQuickLaunch = onAddQuickLaunch,
+            addTileContentDescription = addTileContentDescription,
+        )
+    }
+}
+
+@Composable
+private fun QuickLaunchAuxGridCell(aux: QuickLaunchAuxTile) {
+    IntentLabelTile(
+        label = aux.label,
+        subtitle = aux.subtitle,
+        onClick = aux.onClick,
+        contentDescription = aux.contentDescription,
+    )
+}
+
+@Composable
+private fun QuickLaunchSlotGridCell(
+    apps: List<AppInfo>,
+    slotIndex: Int,
+    tile: QuickLaunchGridTile,
+    tileContent: QuickLaunchTileContent,
+    minCellWidth: Dp,
+    slots: List<QuickLaunchSlotUi>,
+    quickLaunchPackages: Set<String>,
+    draggingIndex: Int?,
+    mergeHoverSlot: Int?,
+    dragHost: QuickLaunchRowDragHost,
+    onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
+) {
+    val dropHighlight = draggingIndex != null &&
+        mergeHoverSlot == slotIndex &&
+        draggingIndex != slotIndex
+    QuickLaunchTile(
+        apps = apps,
+        slotIndex = slotIndex,
+        tile = tile,
+        tileContent = tileContent,
+        minCellWidth = minCellWidth,
+        dropHighlight = dropHighlight,
+        isDraggingThis = draggingIndex == slotIndex,
+        quickLaunchPackages = quickLaunchPackages,
+        slots = slots,
+        dragHost = dragHost,
+        onQuickLaunchApp = onQuickLaunchApp,
+    )
+}
+
+@Composable
+private fun QuickLaunchAddCell(
+    tileContent: QuickLaunchTileContent,
+    minCellWidth: Dp,
+    onAddQuickLaunch: () -> Unit,
+    addTileContentDescription: String,
+) {
+    if (tileContent == QuickLaunchTileContent.IntentLabels) {
+        IntentLabelTile(
+            label = "+",
+            onClick = onAddQuickLaunch,
+            contentDescription = addTileContentDescription,
+        )
+    } else {
+        OutlinedButton(
+            onClick = onAddQuickLaunch,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
+            modifier = Modifier.width(minCellWidth),
+        ) {
+            Icon(Icons.Default.Add, contentDescription = addTileContentDescription)
         }
     }
 }

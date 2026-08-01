@@ -72,22 +72,51 @@ fun OnboardingScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Center,
     ) {
-        when (step) {
-            0 -> WelcomeStep(onNext = { goToStep(1) })
-            1 -> PhilosophyStep(onNext = { goToStep(2) })
-            2 -> DefaultHomeStep(onNext = { goToStep(3) })
-            3 -> NotificationPermissionStep(onNext = { goToStep(4) })
-            4 -> UsageAccessStep(
-                onGrantUsageAccess = {
-                    context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-                },
-                onNext = { goToStep(5) }
-            )
-            5 -> OverlayPermissionStep(onNext = { goToStep(6) })
-            6 -> ModelStep(onNext = { onComplete() })
-        }
+        OnboardingStepContent(
+            step = step,
+            onGoToStep = { goToStep(it) },
+            onComplete = onComplete,
+            onGrantUsageAccess = {
+                context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            },
+        )
+    }
+}
+
+@Composable
+private fun OnboardingStepContent(
+    step: Int,
+    onGoToStep: (Int) -> Unit,
+    onComplete: () -> Unit,
+    onGrantUsageAccess: () -> Unit,
+) {
+    when (step) {
+        0 -> WelcomeStep(onNext = { onGoToStep(1) })
+        1 -> PhilosophyStep(onNext = { onGoToStep(2) })
+        2 -> DefaultHomeStep(onNext = { onGoToStep(3) })
+        else -> OnboardingPermissionSteps(
+            step = step,
+            onGoToStep = onGoToStep,
+            onComplete = onComplete,
+            onGrantUsageAccess = onGrantUsageAccess,
+        )
+    }
+}
+
+@Composable
+private fun OnboardingPermissionSteps(
+    step: Int,
+    onGoToStep: (Int) -> Unit,
+    onComplete: () -> Unit,
+    onGrantUsageAccess: () -> Unit,
+) {
+    when (step) {
+        3 -> NotificationPermissionStep(onNext = { onGoToStep(4) })
+        4 -> UsageAccessStep(onGrantUsageAccess = onGrantUsageAccess, onNext = { onGoToStep(5) })
+        5 -> OverlayPermissionStep(onNext = { onGoToStep(6) })
+        else -> ModelStep(onNext = onComplete)
     }
 }
 
@@ -173,15 +202,11 @@ private fun DefaultHomeStep(onNext: () -> Unit) {
     val context = LocalContext.current
     var isDefault by remember { mutableStateOf(isDefaultHome(context)) }
     var showGrantedFallbackButton by remember { mutableStateOf(false) }
-
-    // Launcher for the RoleManager request result
     val roleRequestLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult()
+        contract = ActivityResultContracts.StartActivityForResult(),
     ) {
         isDefault = isDefaultHome(context)
     }
-
-    // Re-check when returning from the chooser / settings
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         isDefault = isDefaultHome(context)
     }
@@ -196,55 +221,57 @@ private fun DefaultHomeStep(onNext: () -> Unit) {
             showGrantedFallbackButton = false
         }
     }
+    DefaultHomeStepBody(
+        isDefault = isDefault,
+        showGrantedFallbackButton = showGrantedFallbackButton,
+        onRequestDefault = {
+            val roleManager = context.getSystemService(RoleManager::class.java)
+            if (roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
+                !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
+            ) {
+                roleRequestLauncher.launch(
+                    roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME),
+                )
+            }
+        },
+        onNext = onNext,
+    )
+}
 
+@Composable
+private fun DefaultHomeStepBody(
+    isDefault: Boolean,
+    showGrantedFallbackButton: Boolean,
+    onRequestDefault: () -> Unit,
+    onNext: () -> Unit,
+) {
     Text(
         text = "Set as home launcher",
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center
+        textAlign = TextAlign.Center,
     )
-
     Spacer(modifier = Modifier.height(16.dp))
-
     Text(
         text = if (isDefault) {
             "MindfulHome is your default launcher."
         } else {
             "MindfulHome needs to be your default home app to work. " +
-                    "Tap the button below and select MindfulHome."
+                "Tap the button below and select MindfulHome."
         },
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
-
     Spacer(modifier = Modifier.height(32.dp))
-
     if (!isDefault) {
-        Button(
-            onClick = {
-                val roleManager = context.getSystemService(RoleManager::class.java)
-                if (roleManager.isRoleAvailable(RoleManager.ROLE_HOME) &&
-                    !roleManager.isRoleHeld(RoleManager.ROLE_HOME)
-                ) {
-                    roleRequestLauncher.launch(
-                        roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxWidth(0.6f)
-        ) {
+        Button(onClick = onRequestDefault, modifier = Modifier.fillMaxWidth(0.6f)) {
             Text("Set as default")
         }
-
         Spacer(modifier = Modifier.height(16.dp))
     }
-
     if (!isDefault || showGrantedFallbackButton) {
-        OutlinedButton(
-            onClick = onNext,
-            modifier = Modifier.fillMaxWidth(0.6f)
-        ) {
+        OutlinedButton(onClick = onNext, modifier = Modifier.fillMaxWidth(0.6f)) {
             Text(if (isDefault) "Continue (if stuck)" else "Skip for now")
         }
     }
@@ -261,6 +288,21 @@ private fun NotificationPermissionStep(onNext: () -> Unit) {
         return
     }
 
+    NotificationPermissionStepBody(
+        context = context,
+        showGrantedFallbackButton = showGrantedFallbackButton,
+        onShowGrantedFallbackButtonChange = { showGrantedFallbackButton = it },
+        onNext = onNext,
+    )
+}
+
+@Composable
+private fun NotificationPermissionStepBody(
+    context: android.content.Context,
+    showGrantedFallbackButton: Boolean,
+    onShowGrantedFallbackButtonChange: (Boolean) -> Unit,
+    onNext: () -> Unit,
+) {
     var hasPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -283,13 +325,13 @@ private fun NotificationPermissionStep(onNext: () -> Unit) {
     }
     LaunchedEffect(hasPermission) {
         if (hasPermission) {
-            showGrantedFallbackButton = false
+            onShowGrantedFallbackButtonChange(false)
             delay(300)
             onNext()
             delay(700)
-            showGrantedFallbackButton = true
+            onShowGrantedFallbackButtonChange(true)
         } else {
-            showGrantedFallbackButton = false
+            onShowGrantedFallbackButtonChange(false)
         }
     }
 
@@ -316,34 +358,22 @@ private fun NotificationPermissionStep(onNext: () -> Unit) {
 
     Spacer(modifier = Modifier.height(32.dp))
 
-    if (!hasPermission) {
-        Button(
-            onClick = {
-                permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            },
-            modifier = Modifier.fillMaxWidth(0.6f)
-        ) {
-            Text("Allow notifications")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-    }
-
-    if (!hasPermission || showGrantedFallbackButton) {
-        OutlinedButton(
-            onClick = {
-                SettingsManager.setPermissionPromptSuppressed(
-                    context,
-                    SettingsManager.PermissionPrompt.NOTIFICATIONS,
-                    !hasPermission,
-                )
-                onNext()
-            },
-            modifier = Modifier.fillMaxWidth(0.6f)
-        ) {
-            Text(if (hasPermission) "Continue (if stuck)" else "Skip for now")
-        }
-    }
+    PermissionGrantAndSkipButtons(
+        hasPermission = hasPermission,
+        showGrantedFallbackButton = showGrantedFallbackButton,
+        grantLabel = "Allow notifications",
+        onGrant = {
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        },
+        onSkipOrContinue = {
+            SettingsManager.setPermissionPromptSuppressed(
+                context,
+                SettingsManager.PermissionPrompt.NOTIFICATIONS,
+                !hasPermission,
+            )
+            onNext()
+        },
+    )
 }
 
 @Composable
@@ -394,29 +424,38 @@ private fun UsageAccessStep(
 
     Spacer(modifier = Modifier.height(32.dp))
 
-    if (!hasPermission) {
-        Button(
-            onClick = onGrantUsageAccess,
-            modifier = Modifier.fillMaxWidth(0.6f)
-        ) {
-            Text("Grant Usage Access")
-        }
+    PermissionGrantAndSkipButtons(
+        hasPermission = hasPermission,
+        showGrantedFallbackButton = showGrantedFallbackButton,
+        grantLabel = "Grant Usage Access",
+        onGrant = onGrantUsageAccess,
+        onSkipOrContinue = {
+            SettingsManager.setPermissionPromptSuppressed(
+                context,
+                SettingsManager.PermissionPrompt.USAGE_ACCESS,
+                !hasPermission,
+            )
+            onNext()
+        },
+    )
+}
 
+@Composable
+private fun PermissionGrantAndSkipButtons(
+    hasPermission: Boolean,
+    showGrantedFallbackButton: Boolean,
+    grantLabel: String,
+    onGrant: () -> Unit,
+    onSkipOrContinue: () -> Unit,
+) {
+    if (!hasPermission) {
+        Button(onClick = onGrant, modifier = Modifier.fillMaxWidth(0.6f)) {
+            Text(grantLabel)
+        }
         Spacer(modifier = Modifier.height(16.dp))
     }
-
     if (!hasPermission || showGrantedFallbackButton) {
-        OutlinedButton(
-            onClick = {
-                SettingsManager.setPermissionPromptSuppressed(
-                    context,
-                    SettingsManager.PermissionPrompt.USAGE_ACCESS,
-                    !hasPermission,
-                )
-                onNext()
-            },
-            modifier = Modifier.fillMaxWidth(0.6f)
-        ) {
+        OutlinedButton(onClick = onSkipOrContinue, modifier = Modifier.fillMaxWidth(0.6f)) {
             Text(if (hasPermission) "Continue (if stuck)" else "Skip for now")
         }
     }
@@ -468,38 +507,26 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
 
     Spacer(modifier = Modifier.height(32.dp))
 
-    if (!hasPermission) {
-        Button(
-            onClick = {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:${context.packageName}")
-                )
-                context.startActivity(intent)
-            },
-            modifier = Modifier.fillMaxWidth(0.6f)
-        ) {
-            Text("Grant overlay permission")
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-    }
-
-    if (!hasPermission || showGrantedFallbackButton) {
-        OutlinedButton(
-            onClick = {
-                SettingsManager.setPermissionPromptSuppressed(
-                    context,
-                    SettingsManager.PermissionPrompt.OVERLAY,
-                    !hasPermission,
-                )
-                onNext()
-            },
-            modifier = Modifier.fillMaxWidth(0.6f)
-        ) {
-            Text(if (hasPermission) "Continue (if stuck)" else "Skip for now")
-        }
-    }
+    PermissionGrantAndSkipButtons(
+        hasPermission = hasPermission,
+        showGrantedFallbackButton = showGrantedFallbackButton,
+        grantLabel = "Grant overlay permission",
+        onGrant = {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:${context.packageName}")
+            )
+            context.startActivity(intent)
+        },
+        onSkipOrContinue = {
+            SettingsManager.setPermissionPromptSuppressed(
+                context,
+                SettingsManager.PermissionPrompt.OVERLAY,
+                !hasPermission,
+            )
+            onNext()
+        },
+    )
 }
 
 @Composable
