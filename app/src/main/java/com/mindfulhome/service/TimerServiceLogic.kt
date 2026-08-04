@@ -357,6 +357,71 @@ internal fun isPredatoryBird(
     everyN: Int = PREDATORY_BIRD_EVERY_N_BIRDS,
 ): Boolean = everyN > 0 && bubbleCount % everyN == 0
 
+internal const val NUDGE_CATCH_UP_SPEED_MULTIPLIER = 10
+
+enum class NudgeEscalationPace {
+    Normal,
+    ConversationGracePaused,
+    CatchUp,
+}
+
+internal fun resolveNudgeEscalationPace(
+    nowMs: Long,
+    conversationGraceUntilMs: Long,
+    catchUpDebtMs: Long,
+): NudgeEscalationPace = when {
+    nowMs < conversationGraceUntilMs -> NudgeEscalationPace.ConversationGracePaused
+    catchUpDebtMs > 0L -> NudgeEscalationPace.CatchUp
+    else -> NudgeEscalationPace.Normal
+}
+
+data class NudgeEscalationTickAdvance(
+    val stageAdvanceMs: Long,
+    val activeAdvanceMs: Long,
+    val catchUpDebtMsAfter: Long,
+)
+
+/**
+ * How much nudge stage/overrun time advances for one loop tick.
+ * During conversation grace, debt accumulates (birds suspended). During catch-up, debt burns at
+ * [catchUpMultiplier]× until zero, then pace returns to normal.
+ */
+internal fun computeNudgeEscalationTickAdvance(
+    pace: NudgeEscalationPace,
+    nudgeTickMs: Long,
+    catchUpDebtMs: Long,
+    catchUpMultiplier: Int = NUDGE_CATCH_UP_SPEED_MULTIPLIER,
+): NudgeEscalationTickAdvance = when (pace) {
+    NudgeEscalationPace.ConversationGracePaused -> NudgeEscalationTickAdvance(
+        stageAdvanceMs = 0L,
+        activeAdvanceMs = 0L,
+        catchUpDebtMsAfter = catchUpDebtMs + nudgeTickMs,
+    )
+    NudgeEscalationPace.CatchUp -> {
+        val applied = minOf(nudgeTickMs * catchUpMultiplier.toLong(), catchUpDebtMs)
+        NudgeEscalationTickAdvance(
+            stageAdvanceMs = applied,
+            activeAdvanceMs = applied,
+            catchUpDebtMsAfter = catchUpDebtMs - applied,
+        )
+    }
+    NudgeEscalationPace.Normal -> NudgeEscalationTickAdvance(
+        stageAdvanceMs = nudgeTickMs,
+        activeAdvanceMs = nudgeTickMs,
+        catchUpDebtMsAfter = catchUpDebtMs,
+    )
+}
+
+/** Predatory karma waits until escalation is back at normal speed after catch-up. */
+internal fun shouldSuppressPredatoryKarmaForTick(
+    pace: NudgeEscalationPace,
+    catchUpDebtMsBefore: Long,
+    catchUpDebtMsAfter: Long,
+): Boolean =
+    pace == NudgeEscalationPace.CatchUp ||
+        catchUpDebtMsBefore > 0L ||
+        catchUpDebtMsAfter > 0L
+
 /**
  * Stage transition after [stageElapsedMs] has already been advanced by one nudge tick.
  */
@@ -664,6 +729,23 @@ internal fun shouldForceShouldYouBeHere(
     if (isQuickLaunchPackage) return false
     if (overtimeForceInFlight) return false
     return true
+}
+
+/**
+ * True when the user returned to the app whose timer was suspended for Quick Launch (resume tile).
+ * Resuming skips grace / ShouldYouBeHere gates.
+ */
+internal fun shouldAutoResumeSuspendedSession(
+    foregroundPackage: String,
+    foregroundOwnerPackage: String,
+    savedSessionPackage: String?,
+    savedRemainingMs: Long,
+    timerIsIdleOrExpired: Boolean,
+): Boolean {
+    if (!timerIsIdleOrExpired) return false
+    if (savedSessionPackage.isNullOrBlank() || savedRemainingMs <= 0L) return false
+    return foregroundPackage == savedSessionPackage ||
+        foregroundOwnerPackage == savedSessionPackage
 }
 
 /** True when a restricted foreground reading should be ignored until home settles after the gate. */

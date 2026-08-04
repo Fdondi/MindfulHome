@@ -917,6 +917,46 @@ class DecideQuickLaunchSwitchParameterizedTest(
 class TimerServiceGateLogicTest {
 
     @Test
+    fun shouldAutoResumeSuspendedSession_matchesOwnerPackage() {
+        assertTrue(
+            shouldAutoResumeSuspendedSession(
+                foregroundPackage = "com.example",
+                foregroundOwnerPackage = "com.example",
+                savedSessionPackage = "com.example",
+                savedRemainingMs = 60_000L,
+                timerIsIdleOrExpired = true,
+            ),
+        )
+        assertTrue(
+            shouldAutoResumeSuspendedSession(
+                foregroundPackage = "shortcut:key",
+                foregroundOwnerPackage = "com.example",
+                savedSessionPackage = "com.example",
+                savedRemainingMs = 60_000L,
+                timerIsIdleOrExpired = true,
+            ),
+        )
+        assertFalse(
+            shouldAutoResumeSuspendedSession(
+                foregroundPackage = "com.other",
+                foregroundOwnerPackage = "com.other",
+                savedSessionPackage = "com.example",
+                savedRemainingMs = 60_000L,
+                timerIsIdleOrExpired = true,
+            ),
+        )
+        assertFalse(
+            shouldAutoResumeSuspendedSession(
+                foregroundPackage = "com.example",
+                foregroundOwnerPackage = "com.example",
+                savedSessionPackage = "com.example",
+                savedRemainingMs = 60_000L,
+                timerIsIdleOrExpired = false,
+            ),
+        )
+    }
+
+    @Test
     fun shouldForceShouldYouBeHere_requiresAllGates() {
         assertTrue(
             shouldForceShouldYouBeHere(

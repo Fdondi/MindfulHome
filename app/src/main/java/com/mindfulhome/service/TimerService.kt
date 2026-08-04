@@ -27,6 +27,7 @@ import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.util.QuickLaunchAppRef
 import com.mindfulhome.util.QuickLaunchUtilityClassifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -82,8 +83,11 @@ class TimerService : Service() {
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
     private lateinit var overlayManager: OverlayNudgeManager
-    private var nudgePauseUntilMs: Long = 0L
-    private var nudgeResetRequested: Boolean = false
+    private var conversationGraceUntilMs: Long = 0L
+    private var conversationGraceExpiryJob: Job? = null
+    /** Escalation time banked while conversation grace pauses birds; burned at 10× after grace expires. */
+    private var catchUpDebtMs: Long = 0L
+    private var suppressPredatoryKarmaThisTick: Boolean = false
     private var awaitingNotificationInteraction: Boolean = false
     private var preferBannerFallbackForOverlayTap: Boolean = false
     private var logSessionHandle: SessionLogger.SessionHandle? = null
@@ -462,8 +466,9 @@ class TimerService : Service() {
         preferBannerFallbackForOverlayTap = false
         SettingsManager.setNudgeBannerFallbackArmed(this, false)
         overlayManager.dismissAllNudges()
-        nudgePauseUntilMs = 0L
-        nudgeResetRequested = false
+        clearConversationGrace(reason = "nudge reset for new timer")
+        catchUpDebtMs = 0L
+        suppressPredatoryKarmaThisTick = false
         _nudgeCount.value = 0
         userAwayOverlayActive = false
         awayShieldShownForCurrentAwayEpisode = false
@@ -916,15 +921,12 @@ class TimerService : Service() {
         val appLabel = getAppLabel(foregroundPackage)
         Log.d(TAG, "non-quick app still active after grace: $foregroundPackage")
         logWithSession(
-            "Quick Launch exit detected: opened **$appLabel** — opening Should you be here? (karma -1)",
+            "Quick Launch exit detected: opened **$appLabel** — opening Should you be here?",
         )
         clearQuickLaunchExitCandidate()
         SettingsManager.clearQuickLaunchSession(this)
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissQuickLaunchFrame()
-        serviceScope.launch {
-            karmaManager.onQuickLaunchExitAfterRed(foregroundPackage)
-        }
         val cheatMs = KarmaManager.cheatScreenDurationMs(karmaScore)
         if (cheatMs != null && cheatMs > 0L) {
             overlayManager.showCheatScreen(cheatMs) {
@@ -1018,6 +1020,38 @@ class TimerService : Service() {
         }
     }
 
+    private fun maybeResumeSuspendedSessionForPackage(packageName: String): Boolean {
+        val saved = SettingsManager.getLastSession(this) ?: return false
+        val state = _timerState.value
+        val timerIsIdleOrExpired = state is TimerState.Idle || state is TimerState.Expired
+        if (!shouldAutoResumeSuspendedSession(
+                foregroundPackage = packageName,
+                foregroundOwnerPackage = QuickLaunchAppRef.ownerPackage(packageName),
+                savedSessionPackage = saved.packageName,
+                savedRemainingMs = saved.remainingMs,
+                timerIsIdleOrExpired = timerIsIdleOrExpired,
+            )
+        ) {
+            return false
+        }
+        val label = getAppLabel(saved.packageName)
+        logWithSession(
+            "Returning to suspended session app **$label** — resuming timer without gate",
+        )
+        logSessionEvent(
+            "Auto-resume suspended session for package=${saved.packageName} " +
+                "remainingMs=${saved.remainingMs}",
+        )
+        clearQuickLaunchExitCandidate()
+        shouldYouBeHereGateActive = false
+        shouldYouBeHereDismissed = false
+        awaitHomeSettleAfterGateLeave = false
+        overtimeForceInFlight = false
+        overlayManager.dismissQuickLaunchFrame()
+        startTimer(saved.remainingMs, saved.packageName, null)
+        return true
+    }
+
     private suspend fun maybeStartTimedQuickLaunchTimer(packageName: String): Boolean {
         if (packageName.isBlank() || packageName == this.packageName) return false
         if (systemOrUtilityReason(packageName) != null) return false
@@ -1043,6 +1077,7 @@ class TimerService : Service() {
     ) {
         if (packageName.isBlank()) return
         if (packageChanged && maybeStartTimedQuickLaunchTimer(packageName)) return
+        if (packageChanged && maybeResumeSuspendedSessionForPackage(packageName)) return
         handleExpiredForegroundRedirect(packageName, packageChanged)
         if (!SettingsManager.isQuickLaunchSessionActive(this)) return
         if (packageChanged) {
@@ -1249,8 +1284,35 @@ class TimerService : Service() {
             return false
         }
         if (tickAwayShield(state, now)) return true
-        if (tickNudgePauseOrReset(state, now, initialDelayMs)) return true
-        tickNudgeEscalation(state, now, nudgeTickMs, initialDelayMs, bubbleIntervalMs, packageName, appLabel)
+        val catchUpDebtBefore = catchUpDebtMs
+        val pace = resolveNudgeEscalationPace(
+            nowMs = now,
+            conversationGraceUntilMs = conversationGraceUntilMs,
+            catchUpDebtMs = catchUpDebtMs,
+        )
+        val advance = computeNudgeEscalationTickAdvance(
+            pace = pace,
+            nudgeTickMs = nudgeTickMs,
+            catchUpDebtMs = catchUpDebtMs,
+        )
+        catchUpDebtMs = advance.catchUpDebtMsAfter
+        suppressPredatoryKarmaThisTick = shouldSuppressPredatoryKarmaForTick(
+            pace = pace,
+            catchUpDebtMsBefore = catchUpDebtBefore,
+            catchUpDebtMsAfter = catchUpDebtMs,
+        )
+        if (pace == NudgeEscalationPace.ConversationGracePaused) {
+            return true
+        }
+        tickNudgeEscalation(
+            state,
+            advance.stageAdvanceMs,
+            advance.activeAdvanceMs,
+            initialDelayMs,
+            bubbleIntervalMs,
+            packageName,
+            appLabel,
+        )
         return true
     }
 
@@ -1344,35 +1406,17 @@ class TimerService : Service() {
         }
     }
 
-    /** @return true when the loop should `continue` (paused). */
-    private fun tickNudgePauseOrReset(
-        state: NudgeLoopMutableState,
-        now: Long,
-        initialDelayMs: Long,
-    ): Boolean {
-        if (nudgeResetRequested) {
-            state.stage = NudgeStageLogic.WAITING_AFTER_NOTIFICATION
-            state.stageElapsedMs = 0L
-            state.bubbleCount = 0
-            _nudgeCount.value = 0
-            nudgeResetRequested = false
-            nudgePauseUntilMs = max(nudgePauseUntilMs, now + initialDelayMs)
-            logSessionEvent("Nudge loop reset after interaction; pauseUntilMs=$nudgePauseUntilMs")
-        }
-        return now < nudgePauseUntilMs
-    }
-
     private fun tickNudgeEscalation(
         state: NudgeLoopMutableState,
-        now: Long,
-        nudgeTickMs: Long,
+        stageAdvanceMs: Long,
+        activeAdvanceMs: Long,
         initialDelayMs: Long,
         bubbleIntervalMs: Long,
         packageName: String,
         appLabel: String,
     ) {
-        state.activeElapsedMs += nudgeTickMs
-        state.stageElapsedMs += nudgeTickMs
+        state.activeElapsedMs += activeAdvanceMs
+        state.stageElapsedMs += stageAdvanceMs
         _timerState.value = TimerState.Expired(state.activeElapsedMs)
         when (
             val tick = tickNudgeStage(
@@ -1408,12 +1452,16 @@ class TimerService : Service() {
                 "stageElapsedMs=${state.stageElapsedMs} intervalMs=tick pkg=$packageName",
         )
         state.stageElapsedMs = tick.stageElapsedMs
-        if (tick.applyPendingPredatoryPenalty) {
+        if (tick.applyPendingPredatoryPenalty && !suppressPredatoryKarmaThisTick) {
             serviceScope.launch {
                 karmaManager.onNudgeIgnored(packageName)
             }
             logWithSession("Karma -1: predatory bird was ignored until the next bird ($appLabel)")
             logSessionEvent("Predatory bird penalty applied at nudge #${tick.newBubbleCount}")
+        } else if (tick.applyPendingPredatoryPenalty && suppressPredatoryKarmaThisTick) {
+            logSessionEvent(
+                "Predatory bird penalty deferred (catch-up) at nudge #${tick.newBubbleCount}",
+            )
         }
         state.bubbleCount = tick.newBubbleCount
         state.predatoryPenaltyPending = tick.predatoryPenaltyPendingAfter
@@ -1460,19 +1508,11 @@ class TimerService : Service() {
     private fun onOverlayNotificationRequested() {
         logSessionEvent("Overlay tapped to open notification conversation")
         logWithSession("Overlay requested notification conversation")
-        overlayManager.dismissAllNudges()
-        nudgePauseUntilMs = System.currentTimeMillis() + (
-            SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
-            )
-        if (preferBannerFallbackForOverlayTap) {
-            overlayManager.showConversationBanner(buildBannerPreviewLines())
-            logWithSession("Banner fallback shown after prior notification-open failure")
-            logSessionEvent("Overlay tap used banner fallback")
-        } else {
-            overlayManager.showConversationBanner(buildBannerPreviewLines())
-            logSessionEvent("Overlay tap kept in birds/banner flow (no repost)")
+        if (conversationGraceUntilMs <= 0L) {
+            beginConversationGrace(source = "bird tap")
         }
-        clearNotificationInteractionWatch(reason = "overlay tap handled in birds/banner flow", markSuccess = false)
+        overlayManager.showConversationBanner(buildBannerPreviewLines())
+        logSessionEvent("Bird tap opened banner (grace only if not already active)")
     }
 
     private fun onBannerReplySubmitted(replyText: String) {
@@ -1483,10 +1523,7 @@ class TimerService : Service() {
         if (handlePendingExtensionConfirmationReply(payload, keepBannerVisible = true, source = "banner")) {
             return
         }
-        nudgeResetRequested = true
-        nudgePauseUntilMs = System.currentTimeMillis() + (
-            SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
-            )
+        refreshConversationGrace(source = "banner reply")
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
         overlayManager.showConversationBanner(buildBannerPreviewLines())
         showConversationNotification(alertUser = false)
@@ -1867,11 +1904,7 @@ class TimerService : Service() {
         if (handlePendingExtensionConfirmationReply(payload, keepBannerVisible = false, source = "inline")) {
             return
         }
-        overlayManager.dismissAllNudges()
-        nudgeResetRequested = true
-        nudgePauseUntilMs = System.currentTimeMillis() + (
-            SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
-            )
+        refreshConversationGrace(source = "notification reply")
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
         showConversationNotification(alertUser = false)
         logWithSession("You: $payload")
@@ -1886,11 +1919,6 @@ class TimerService : Service() {
             nudgeMessages.add(NudgeMessage(fallback, isFromUser = false))
             showConversationNotification(alertUser = false)
             overlayManager.updateConversationMessage(fallback, _nudgeCount.value)
-            nudgeResetRequested = true
-            nudgePauseUntilMs = System.currentTimeMillis() + (
-                SettingsManager.getNudgeInitialNotificationDelayMinutes(this)
-                    .coerceAtLeast(0) * 60_000L
-                )
             return
         }
 
@@ -1905,11 +1933,6 @@ class TimerService : Service() {
                 }
                 logWithSession("MindfulHome: ${result.responseText}")
                 logSessionEvent("AI reply processed")
-                nudgeResetRequested = true
-                nudgePauseUntilMs = System.currentTimeMillis() + (
-                    SettingsManager.getNudgeInitialNotificationDelayMinutes(this@TimerService)
-                        .coerceAtLeast(0) * 60_000L
-                    )
 
                 if (result.extensionMinutes > 0) {
                     handleExtension(result.extensionMinutes, keepBannerVisible)
@@ -1924,11 +1947,6 @@ class TimerService : Service() {
                 if (keepBannerVisible) {
                     overlayManager.showConversationBanner(buildBannerPreviewLines())
                 }
-                nudgeResetRequested = true
-                nudgePauseUntilMs = System.currentTimeMillis() + (
-                    SettingsManager.getNudgeInitialNotificationDelayMinutes(this@TimerService)
-                        .coerceAtLeast(0) * 60_000L
-                    )
             }
         }
     }
@@ -1936,6 +1954,7 @@ class TimerService : Service() {
     private fun handleExtension(minutes: Int, keepBannerVisible: Boolean = true) {
         pendingExtensionMinutes = minutes
         pendingExtensionKeepBannerVisible = keepBannerVisible
+        refreshConversationGrace(source = "extension offer pending")
         val message = buildExtensionConfirmationMessage(minutes)
         nudgeMessages.add(NudgeMessage(message, isFromUser = false))
         showConversationNotification(alertUser = false)
@@ -2007,11 +2026,7 @@ class TimerService : Service() {
         logSessionEvent("Pending extension decision via $source: \"$payload\"")
         val keepPendingBannerVisible = pendingExtensionKeepBannerVisible
         clearPendingExtensionConfirmation()
-        nudgeResetRequested = true
-        nudgePauseUntilMs = System.currentTimeMillis() + (
-            SettingsManager.getNudgeInitialNotificationDelayMinutes(this)
-                .coerceAtLeast(0) * 60_000L
-            )
+        clearConversationGrace(reason = "extension declined")
         val declinedMessage = locString(R.string.nudge_extension_declined)
         nudgeMessages.add(NudgeMessage(declinedMessage, isFromUser = false))
         showConversationNotification(alertUser = false)
@@ -2057,9 +2072,57 @@ class TimerService : Service() {
         pendingExtensionKeepBannerVisible = true
     }
 
+    private fun conversationGraceDurationMs(): Long =
+        SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
+
+    private fun beginConversationGrace(source: String) {
+        val now = System.currentTimeMillis()
+        conversationGraceUntilMs = now + conversationGraceDurationMs()
+        scheduleConversationGraceExpiry()
+        logSessionEvent(
+            "Conversation grace until $conversationGraceUntilMs (source=$source, debtMs=$catchUpDebtMs)",
+        )
+    }
+
+    private fun refreshConversationGrace(source: String) {
+        beginConversationGrace(source)
+    }
+
+    private fun scheduleConversationGraceExpiry() {
+        conversationGraceExpiryJob?.cancel()
+        val until = conversationGraceUntilMs
+        if (until <= 0L) return
+        val delayMs = (until - System.currentTimeMillis()).coerceAtLeast(0L)
+        conversationGraceExpiryJob = serviceScope.launch {
+            delay(delayMs)
+            if (System.currentTimeMillis() >= conversationGraceUntilMs) {
+                expireConversationGrace()
+            }
+        }
+    }
+
+    private fun clearConversationGrace(reason: String) {
+        conversationGraceExpiryJob?.cancel()
+        conversationGraceExpiryJob = null
+        if (conversationGraceUntilMs > 0L) {
+            logSessionEvent("Conversation grace cleared ($reason)")
+        }
+        conversationGraceUntilMs = 0L
+    }
+
+    private fun expireConversationGrace() {
+        if (conversationGraceUntilMs <= 0L) return
+        clearConversationGrace(reason = "idle timeout")
+        overlayManager.showTransientToast(locString(R.string.nudge_conversation_grace_expired))
+        logWithSession("Conversation grace expired — birds catching up at 10×")
+        logSessionEvent("Conversation grace expired; catch-up debtMs=$catchUpDebtMs")
+    }
+
     private fun endNudgeConversation() {
         logSessionEvent("Ending nudge conversation and clearing overlays/notification")
         clearPendingExtensionConfirmation()
+        clearConversationGrace(reason = "end nudge conversation")
+        catchUpDebtMs = 0L
         negotiationManager?.endConversation()
         negotiationManager = null
         lmManager?.shutdown()
