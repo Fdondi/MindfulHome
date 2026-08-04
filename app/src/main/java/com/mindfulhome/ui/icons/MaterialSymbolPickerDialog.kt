@@ -1,4 +1,5 @@
 package com.mindfulhome.ui.icons
+import androidx.compose.ui.res.stringResource
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -89,12 +90,12 @@ fun MaterialSymbolPickerDialog(
                     .padding(16.dp),
             ) {
                 Text(
-                    text = "Folder symbol",
+                    text = stringResource(R.string.folder_symbol),
                     style = MaterialTheme.typography.titleLarge,
                 )
                 Spacer(modifier = Modifier.size(8.dp))
                 Text(
-                    text = "Search Material Icons (snake_case, e.g. flight_takeoff, sms). Shown on the folder tile.",
+                    text = stringResource(R.string.search_material_icons_snake_case_e_g_flight_take),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -102,7 +103,7 @@ fun MaterialSymbolPickerDialog(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    label = { Text("Search icons") },
+                    label = { Text(stringResource(R.string.search_icons)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -110,7 +111,7 @@ fun MaterialSymbolPickerDialog(
                 OutlinedTextField(
                     value = emojiInput,
                     onValueChange = { emojiInput = it },
-                    label = { Text("Or type an emoji / emoticon") },
+                    label = { Text(stringResource(R.string.or_type_an_emoji_emoticon)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -182,10 +183,10 @@ fun MaterialSymbolPickerDialog(
                             onDismiss()
                         },
                     ) {
-                        Text("Clear symbol")
+                        Text(stringResource(R.string.clear_symbol))
                     }
                     TextButton(onClick = onDismiss) {
-                        Text("Cancel")
+                        Text(stringResource(R.string.cancel))
                     }
                     TextButton(
                         onClick = {
@@ -194,7 +195,7 @@ fun MaterialSymbolPickerDialog(
                             onDismiss()
                         },
                     ) {
-                        Text("OK")
+                        Text(stringResource(R.string.ok))
                     }
                 }
             }

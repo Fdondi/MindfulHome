@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="about">情報</string>
+    <string name="add">追加</string>
+    <string name="app_name">MindfulHome</string>
+    <string name="back">戻る</string>
+    <string name="backend_sign_in_description">リモートの Gemini モデルを使うには Google アカウントでサインインしてください。サインインしない場合は端末上の応答にフォールバックします。</string>
+    <string name="behavior">動作</string>
+    <string name="cancel">キャンセル</string>
+    <string name="copy_adb_command">adb コマンドをコピー</string>
+    <string name="done">完了</string>
+    <string name="enable">有効にする</string>
+    <string name="focus_gate_length_description">フォーカスゲートチャットのやり取り回数：「続行」が出るまでの最小、自動許可までの最大。</string>
+    <string name="focus_time_description">アクティブな時間帯では、タイマー後もランチャーは非表示のままです。Quick Launch 以外のアプリは AI で開きます。</string>
+    <string name="get_started">はじめる</string>
+    <string name="grant">許可</string>
+    <string name="how_it_works">仕組み</string>
+    <string name="intent">意図</string>
+    <string name="karma">カルマ</string>
+    <string name="language_picker_continue">続ける</string>
+    <string name="language_picker_subtitle">後から設定で変更できます。</string>
+    <string name="language_picker_title">言語を選択</string>
+    <string name="makes_sense">了解</string>
+    <string name="max_rounds_label">最大 %1$d</string>
+    <string name="min_rounds_label">最小 %1$d</string>
+    <string name="no_deadline">期限なし</string>
+    <string name="ok">OK</string>
+    <string name="onboarding_ai_model_body">Gemma3-1B（557 MB）などのローカルモデルで、非公開・無料・オフライン利用が可能です。HuggingFace からダウンロードし、アプリの models フォルダに配置してください。
+ただし小さなモデルは期待ほど賢くないことがあります。
+
+より強力で容量・計算負荷が少ない方法として、Gemini の AI サービスへのサインインをおすすめします。
+
+どちらも未設定の場合はスクリプトのフォールバックが使われます。</string>
+    <string name="onboarding_continue_if_stuck">続行（固まった場合）</string>
+    <string name="onboarding_default_launcher_instructions">動作には MindfulHome をデフォルトのホームアプリにする必要があります。下のボタンを押し、MindfulHome を選んでください。</string>
+    <string name="onboarding_default_launcher_is_default">MindfulHome がデフォルトのランチャーです。</string>
+    <string name="onboarding_grant_overlay_permission">オーバーレイを許可</string>
+    <string name="onboarding_grant_accessibility">アプリ切替検出を有効にする</string>
+    <string name="onboarding_grant_usage_access">使用状況へのアクセスを許可</string>
+    <string name="onboarding_notifications_granted">通知オン。タイマーのカウントダウンとやさしいリマインダーが表示されます。</string>
+    <string name="onboarding_notifications_rationale">MindfulHome は通知でタイマーのカウントダウンを示し、時間切れにやさしく知らせます。スパムはありません。</string>
+    <string name="onboarding_overlay_granted">オーバーレイ許可済み。どのアプリの上にもリマインダーが出ます。</string>
+    <string name="onboarding_overlay_rationale">セッションタイマー終了時、他のアプリの上にもやさしいオーバーレイを表示できます。これがないと通知のみになり、Android が徐々に黙らせることがあります。</string>
+    <string name="onboarding_accessibility_title">アプリ切替検出</string>
+    <string name="onboarding_accessibility_granted">アプリ切替検出オン。アプリを離れた瞬間に反応します — 電池に有利。</string>
+    <string name="onboarding_accessibility_rationale">任意ですが推奨。オフだとタイマーで前面アプリを確認し、電池を多く使います。オンにすると切替をすぐ検知 — 反応が速く電池も節約。前面アプリ名のみ読み取り、画面内容は読みません。\n\n下をタップし、インストール済みアプリで MindfulHome を見つけてオンにしてください。</string>
+    <string name="onboarding_skip_for_now">今はスキップ</string>
+    <string name="onboarding_usage_granted">使用状況アクセスを許可済み。カルマ追跡が動きます。</string>
+    <string name="onboarding_usage_rationale">タイマー終了時に前面のアプリを知るため、使用状況アクセスが必要です。これがカルマ追跡の仕組みです。</string>
+    <string name="open_accessibility_settings">ユーザー補助を開く</string>
+    <string name="open_settings">設定を開く</string>
+    <string name="perm_accessibility_off_description">オフ。MindfulHome はタイマーで前面アプリを確認しており、電池を多く使います。オンにするとアプリ切替をすぐ検知でき、反応が速く電池も節約できます。前面アプリ名のみ読み取り、画面内容は読みません。
+
+有効化：下をタップし、インストール済みアプリで MindfulHome を見つけてオン。</string>
+    <string name="perm_accessibility_off_title">アプリ切替検出 — オフ（任意）</string>
+    <string name="perm_accessibility_on_description">オン。アプリ切替をすぐ通知され、即座に反応しバックグラウンドでポーリングしません — 電池に有利。前面アプリのみ読み取ります。</string>
+    <string name="perm_accessibility_on_title">アプリ切替検出 — オン ✓</string>
+    <string name="perm_notification_granted">許可済み。タイマーとナッジ通知を表示できます。</string>
+    <string name="perm_notification_required">タイマーのカウントダウンとナッジ通知に必要です。</string>
+    <string name="perm_overlay_granted">許可済み。どのアプリの上にもナッジが出ます。</string>
+    <string name="perm_overlay_required">未許可。ナッジは通知のみになり、Android が黙らせることがあります。タップして許可。</string>
+    <string name="perm_skipped">未設定。権限リマインダーをスキップしました。ここからいつでも許可できます。</string>
+    <string name="perm_usage_granted">許可済み。前面アプリを追跡できます。</string>
+    <string name="perm_usage_required">カルマ追跡に必要です。タップして許可。</string>
+    <string name="permissions">権限</string>
+    <string name="priority_selected">P%1$d*</string>
+    <string name="priority_unselected">P%1$d</string>
+    <string name="quick_return_window_description">この時間内に戻り、タイマーがまだ動いていればタイマー画面をスキップします。</string>
+    <string name="remove">削除</string>
+    <string name="save">保存</string>
+    <string name="search_apps">アプリを検索…</string>
+    <string name="search_apps_2">アプリを検索</string>
+    <string name="settings">設定</string>
+    <string name="settings_language">言語</string>
+    <string name="settings_language_description">インターフェースと AI 返信に使うアプリの言語。</string>
+    <string name="show_hard_deadline">厳しい締切を表示</string>
+    <string name="sign_in_with_google">Google でサインイン</string>
+    <string name="signed_in_with_google">Google でサインイン済み</string>
+    <string name="signing_in">サインイン中…</string>
+    <string name="strikes_before_hiding_description">ホーム画面から隠されるまでにアプリが溜められる悪いカルマ点数。</string>
+    <string name="timing_intervals_description">ポーリング（Quick Launch、使用キャッシュ、ナッジループ）、タイマー通知の更新、すべてのナッジ間隔。大きい刻みほど電池を節約。</string>
+    <string name="welcome_to_mindfulhome">MindfulHome へようこそ</string>
+    <string-array name="onboarding_philosophy_bullets">
+        <item>ロック解除のたびにタイマーを設定</item>
+        <item>タイマーを守れたかでアプリにカルマが付く</item>
+        <item>カルマが低いアプリは非表示（ブロックはしない）</item>
+        <item>非表示アプリは AI に話して開く — 尋ねるが、必ず折れる</item>
+        <item>MindfulHome がアプリを強制終了することはない</item>
+    </string-array>
+    <string name="intent_folder_search">検索</string>
+    <string name="intent_folder_reflect">内省</string>
+    <string name="intent_folder_travel">移動</string>
+    <string name="intent_folder_learn">学習</string>
+    <string name="intent_folder_connect">つながる</string>
+    <string name="intent_folder_organize">整理</string>
+    <string name="intent_folder_snap">撮影</string>
+    <string name="intent_folder_util">その他</string>
+    <string name="something_else_question">他のこと？</string>
+    <string name="onboarding_app_tiers_title">アプリの三つの区分</string>
+    <string name="onboarding_layout_title">ホーム画面の仕組み</string>
+    <string-array name="onboarding_app_tiers_bullets">
+        <item>信頼できる — 役に立ち、時間を無駄にしないと分かるアプリ：クイック起動に入れ、タイマーなし</item>
+        <item>すばやく不信頼 — 役立つが時間を浪費しうるアプリ：クイック起動に入れ、デフォルトのタイマー付き</item>
+        <item>不信頼 — あまり使わない、または浪費しやすい：クイック起動に入れず「他のこと？」から開く</item>
+    </string-array>
+    <string-array name="onboarding_layout_bullets">
+        <item>あの四角はクイック起動アプリ用のフォルダです</item>
+        <item>アプリが1つのフォルダはタップで起動 — 長押しでフォルダを開けます</item>
+        <item>アプリにデフォルトのタイマーを付けられ、いつでも変更できます</item>
+        <item>目標に合わせてフォルダを追加・名前変更・削除できます</item>
+        <item>アプリを1つまたは複数のフォルダに入れたり、合わなくなったら外せます</item>
+        <item>必要に応じてアプリのタイマーを厳しく／ゆるく変更できます</item>
+        <item>「他のこと？」タイルでそれ以外 — 不信頼なアプリ — にアクセスします</item>
+    </string-array>
+</resources>

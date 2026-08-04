@@ -1,3 +1,10 @@
+// 0.96.1 - Fill missing Italian intent-folder keys; require emit_locale_xml success after i18n edits
+// 0.96.0 - Fix onboarding crash: nested verticalScroll in language picker step
+// 0.95.0 - Onboarding ends with app-tier + home-layout explanation pages
+// 0.94.0 - Ask for app-switch detection (Accessibility) during onboarding setup
+// 0.93.0 - Localize preset intent folder names + "something else?" tile
+// 0.92.1 - Fix language picker: AppCompatActivity + autoStoreLocales so onboarding follows selection
+// 0.92.0 - In-app language picker (onboarding + Settings); string resources; AI write-in-locale
 // 0.91.0 - Allowlisted utility QL apps (Settings) get grace on leave; harden unlock instrumented test
 // 0.90.0 - Fix SlotFolderOperationsInstrumentedTest casting List as Folder
 // 0.89.1 - Document CRAP gate status; fix Kotlin mangled-name joining in compute_crap.py
@@ -27,5 +34,5 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.91.0"
+    const val versionName = "0.96.1"
 }

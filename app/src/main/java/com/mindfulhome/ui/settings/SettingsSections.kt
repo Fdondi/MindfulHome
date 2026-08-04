@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.settings
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import android.app.TimePickerDialog
 import android.content.ClipData
@@ -45,13 +48,42 @@ import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.ai.backend.BackendHttpException
+import com.mindfulhome.locale.LocaleHelper
 import com.mindfulhome.logging.DailyLogSummaryGenerator
 import com.mindfulhome.service.ForegroundAppAccessibilityService
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.ui.common.LanguagePickerList
 import com.mindfulhome.ui.common.VersionLabel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+@Composable
+internal fun LanguageSection() {
+    val context = LocalContext.current
+    var selected by remember { mutableStateOf(SettingsManager.getAppLanguage(context)) }
+
+    SectionHeader(stringResource(R.string.settings_language))
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.settings_language_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            LanguagePickerList(
+                selected = selected,
+                onSelect = { language ->
+                    if (language == selected) return@LanguagePickerList
+                    // setApplicationLocales recreates activities with the new configuration.
+                    LocaleHelper.setLanguage(context, language)
+                },
+            )
+        }
+    }
+    Spacer(modifier = Modifier.height(16.dp))
+}
 
 @Composable
 internal fun PermissionsSection(
@@ -67,12 +99,14 @@ internal fun PermissionsSection(
     accessibilityEnabled: Boolean,
 ) {
     val context = LocalContext.current
-    SectionHeader("Permissions")
+    SectionHeader(stringResource(R.string.permissions))
 
     val usage = permissionCardCopy(
+        context,
         SettingsPermissionKind.UsageAccess,
         granted = hasUsageStats,
         skippedPrompt = skippedUsagePrompt,
+        permissionTitle = stringResource(R.string.usage_access),
     )
     SettingsCard(
         title = usage.title,
@@ -90,9 +124,11 @@ internal fun PermissionsSection(
     Spacer(modifier = Modifier.height(8.dp))
 
     val notification = permissionCardCopy(
+        context,
         SettingsPermissionKind.Notification,
         granted = hasNotificationPermission,
         skippedPrompt = skippedNotificationPrompt,
+        permissionTitle = stringResource(R.string.notification_permission),
     )
     SettingsCard(
         title = notification.title,
@@ -114,9 +150,11 @@ internal fun PermissionsSection(
     Spacer(modifier = Modifier.height(8.dp))
 
     val overlay = permissionCardCopy(
+        context,
         SettingsPermissionKind.Overlay,
         granted = hasOverlayPermission,
         skippedPrompt = skippedOverlayPrompt,
+        permissionTitle = stringResource(R.string.overlay_permission),
     )
     SettingsCard(
         title = overlay.title,
@@ -139,6 +177,7 @@ internal fun PermissionsSection(
     Spacer(modifier = Modifier.height(8.dp))
 
     val accessibility = permissionCardCopy(
+        context,
         SettingsPermissionKind.Accessibility,
         granted = accessibilityEnabled,
     )
@@ -152,7 +191,7 @@ internal fun PermissionsSection(
             } catch (_: Exception) {
                 Toast.makeText(
                     context,
-                    "Couldn't open Accessibility settings on this device.",
+                    context.getString(R.string.couldn_t_open_accessibility_settings_on_this_dev),
                     Toast.LENGTH_SHORT,
                 ).show()
             }
@@ -163,7 +202,7 @@ internal fun PermissionsSection(
 @Composable
 internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
     val context = LocalContext.current
-    SectionHeader("Behavior")
+    SectionHeader(stringResource(R.string.behavior))
 
     var focusTimeEnabled by remember {
         mutableStateOf(SettingsManager.isFocusTimeEnabled(context))
@@ -179,13 +218,12 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Focus Time (AI-first)",
+                        text = stringResource(R.string.focus_time_ai_first),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = "During active intervals, launcher stays hidden after timer. " +
-                            "Use AI to open non-Quick Launch apps.",
+                        text = stringResource(R.string.focus_time_description),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -204,7 +242,7 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
 
             if (focusTimeIntervals.isEmpty()) {
                 Text(
-                    text = "No intervals configured.",
+                    text = stringResource(R.string.no_intervals_configured),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -258,7 +296,7 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
                             focusTimeIntervals = updated
                             SettingsManager.setFocusTimeIntervals(context, updated)
                         }) {
-                            Text("Remove")
+                            Text(stringResource(R.string.remove))
                         }
                     }
                 }
@@ -273,7 +311,7 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
                 },
                 modifier = Modifier.padding(top = 4.dp),
             ) {
-                Text("Add interval")
+                Text(stringResource(R.string.add_interval))
             }
         }
     }
@@ -289,13 +327,12 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Focus Gate Length",
+                text = stringResource(R.string.focus_gate_length),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Back-and-forths in the focus time gate chat: minimum before " +
-                    "Proceed can appear, maximum before access is granted automatically.",
+                text = stringResource(R.string.focus_gate_length_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -324,7 +361,7 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "min ${focusGateMinRounds.toInt()}",
+                    text = stringResource(R.string.min_rounds_label, focusGateMinRounds.toInt()),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                 )
@@ -351,7 +388,7 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "max ${focusGateMaxRounds.toInt()}",
+                    text = stringResource(R.string.max_rounds_label, focusGateMaxRounds.toInt()),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Medium,
                 )
@@ -372,12 +409,12 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Developer Logs",
+                        text = stringResource(R.string.developer_logs),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = "When enabled, chat logs include tool calls, parameters, responses, and fallback/override reasons.",
+                        text = stringResource(R.string.when_enabled_chat_logs_include_tool_calls_parame),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 4.dp),
@@ -402,13 +439,12 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Quick Return Window",
+                text = stringResource(R.string.quick_return_window),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "If you come back within this window and a timer is " +
-                    "still running, skip the timer screen.",
+                text = stringResource(R.string.quick_return_window_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -446,13 +482,12 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Timing & intervals",
+                text = stringResource(R.string.timing_intervals),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Polling (Quick Launch, usage cache, nudge loop), timer notification refresh, " +
-                    "and all nudge timing intervals. Larger steps save battery.",
+                text = stringResource(R.string.timing_intervals_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -463,7 +498,7 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
                     .fillMaxWidth()
                     .padding(top = 12.dp),
             ) {
-                Text("Open timing & intervals")
+                Text(stringResource(R.string.open_timing_intervals))
             }
         }
     }
@@ -476,12 +511,12 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Bubbles Before Banners",
+                text = stringResource(R.string.bubbles_before_banners),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "After this many bubbles, switch to full-width banners.",
+                text = stringResource(R.string.after_this_many_bubbles_switch_to_full_width_ban),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -522,13 +557,12 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Strikes Before Hiding",
+                text = stringResource(R.string.strikes_before_hiding),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "How many bad-karma points an app accumulates before " +
-                    "it is hidden from the home screen.",
+                text = stringResource(R.string.strikes_before_hiding_description),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
@@ -575,17 +609,17 @@ internal fun AiModelSection(
     val context = LocalContext.current
     var signInInProgress by remember { mutableStateOf(false) }
 
-    SectionHeader("AI Model")
+    SectionHeader(stringResource(R.string.ai_model))
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Model Source",
+                text = stringResource(R.string.model_source),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Choose where AI processing runs",
+                text = stringResource(R.string.choose_where_ai_processing_runs),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
@@ -605,12 +639,12 @@ internal fun AiModelSection(
                 Spacer(modifier = Modifier.width(4.dp))
                 Column {
                     Text(
-                        text = "On-device (LiteRT-LM)",
+                        text = stringResource(R.string.on_device_litert_lm),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = "Private, works offline. Requires downloading a model.",
+                        text = stringResource(R.string.private_works_offline_requires_downloading_a_mod),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -633,12 +667,12 @@ internal fun AiModelSection(
                 Spacer(modifier = Modifier.width(4.dp))
                 Column {
                     Text(
-                        text = "Remote (Gemini)",
+                        text = stringResource(R.string.remote_gemini),
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        text = "More capable. Requires Google sign-in and internet.",
+                        text = stringResource(R.string.more_capable_requires_google_sign_in_and_interne),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -670,14 +704,14 @@ private fun OnDeviceModelCard(hasModel: Boolean) {
     val context = LocalContext.current
     val sharedDir = LiteRtLmManager.SHARED_MODEL_DIR
     SettingsCard(
-        title = "LiteRT-LM Model",
+        title = stringResource(R.string.litert_lm_model),
         description = onDeviceModelDescription(hasModel, sharedDir.absolutePath),
-        actionLabel = if (hasModel) null else "Copy adb Command",
+        actionLabel = if (hasModel) null else stringResource(R.string.copy_adb_command),
         onAction = {
             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
             val cmd = "adb push model.litertlm ${sharedDir.absolutePath}/"
-            clipboard.setPrimaryClip(ClipData.newPlainText("adb push command", cmd))
-            Toast.makeText(context, "adb command copied to clipboard", Toast.LENGTH_SHORT).show()
+            clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.adb_push_command), cmd))
+            Toast.makeText(context, context.getString(R.string.adb_command_copied_to_clipboard), Toast.LENGTH_SHORT).show()
         },
     )
 }
@@ -726,7 +760,7 @@ private fun BackendSignInCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Google Account",
+                text = stringResource(R.string.google_account),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
@@ -766,18 +800,18 @@ private fun BackendSignedInBody(
     onSignOut: () -> Unit,
 ) {
     Text(
-        text = signedInEmail ?: "Signed in with Google",
+        text = signedInEmail ?: stringResource(R.string.signed_in_with_google),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.primary,
     )
     Spacer(modifier = Modifier.height(4.dp))
     Text(
-        text = "Remote AI is active. Conversations are processed via the Gemini backend.",
+        text = stringResource(R.string.remote_ai_is_active_conversations_are_processed_),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(modifier = Modifier.height(8.dp))
-    TextButton(onClick = onSignOut) { Text("Sign out") }
+    TextButton(onClick = onSignOut) { Text(stringResource(R.string.sign_out)) }
 }
 
 @Composable
@@ -786,20 +820,25 @@ private fun BackendSignedOutBody(
     onSignInClick: () -> Unit,
 ) {
     Text(
-        text = "Not signed in",
+        text = stringResource(R.string.not_signed_in),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.error,
     )
     Spacer(modifier = Modifier.height(4.dp))
     Text(
-        text = "Sign in with your Google account to use the remote Gemini model. " +
-            "Without signing in, the app will fall back to on-device responses.",
+        text = stringResource(R.string.backend_sign_in_description),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(modifier = Modifier.height(12.dp))
     Button(onClick = onSignInClick, enabled = !signInInProgress) {
-        Text(if (signInInProgress) "Signing in..." else "Sign in with Google")
+        Text(
+            if (signInInProgress) {
+                stringResource(R.string.signing_in)
+            } else {
+                stringResource(R.string.sign_in_with_google)
+            }
+        )
     }
 }
 
@@ -813,12 +852,12 @@ private fun BackendModelPickerCard(
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "AI Model",
+                text = stringResource(R.string.ai_model),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
             Text(
-                text = "Choose which Gemini model to use",
+                text = stringResource(R.string.choose_which_gemini_model_to_use),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
@@ -864,13 +903,13 @@ private suspend fun runBackendSignIn(
     try {
         val result = AuthManager.signIn(context)
         if (result == null) {
-            Toast.makeText(context, "Google Sign-In was cancelled or failed", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, context.getString(R.string.google_sign_in_was_cancelled_or_failed), Toast.LENGTH_LONG).show()
             onDone()
             return
         }
         completeBackendSignInExchange(context, result, onSignedInChange)
     } catch (_: NoCredentialException) {
-        Toast.makeText(context, "No Google account found. Opening account setup\u2026", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, context.getString(R.string.no_google_account_found_opening_account_setup_u2), Toast.LENGTH_LONG).show()
         context.startActivity(
             Intent(Settings.ACTION_ADD_ACCOUNT).apply {
                 putExtra(Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
@@ -917,10 +956,10 @@ internal fun GatePromptsSection(
     onFocusGatePromptsCustomChange: (Boolean) -> Unit,
 ) {
     val context = LocalContext.current
-    SectionHeader("Gate prompts")
+    SectionHeader(stringResource(R.string.gate_prompts))
 
     GatePromptEditorCard(
-        title = "App gatekeeper",
+        title = stringResource(R.string.app_gatekeeper),
         usingCustom = gatekeeperPromptsCustom,
         systemPrompt = gatekeeperSystemPrompt,
         onSystemPromptChange = onGatekeeperSystemPromptChange,
@@ -935,21 +974,21 @@ internal fun GatePromptsSection(
                 gatekeeperContextTemplate,
             )
             onGatekeeperPromptsCustomChange(SettingsManager.hasCustomGatekeeperPrompts(context))
-            Toast.makeText(context, "Gatekeeper prompts saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.gatekeeper_prompts_saved), Toast.LENGTH_SHORT).show()
         },
         onReset = {
             SettingsManager.resetGatekeeperPrompts(context)
             onGatekeeperSystemPromptChange(PromptTemplates.DEFAULT_GATEKEEPER_SYSTEM_PROMPT)
             onGatekeeperContextTemplateChange(PromptTemplates.DEFAULT_GATEKEEPER_CONTEXT_TEMPLATE)
             onGatekeeperPromptsCustomChange(false)
-            Toast.makeText(context, "Gatekeeper prompts reset to default", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.gatekeeper_prompts_reset_to_default), Toast.LENGTH_SHORT).show()
         },
     )
 
     Spacer(modifier = Modifier.height(12.dp))
 
     GatePromptEditorCard(
-        title = "Focus time gate",
+        title = stringResource(R.string.focus_time_gate),
         usingCustom = focusGatePromptsCustom,
         systemPrompt = focusGateSystemPrompt,
         onSystemPromptChange = onFocusGateSystemPromptChange,
@@ -964,14 +1003,14 @@ internal fun GatePromptsSection(
                 focusGateContextTemplate,
             )
             onFocusGatePromptsCustomChange(SettingsManager.hasCustomFocusGatePrompts(context))
-            Toast.makeText(context, "Focus gate prompts saved", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.focus_gate_prompts_saved), Toast.LENGTH_SHORT).show()
         },
         onReset = {
             SettingsManager.resetFocusGatePrompts(context)
             onFocusGateSystemPromptChange(PromptTemplates.DEFAULT_FOCUS_GATE_SYSTEM_PROMPT)
             onFocusGateContextTemplateChange(PromptTemplates.DEFAULT_FOCUS_GATE_CONTEXT_TEMPLATE)
             onFocusGatePromptsCustomChange(false)
-            Toast.makeText(context, "Focus gate prompts reset to default", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, context.getString(R.string.focus_gate_prompts_reset_to_default), Toast.LENGTH_SHORT).show()
         },
     )
 }
@@ -988,12 +1027,12 @@ internal fun DailyLogSummariesSection(
     var dailySummaryRegenerateN by remember { mutableStateOf("0") }
     var dailySummarySaveBusy by remember { mutableStateOf(false) }
 
-    SectionHeader("Daily log summaries")
+    SectionHeader(stringResource(R.string.daily_log_summaries))
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Summarization prompt",
+                text = stringResource(R.string.summarization_prompt),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Medium,
             )
@@ -1018,7 +1057,7 @@ internal fun DailyLogSummariesSection(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(180.dp),
-                label = { Text("Instructions") },
+                label = { Text(stringResource(R.string.instructions)) },
                 minLines = 6,
             )
             Spacer(modifier = Modifier.height(10.dp))
@@ -1028,7 +1067,7 @@ internal fun DailyLogSummariesSection(
                     parseNonNegativeIntOrEmpty(v)?.let { dailySummaryRegenerateN = it }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Regenerate last N summaries with an older prompt") },
+                label = { Text(stringResource(R.string.regenerate_last_n_summaries_with_an_older_prompt)) },
                 supportingText = {
                     Text(
                         "0 skips. After save, re-runs the newest days that were produced " +
@@ -1117,17 +1156,17 @@ private fun saveDailySummaryPrompt(
 
 @Composable
 internal fun AboutSection() {
-    SectionHeader("About")
+    SectionHeader(stringResource(R.string.about))
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "MindfulHome",
+                text = stringResource(R.string.mindfulhome),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "A home launcher that nags, never blocks.",
+                text = stringResource(R.string.a_home_launcher_that_nags_never_blocks),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1215,7 +1254,7 @@ private fun GatePromptEditorCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(160.dp),
-                label = { Text("System prompt") },
+                label = { Text(stringResource(R.string.system_prompt)) },
                 minLines = 5,
             )
             Spacer(modifier = Modifier.height(10.dp))
@@ -1225,7 +1264,7 @@ private fun GatePromptEditorCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(220.dp),
-                label = { Text("Context template") },
+                label = { Text(stringResource(R.string.context_template)) },
                 supportingText = {
                     Text(
                         text = contextPlaceholderHelp,
@@ -1237,11 +1276,11 @@ private fun GatePromptEditorCard(
             Spacer(modifier = Modifier.height(8.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(onClick = onSave) {
-                    Text("Save")
+                    Text(stringResource(R.string.save))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 TextButton(onClick = onReset) {
-                    Text("Reset to default")
+                    Text(stringResource(R.string.reset_to_default))
                 }
             }
         }

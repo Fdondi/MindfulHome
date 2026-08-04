@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.quicklaunch
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -280,11 +283,11 @@ private fun FolderDropSecondaryIcon(hovering: Boolean, timer: Boolean) {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
     if (timer) {
-        Icon(Icons.Outlined.Timer, contentDescription = "Drop to edit timer", tint = tint)
+        Icon(Icons.Outlined.Timer, contentDescription = stringResource(R.string.drop_to_edit_timer), tint = tint)
     } else {
         Icon(
             Icons.AutoMirrored.Filled.ArrowForward,
-            contentDescription = "Drop to move out of folder",
+            contentDescription = stringResource(R.string.drop_to_move_out_of_folder),
             tint = tint,
         )
     }

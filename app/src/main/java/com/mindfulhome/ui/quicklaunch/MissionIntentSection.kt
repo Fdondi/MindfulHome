@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.quicklaunch
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -86,7 +89,7 @@ fun MissionIntentSection(
     ) {
         if (hasEmptyNamedFolder) {
             Text(
-                text = "Name folders after what you're trying to do — then add the apps that help.",
+                text = stringResource(R.string.name_folders_after_what_you_re_trying_to_do_then),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth(),
@@ -121,9 +124,9 @@ fun MissionIntentSection(
             beforeAddAuxTiles = listOfNotNull(
                 resumeTile,
                 QuickLaunchAuxTile(
-                    label = "something else?",
+                    label = stringResource(R.string.something_else_question),
                     onClick = onOpenTimerPlain,
-                    contentDescription = "Open timer without prefill",
+                    contentDescription = stringResource(R.string.open_timer_without_prefill),
                 ),
             ),
         )

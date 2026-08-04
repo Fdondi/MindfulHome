@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.defaultpage
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
@@ -107,21 +110,21 @@ fun DefaultPageScreen(
             IconButton(onClick = onOpenLogs) {
                 Icon(
                     Icons.AutoMirrored.Filled.Article,
-                    contentDescription = "Session logs",
+                    contentDescription = stringResource(R.string.session_logs_2),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             IconButton(onClick = onOpenKarma) {
                 Icon(
                     Icons.Default.Stars,
-                    contentDescription = "Karma",
+                    contentDescription = stringResource(R.string.karma),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             IconButton(onClick = onOpenSettings) {
                 Icon(
                     Icons.Default.Settings,
-                    contentDescription = "Settings",
+                    contentDescription = stringResource(R.string.settings),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -146,7 +149,7 @@ fun DefaultPageScreen(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Todo Widget",
+                        stringResource(R.string.todo_widget),
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.weight(1f),
                     )
@@ -157,12 +160,12 @@ fun DefaultPageScreen(
                             )
                         },
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Add todo")
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_todo))
                     }
                 }
                 if (todoItems.isEmpty()) {
                     Text(
-                        "No open items yet.",
+                        stringResource(R.string.no_open_items_yet),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
@@ -194,7 +197,7 @@ fun DefaultPageScreen(
         }
 
         Text(
-            text = "What is your mission?",
+            text = stringResource(R.string.what_is_your_mission),
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.fillMaxWidth(),
         )
@@ -261,9 +264,9 @@ private fun TodoRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        IconButton(onClick = onComplete) { Icon(Icons.Default.Check, contentDescription = "Complete") }
-        IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
-        IconButton(onClick = onStart) { Icon(Icons.Default.PlayArrow, contentDescription = "Start") }
+        IconButton(onClick = onComplete) { Icon(Icons.Default.Check, contentDescription = stringResource(R.string.complete)) }
+        IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit)) }
+        IconButton(onClick = onStart) { Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.start)) }
     }
 }
 
@@ -278,7 +281,7 @@ private fun TodoEditorDialog(
     var local by remember(state) { mutableStateOf(state) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (state.id == null) "Add todo" else "Edit todo") },
+        title = { Text(if (state.id == null) stringResource(R.string.add_todo) else "Edit todo") },
         text = {
             TodoEditorDialogFields(
                 local = local,
@@ -287,8 +290,8 @@ private fun TodoEditorDialog(
                 context = context,
             )
         },
-        confirmButton = { TextButton(onClick = { onSave(local) }) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = { onSave(local) }) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -303,16 +306,17 @@ private fun TodoEditorDialogFields(
         OutlinedTextField(
             value = local.intent,
             onValueChange = { onLocalChange(local.copy(intent = it)) },
-            label = { Text("Intent") },
+            label = { Text(stringResource(R.string.intent)) },
             modifier = Modifier.fillMaxWidth(),
         )
         OutlinedTextField(
             value = local.durationMinutes,
             onValueChange = { onLocalChange(local.copy(durationMinutes = it.filter(Char::isDigit))) },
-            label = { Text("Duration (minutes)") },
+            label = { Text(stringResource(R.string.duration_minutes)) },
             modifier = Modifier.fillMaxWidth(),
         )
-        val deadlineLabel = local.deadlineEpochMs?.let { formatter.format(Date(it)) } ?: "No deadline"
+        val deadlineLabel = local.deadlineEpochMs?.let { formatter.format(Date(it)) }
+            ?: stringResource(R.string.no_deadline)
         TodoDeadlineRow(
             deadlineLabel = deadlineLabel,
             onPick = {
@@ -326,7 +330,13 @@ private fun TodoEditorDialogFields(
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             (1..4).forEach { p ->
                 Button(onClick = { onLocalChange(local.copy(priority = p)) }) {
-                    Text("P$p${if (local.priority == p) "*" else ""}")
+                    Text(
+                        if (local.priority == p) {
+                            stringResource(R.string.priority_selected, p)
+                        } else {
+                            stringResource(R.string.priority_unselected, p)
+                        }
+                    )
                 }
             }
         }
@@ -349,8 +359,8 @@ private fun TodoDeadlineRow(
             modifier = Modifier.weight(1f),
             style = MaterialTheme.typography.bodyMedium,
         )
-        TextButton(onClick = onPick) { Text("Pick") }
-        TextButton(onClick = onClear) { Text("Clear") }
+        TextButton(onClick = onPick) { Text(stringResource(R.string.pick)) }
+        TextButton(onClick = onClear) { Text(stringResource(R.string.clear)) }
     }
 }
 

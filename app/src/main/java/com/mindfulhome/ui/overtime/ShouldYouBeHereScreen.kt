@@ -1,4 +1,5 @@
 package com.mindfulhome.ui.overtime
+import androidx.compose.ui.res.stringResource
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -48,7 +49,7 @@ fun ShouldYouBeHereScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "Should you be here?",
+            text = stringResource(R.string.should_you_be_here),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground,
@@ -80,7 +81,7 @@ fun ShouldYouBeHereScreen(
             )
             Spacer(modifier = Modifier.size(16.dp))
             Text(
-                text = "I'll do something else",
+                text = stringResource(R.string.i_ll_do_something_else),
                 style = MaterialTheme.typography.titleMedium,
             )
         }
@@ -105,7 +106,7 @@ fun ShouldYouBeHereScreen(
             )
             Spacer(modifier = Modifier.size(16.dp))
             Text(
-                text = "…yeah I need to finish this thing",
+                text = stringResource(R.string.yeah_i_need_to_finish_this_thing),
                 style = MaterialTheme.typography.titleMedium,
             )
         }

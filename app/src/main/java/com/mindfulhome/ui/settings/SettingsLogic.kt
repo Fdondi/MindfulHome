@@ -1,5 +1,7 @@
 package com.mindfulhome.ui.settings
 
+import android.content.Context
+import com.mindfulhome.R
 import com.mindfulhome.settings.SettingsManager
 
 data class PermissionCardCopy(
@@ -16,66 +18,106 @@ enum class SettingsPermissionKind {
 }
 
 fun permissionCardCopy(
+    context: Context,
     kind: SettingsPermissionKind,
     granted: Boolean,
     skippedPrompt: Boolean = false,
+    permissionTitle: String? = null,
+): PermissionCardCopy = permissionCardCopy(
+    getString = context::getString,
+    kind = kind,
+    granted = granted,
+    skippedPrompt = skippedPrompt,
+    permissionTitle = permissionTitle,
+)
+
+internal fun permissionCardCopy(
+    getString: (Int) -> String,
+    kind: SettingsPermissionKind,
+    granted: Boolean,
+    skippedPrompt: Boolean = false,
+    permissionTitle: String? = null,
 ): PermissionCardCopy = when (kind) {
-    SettingsPermissionKind.UsageAccess -> usageAccessCardCopy(granted, skippedPrompt)
-    SettingsPermissionKind.Notification -> notificationCardCopy(granted, skippedPrompt)
-    SettingsPermissionKind.Overlay -> overlayCardCopy(granted, skippedPrompt)
-    SettingsPermissionKind.Accessibility -> accessibilityCardCopy(granted)
+    SettingsPermissionKind.UsageAccess -> {
+        require(permissionTitle != null)
+        usageAccessCardCopy(getString, granted, skippedPrompt, permissionTitle)
+    }
+    SettingsPermissionKind.Notification -> {
+        require(permissionTitle != null)
+        notificationCardCopy(getString, granted, skippedPrompt, permissionTitle)
+    }
+    SettingsPermissionKind.Overlay -> {
+        require(permissionTitle != null)
+        overlayCardCopy(getString, granted, skippedPrompt, permissionTitle)
+    }
+    SettingsPermissionKind.Accessibility -> accessibilityCardCopy(getString, granted)
 }
 
-private fun usageAccessCardCopy(granted: Boolean, skippedPrompt: Boolean) = PermissionCardCopy(
-    title = "Usage Access",
+private fun usageAccessCardCopy(
+    getString: (Int) -> String,
+    granted: Boolean,
+    skippedPrompt: Boolean,
+    title: String,
+) = PermissionCardCopy(
+    title = title,
     description = when {
-        granted -> "Granted. MindfulHome can track which app is in the foreground."
-        skippedPrompt -> "Missing. You chose to skip permission reminders. Grant anytime from here."
-        else -> "Required for karma tracking. Tap to grant."
+        granted -> getString(R.string.perm_usage_granted)
+        skippedPrompt -> getString(R.string.perm_skipped)
+        else -> getString(R.string.perm_usage_required)
     },
-    actionLabel = if (granted) null else "Grant",
+    actionLabel = if (granted) null else getString(R.string.grant),
 )
 
-private fun notificationCardCopy(granted: Boolean, skippedPrompt: Boolean) = PermissionCardCopy(
-    title = "Notification Permission",
+private fun notificationCardCopy(
+    getString: (Int) -> String,
+    granted: Boolean,
+    skippedPrompt: Boolean,
+    title: String,
+) = PermissionCardCopy(
+    title = title,
     description = when {
-        granted -> "Granted. MindfulHome can show timer and nudge notifications."
-        skippedPrompt -> "Missing. You chose to skip permission reminders. Grant anytime from here."
-        else -> "Required for timer countdown and nudge notifications."
+        granted -> getString(R.string.perm_notification_granted)
+        skippedPrompt -> getString(R.string.perm_skipped)
+        else -> getString(R.string.perm_notification_required)
     },
-    actionLabel = if (granted) "Open Settings" else "Grant",
-)
-
-private fun overlayCardCopy(granted: Boolean, skippedPrompt: Boolean) = PermissionCardCopy(
-    title = "Overlay Permission",
-    description = when {
-        granted -> "Granted. Nudge reminders will appear over any app."
-        skippedPrompt -> "Missing. You chose to skip permission reminders. Grant anytime from here."
-        else -> "Not granted. Nudges will only appear as notifications, " +
-            "which Android may silence over time. Tap to grant."
-    },
-    actionLabel = if (granted) null else "Grant",
-)
-
-private fun accessibilityCardCopy(granted: Boolean) = PermissionCardCopy(
-    title = if (granted) {
-        "App-switch detection — On ✓"
+    actionLabel = if (granted) {
+        getString(R.string.open_settings)
     } else {
-        "App-switch detection — Off (optional)"
+        getString(R.string.grant)
+    },
+)
+
+private fun overlayCardCopy(
+    getString: (Int) -> String,
+    granted: Boolean,
+    skippedPrompt: Boolean,
+    title: String,
+) = PermissionCardCopy(
+    title = title,
+    description = when {
+        granted -> getString(R.string.perm_overlay_granted)
+        skippedPrompt -> getString(R.string.perm_skipped)
+        else -> getString(R.string.perm_overlay_required)
+    },
+    actionLabel = if (granted) null else getString(R.string.grant),
+)
+
+private fun accessibilityCardCopy(getString: (Int) -> String, granted: Boolean) = PermissionCardCopy(
+    title = if (granted) {
+        getString(R.string.perm_accessibility_on_title)
+    } else {
+        getString(R.string.perm_accessibility_off_title)
     },
     description = if (granted) {
-        "On. MindfulHome is notified the instant you switch apps, so it reacts " +
-            "immediately and no longer polls in the background — better for battery. " +
-            "It only reads which app is in front, never your screen content."
+        getString(R.string.perm_accessibility_on_description)
     } else {
-        "Off. Right now MindfulHome checks the foreground app on a timer, which " +
-            "uses more battery. Turn this on and MindfulHome is told the moment you " +
-            "switch apps instead — faster reactions, less battery. It reads only " +
-            "which app is in front, never your screen content.\n\n" +
-            "To enable: tap below, find MindfulHome under Installed/Downloaded apps, " +
-            "and switch it on."
+        getString(R.string.perm_accessibility_off_description)
     },
-    actionLabel = if (granted) "Open Accessibility settings" else "Enable",
+    actionLabel = if (granted) {
+        getString(R.string.open_accessibility_settings)
+    } else {
+        getString(R.string.enable)
+    },
 )
 
 fun formatMinutesOfDay(minutes: Int): String {

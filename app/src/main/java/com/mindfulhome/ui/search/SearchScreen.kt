@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.search
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -81,7 +84,7 @@ fun SearchOverlay(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close search")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.close_search))
                 }
 
                 TextField(
@@ -90,7 +93,7 @@ fun SearchOverlay(
                     modifier = Modifier
                         .weight(1f)
                         .focusRequester(focusRequester),
-                    placeholder = { Text("Search apps...") },
+                    placeholder = { Text(stringResource(R.string.search_apps)) },
                     singleLine = true,
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
@@ -99,7 +102,7 @@ fun SearchOverlay(
                     trailingIcon = {
                         if (query.isNotEmpty()) {
                             IconButton(onClick = { query = "" }) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear")
+                                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear))
                             }
                         }
                     }
@@ -143,7 +146,7 @@ fun SearchOverlay(
                         IconButton(onClick = { onAddToDock(app) }) {
                             Icon(
                                 Icons.Default.PushPin,
-                                contentDescription = "Add to dock",
+                                contentDescription = stringResource(R.string.add_to_dock),
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }

@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.shortcut
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -58,18 +61,18 @@ fun AddToIntentFolderDialog(
     if (showNewFolderPrompt) {
         AlertDialog(
             onDismissRequest = { showNewFolderPrompt = false },
-            title = { Text("New intent folder") },
+            title = { Text(stringResource(R.string.new_intent_folder_2)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Name this folder after your goal, not the app.",
+                        text = stringResource(R.string.name_this_folder_after_your_goal_not_the_app),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     OutlinedTextField(
                         value = newFolderName,
                         onValueChange = { newFolderName = it },
-                        label = { Text("Intent name") },
+                        label = { Text(stringResource(R.string.intent_name)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                     )
@@ -84,12 +87,12 @@ fun AddToIntentFolderDialog(
                         }
                     },
                 ) {
-                    Text("Add")
+                    Text(stringResource(R.string.add))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showNewFolderPrompt = false }) {
-                    Text("Back")
+                    Text(stringResource(R.string.back))
                 }
             },
         )
@@ -97,7 +100,7 @@ fun AddToIntentFolderDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to intent folder") },
+        title = { Text(stringResource(R.string.add_to_intent_folder)) },
         text = {
             Column {
                 Row(
@@ -122,7 +125,7 @@ fun AddToIntentFolderDialog(
                 }
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "Choose an existing intent, or create a new one.",
+                    text = stringResource(R.string.choose_an_existing_intent_or_create_a_new_one),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -158,7 +161,7 @@ fun AddToIntentFolderDialog(
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Text(
-                                text = "New intent folder…",
+                                text = stringResource(R.string.new_intent_folder),
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                         }
@@ -169,7 +172,7 @@ fun AddToIntentFolderDialog(
         confirmButton = {},
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         },
     )

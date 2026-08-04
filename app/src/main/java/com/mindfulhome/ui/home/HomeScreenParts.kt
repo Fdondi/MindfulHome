@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.home
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -80,7 +83,7 @@ internal fun HomeTopBar(
         OutlinedButton(onClick = onTimerClick) {
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back to timer",
+                contentDescription = stringResource(R.string.back_to_timer),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
             Icon(
@@ -99,25 +102,25 @@ internal fun HomeTopBar(
         OutlinedButton(onClick = onHomeClick) {
             Icon(
                 Icons.Default.Home,
-                contentDescription = "Home",
+                contentDescription = stringResource(R.string.home),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }
         Spacer(modifier = Modifier.weight(1f))
         IconButton(onClick = onSearchClick) {
-            Icon(Icons.Default.Search, contentDescription = "Search apps", tint = MaterialTheme.colorScheme.onBackground)
+            Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search_apps_2), tint = MaterialTheme.colorScheme.onBackground)
         }
         IconButton(onClick = onLogsClick) {
-            Icon(Icons.AutoMirrored.Filled.Article, contentDescription = "Session logs", tint = MaterialTheme.colorScheme.onBackground)
+            Icon(Icons.AutoMirrored.Filled.Article, contentDescription = stringResource(R.string.session_logs_2), tint = MaterialTheme.colorScheme.onBackground)
         }
         IconButton(onClick = onKarmaClick) {
-            Icon(Icons.Default.Stars, contentDescription = "Karma", tint = MaterialTheme.colorScheme.onBackground)
+            Icon(Icons.Default.Stars, contentDescription = stringResource(R.string.karma), tint = MaterialTheme.colorScheme.onBackground)
         }
         IconButton(onClick = onSettingsClick) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onBackground)
+            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings), tint = MaterialTheme.colorScheme.onBackground)
         }
         IconButton(onClick = onAiClick) {
-            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "Talk to AI", tint = MaterialTheme.colorScheme.onBackground)
+            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = stringResource(R.string.talk_to_ai), tint = MaterialTheme.colorScheme.onBackground)
         }
     }
 }
@@ -131,7 +134,7 @@ internal fun HomeSuggestedAppsRow(
     if (suggestedApps.isEmpty()) return
     Column(modifier = Modifier.padding(horizontal = 16.dp)) {
         Text(
-            text = "Suggested",
+            text = stringResource(R.string.suggested),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(bottom = 4.dp),

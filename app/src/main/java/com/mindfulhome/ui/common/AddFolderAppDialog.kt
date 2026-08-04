@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.common
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
@@ -68,7 +71,7 @@ fun AddFolderAppDialog(
                     )
                 }
                 Text(
-                    text = "Timed apps launch right away and start a background timer. Unlimited apps stay on the session allowlist with no timer.",
+                    text = stringResource(R.string.timed_apps_launch_right_away_and_start_a_backgro),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -77,7 +80,7 @@ fun AddFolderAppDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Unlimited (no timer)")
+                    Text(stringResource(R.string.unlimited_no_timer))
                     Switch(
                         checked = unlimited,
                         onCheckedChange = { unlimited = it },
@@ -87,7 +90,7 @@ fun AddFolderAppDialog(
                     OutlinedTextField(
                         value = minutesText,
                         onValueChange = { minutesText = it.filter { ch -> ch.isDigit() } },
-                        label = { Text("Minutes") },
+                        label = { Text(stringResource(R.string.minutes)) },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                         modifier = Modifier.fillMaxWidth(),
@@ -107,7 +110,7 @@ fun AddFolderAppDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         },
     )

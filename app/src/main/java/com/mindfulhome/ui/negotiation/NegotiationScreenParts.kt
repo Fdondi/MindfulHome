@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.negotiation
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -77,7 +80,7 @@ internal fun NegotiationTopBar(
         OutlinedButton(onClick = onTimerClick) {
             Icon(
                 Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = "Back to timer",
+                contentDescription = stringResource(R.string.back_to_timer),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
             Icon(
@@ -96,7 +99,7 @@ internal fun NegotiationTopBar(
         OutlinedButton(onClick = onOpenDefault) {
             Icon(
                 Icons.Default.Home,
-                contentDescription = "Home",
+                contentDescription = stringResource(R.string.home),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }
@@ -106,21 +109,21 @@ internal fun NegotiationTopBar(
         IconButton(onClick = onOpenLogs) {
             Icon(
                 Icons.AutoMirrored.Filled.Article,
-                contentDescription = "Session logs",
+                contentDescription = stringResource(R.string.session_logs_2),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }
         IconButton(onClick = onOpenKarma) {
             Icon(
                 Icons.Default.Stars,
-                contentDescription = "Karma",
+                contentDescription = stringResource(R.string.karma),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }
         IconButton(onClick = onOpenSettings) {
             Icon(
                 Icons.Default.Settings,
-                contentDescription = "Settings",
+                contentDescription = stringResource(R.string.settings),
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }
@@ -140,7 +143,7 @@ internal fun NegotiationTopBar(
         },
         navigationIcon = {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
             }
         },
     )
@@ -230,7 +233,7 @@ internal fun ChatInputBar(
             value = userInput,
             onValueChange = onUserInputChange,
             modifier = Modifier.weight(1f),
-            placeholder = { Text("Type your response...") },
+            placeholder = { Text(stringResource(R.string.type_your_response)) },
             singleLine = false,
             maxLines = 3,
             colors = TextFieldDefaults.colors(
@@ -261,7 +264,7 @@ internal fun ChatInputBar(
         ) {
             Icon(
                 Icons.AutoMirrored.Filled.Send,
-                contentDescription = "Send",
+                contentDescription = stringResource(R.string.send),
                 tint = if (sendEnabled) {
                     MaterialTheme.colorScheme.onPrimary
                 } else {
@@ -283,7 +286,7 @@ internal fun SessionModelPickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Model for this session") },
+        title = { Text(stringResource(R.string.model_for_this_session)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(
@@ -295,7 +298,7 @@ internal fun SessionModelPickerDialog(
                         onClick = { onPickerUseBackendChange(false) },
                     )
                     Text(
-                        text = "On-device (LiteRT-LM)",
+                        text = stringResource(R.string.on_device_litert_lm),
                         modifier = Modifier.clickable { onPickerUseBackendChange(false) },
                     )
                 }
@@ -324,10 +327,10 @@ internal fun SessionModelPickerDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onApply) { Text("Apply") }
+            TextButton(onClick = onApply) { Text(stringResource(R.string.apply)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
@@ -437,7 +440,7 @@ private fun LaunchSuggestionsBubble(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Pick an app to launch:",
+                    text = stringResource(R.string.pick_an_app_to_launch),
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
                     fontSize = 14.sp,
                 )
@@ -458,7 +461,7 @@ private fun LaunchSuggestionsBubble(
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Search,
-                                    contentDescription = "Search apps",
+                                    contentDescription = stringResource(R.string.search_apps_2),
                                     tint = MaterialTheme.colorScheme.onSecondaryContainer,
                                 )
                             }

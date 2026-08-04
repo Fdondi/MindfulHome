@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.common
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -66,13 +69,13 @@ fun AddAppsDialog(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        placeholder = { Text("Search apps...") },
+                        placeholder = { Text(stringResource(R.string.search_apps)) },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth(),
                         trailingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear")
+                                    Icon(Icons.Default.Close, contentDescription = stringResource(R.string.clear))
                                 }
                             }
                         }
@@ -94,7 +97,7 @@ fun AddAppsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Done") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) }
         }
     )
 }
@@ -153,7 +156,7 @@ private fun AddAppPlacementBadges(placements: List<AppSlotPlacement>) {
                     is AppSlotPlacement.Root -> {
                         Icon(
                             imageVector = Icons.Outlined.Home,
-                            contentDescription = "On strip",
+                            contentDescription = stringResource(R.string.on_strip),
                             modifier = Modifier.size(14.dp),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -162,7 +165,7 @@ private fun AddAppPlacementBadges(placements: List<AppSlotPlacement>) {
                         MaterialSymbolGlyph(
                             symbolIconName = p.symbolIconName ?: "folder",
                             size = 14.dp,
-                            contentDescription = "In folder",
+                            contentDescription = stringResource(R.string.in_folder),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }

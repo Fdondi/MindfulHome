@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.karma
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import android.graphics.drawable.Drawable
 import android.util.Log
@@ -82,15 +85,15 @@ fun KarmaScreen(
             .navigationBarsPadding(),
     ) {
         TopAppBar(
-            title = { Text("Karma", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(R.string.karma), fontWeight = FontWeight.SemiBold) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                 }
             },
             actions = {
                 IconButton(onClick = { showPickAppDialog = true }) {
-                    Icon(Icons.Default.Add, contentDescription = "Set karma for app")
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.set_karma_for_app))
                 }
             },
         )

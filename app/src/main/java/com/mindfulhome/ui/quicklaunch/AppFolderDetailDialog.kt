@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.quicklaunch
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -70,7 +73,7 @@ fun AppFolderDetailDialog(
                     IconButton(onClick = onSymbolIconClick) {
                         Icon(
                             Icons.Outlined.Palette,
-                            contentDescription = "Choose folder symbol",
+                            contentDescription = stringResource(R.string.choose_folder_symbol),
                         )
                     }
                 }
@@ -78,7 +81,7 @@ fun AppFolderDetailDialog(
                     IconButton(onClick = onRenameIconClick) {
                         Icon(
                             Icons.Outlined.Edit,
-                            contentDescription = "Rename folder",
+                            contentDescription = stringResource(R.string.rename_folder),
                         )
                     }
                 }
@@ -100,7 +103,7 @@ fun AppFolderDetailDialog(
         },
         confirmButton = {
             TextButton(onClick = onDismiss) {
-                Text("Done")
+                Text(stringResource(R.string.done))
             }
         },
     )

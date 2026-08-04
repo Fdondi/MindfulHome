@@ -1,0 +1,1601 @@
+[
+  {
+    "key": "timed_apps_launch_right_away_and_start_a_backgro",
+    "en": "Timed apps launch right away and start a background timer. Unlimited apps stay on the session allowlist with no timer.",
+    "locations": [
+      "ui/common/AddFolderAppDialog.kt:71"
+    ]
+  },
+  {
+    "key": "how_often_the_service_wakes_to_check_idle_away_s",
+    "en": "How often the service wakes to check idle/away state and advance nudge timing after the timer expires.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:208"
+    ]
+  },
+  {
+    "key": "when_enabled_chat_logs_include_tool_calls_parame",
+    "en": "When enabled, chat logs include tool calls, parameters, responses, and fallback/override reasons.",
+    "locations": [
+      "ui/settings/SettingsSections.kt:380"
+    ]
+  },
+  {
+    "key": "time_for_each_green_yellow_and_red_border_phase_",
+    "en": "Time for each green, yellow, and red border phase before you are sent back to the timer ",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:144"
+    ]
+  },
+  {
+    "key": "search_material_icons_snake_case_e_g_flight_take",
+    "en": "Search Material Icons (snake_case, e.g. flight_takeoff, sms). Shown on the folder tile.",
+    "locations": [
+      "ui/icons/MaterialSymbolPickerDialog.kt:97"
+    ]
+  },
+  {
+    "key": "after_tapping_a_bubble_wait_this_long_for_intera",
+    "en": "After tapping a bubble, wait this long for interaction before arming banner fallback.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:298"
+    ]
+  },
+  {
+    "key": "how_often_mindfulhome_checks_which_app_is_in_the",
+    "en": "How often MindfulHome checks which app is in the foreground during Quick Launch.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:130"
+    ]
+  },
+  {
+    "key": "apps_with_positive_karma_get_extra_time_during_q",
+    "en": "Apps with positive karma get extra time during Quick Launch semaphore phases.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:159"
+    ]
+  },
+  {
+    "key": "how_often_the_foreground_timer_notification_is_r",
+    "en": "How often the foreground timer notification is refreshed while counting down.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:222"
+    ]
+  },
+  {
+    "key": "larger_steps_use_less_cpu_and_battery_values_inc",
+    "en": "Larger steps use less CPU and battery. Values increase roughly exponentially.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:122"
+    ]
+  },
+  {
+    "key": "name_this_folder_after_your_goal_not_the_app_e_g",
+    "en": "Name this folder after your goal, not the app — e.g. Learn, Connect, Reflect.",
+    "locations": [
+      "ui/quicklaunch/MissionIntentDialogs.kt:314"
+    ]
+  },
+  {
+    "key": "polling_quick_launch_usage_cache_nudge_loop_time",
+    "en": "Polling (Quick Launch, usage cache, nudge loop), timer notification refresh, ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:454"
+    ]
+  },
+  {
+    "key": "how_long_to_reuse_a_foreground_app_result_before",
+    "en": "How long to reuse a foreground-app result before querying usage stats again.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:194"
+    ]
+  },
+  {
+    "key": "name_folders_after_what_you_re_trying_to_do_then",
+    "en": "Name folders after what you're trying to do — then add the apps that help.",
+    "locations": [
+      "ui/quicklaunch/MissionIntentSection.kt:89"
+    ]
+  },
+  {
+    "key": "remote_ai_is_active_conversations_are_processed_",
+    "en": "Remote AI is active. Conversations are processed via the Gemini backend.",
+    "locations": [
+      "ui/settings/SettingsSections.kt:775"
+    ]
+  },
+  {
+    "key": "each_zero_or_negative_karma_point_divides_the_to",
+    "en": "Each zero or negative karma point divides the total Quick Launch grace ",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:179"
+    ]
+  },
+  {
+    "key": "tap_to_set_karma_for_any_installed_app_and_test_",
+    "en": "Tap + to set karma for any installed app and test Quick Launch timing.",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:68"
+    ]
+  },
+  {
+    "key": "after_the_first_notification_wait_this_long_befo",
+    "en": "After the first notification, wait this long before floating bubbles.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:242"
+    ]
+  },
+  {
+    "key": "a_home_launcher_that_helps_you_use_your_phone_mo",
+    "en": "A home launcher that helps you use your phone more intentionally.",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:174"
+    ]
+  },
+  {
+    "key": "sign_in_with_your_google_account_to_use_the_remo",
+    "en": "Sign in with your Google account to use the remote Gemini model. ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:795"
+    ]
+  },
+  {
+    "key": "s_0_skips_after_save_re_runs_the_newest_days_that_",
+    "en": "0 skips. After save, re-runs the newest days that were produced ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1033"
+    ]
+  },
+  {
+    "key": "logs_will_appear_here_after_you_unlock_nyour_pho",
+    "en": "Logs will appear here after you unlock\\nyour phone and use apps.",
+    "locations": [
+      "ui/logs/LogsScreenParts.kt:80"
+    ]
+  },
+  {
+    "key": "back_and_forths_in_the_focus_time_gate_chat_mini",
+    "en": "Back-and-forths in the focus time gate chat: minimum before ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:297"
+    ]
+  },
+  {
+    "key": "during_active_intervals_launcher_stays_hidden_af",
+    "en": "During active intervals, launcher stays hidden after timer. ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:187"
+    ]
+  },
+  {
+    "key": "private_free_offline_use_is_possible_with_a_loca",
+    "en": "Private, free, offline use is possible with a local model, ",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:574"
+    ]
+  },
+  {
+    "key": "saved_prompt_version_message_first_message_secon",
+    "en": "Saved prompt version ${message.first}.${message.second}",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1107"
+    ]
+  },
+  {
+    "key": "after_this_many_bubbles_switch_to_full_width_ban",
+    "en": "After this many bubbles, switch to full-width banners.",
+    "locations": [
+      "ui/settings/SettingsSections.kt:484"
+    ]
+  },
+  {
+    "key": "private_works_offline_requires_downloading_a_mod",
+    "en": "Private, works offline. Requires downloading a model.",
+    "locations": [
+      "ui/settings/SettingsSections.kt:613"
+    ]
+  },
+  {
+    "key": "version_appversion_versionname_statusdescription",
+    "en": "Version ${AppVersion.versionName}. $statusDescription",
+    "locations": [
+      "ui/common/VersionLabel.kt:62"
+    ]
+  },
+  {
+    "key": "couldn_t_open_accessibility_settings_on_this_dev",
+    "en": "Couldn't open Accessibility settings on this device.",
+    "locations": [
+      "ui/settings/SettingsSections.kt:153"
+    ]
+  },
+  {
+    "key": "enable_usage_access_to_read_digital_wellbeing_st",
+    "en": "Enable Usage Access to read Digital Wellbeing stats.",
+    "locations": [
+      "ui/timer/TimerScreenParts.kt:325"
+    ]
+  },
+  {
+    "key": "how_many_bad_karma_points_an_app_accumulates_bef",
+    "en": "How many bad-karma points an app accumulates before ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:530"
+    ]
+  },
+  {
+    "key": "no_google_account_found_opening_account_setup_u2",
+    "en": "No Google account found. Opening account setup\\u2026",
+    "locations": [
+      "ui/settings/SettingsSections.kt:873"
+    ]
+  },
+  {
+    "key": "while_typing_or_shortly_after_nudge_timers_pause",
+    "en": "While typing (or shortly after), nudge timers pause.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:284"
+    ]
+  },
+  {
+    "key": "if_you_come_back_within_this_window_and_a_timer_",
+    "en": "If you come back within this window and a timer is ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:410"
+    ]
+  },
+  {
+    "key": "more_capable_requires_google_sign_in_and_interne",
+    "en": "More capable. Requires Google sign-in and internet.",
+    "locations": [
+      "ui/settings/SettingsSections.kt:641"
+    ]
+  },
+  {
+    "key": "p_item_priority_durationlabel_deadlinelabel",
+    "en": "P${item.priority} | $durationLabel | $deadlineLabel",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:256"
+    ]
+  },
+  {
+    "key": "shortcut_request_expired_try_again_from_the_app",
+    "en": "Shortcut request expired. Try again from the app.",
+    "locations": [
+      "PinShortcutActivity.kt:159"
+    ]
+  },
+  {
+    "key": "regenerate_last_n_summaries_with_an_older_prompt",
+    "en": "Regenerate last N summaries with an older prompt",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1031",
+      "ui/settings/SettingsSections.kt:1031"
+    ]
+  },
+  {
+    "key": "choose_an_existing_intent_or_create_a_new_one",
+    "en": "Choose an existing intent, or create a new one.",
+    "locations": [
+      "ui/shortcut/AddToIntentFolderDialog.kt:125"
+    ]
+  },
+  {
+    "key": "name_this_folder_after_your_goal_not_the_app",
+    "en": "Name this folder after your goal, not the app.",
+    "locations": [
+      "ui/shortcut/AddToIntentFolderDialog.kt:65"
+    ]
+  },
+  {
+    "key": "add_context_for_future_app_open_decisions",
+    "en": "Add context for future app-open decisions",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:464",
+      "ui/karma/KarmaScreenParts.kt:464"
+    ]
+  },
+  {
+    "key": "how_often_full_width_banners_are_spawned",
+    "en": "How often full-width banners are spawned.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:270"
+    ]
+  },
+  {
+    "key": "shortcut_is_missing_required_information",
+    "en": "Shortcut is missing required information.",
+    "locations": [
+      "PinShortcutActivity.kt:154",
+      "PinShortcutActivity.kt:180"
+    ]
+  },
+  {
+    "key": "a_home_launcher_that_nags_never_blocks",
+    "en": "A home launcher that nags, never blocks.",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1130"
+    ]
+  },
+  {
+    "key": "end_of_day_summaries_are_stored_as_json",
+    "en": "End-of-day summaries are stored as JSON ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1001"
+    ]
+  },
+  {
+    "key": "google_sign_in_was_cancelled_or_failed",
+    "en": "Google Sign-In was cancelled or failed",
+    "locations": [
+      "ui/settings/SettingsSections.kt:867"
+    ]
+  },
+  {
+    "key": "backend_sign_in_failed_e_message",
+    "en": "Backend sign-in failed: ${e.message}",
+    "locations": [
+      "ui/settings/SettingsSections.kt:900"
+    ]
+  },
+  {
+    "key": "widget_pinning_is_not_supported_yet",
+    "en": "Widget pinning is not supported yet.",
+    "locations": [
+      "PinShortcutActivity.kt:50"
+    ]
+  },
+  {
+    "key": "focus_gate_prompts_reset_to_default",
+    "en": "Focus gate prompts reset to default",
+    "locations": [
+      "ui/settings/SettingsSections.kt:974"
+    ]
+  },
+  {
+    "key": "gatekeeper_prompts_reset_to_default",
+    "en": "Gatekeeper prompts reset to default",
+    "locations": [
+      "ui/settings/SettingsSections.kt:945"
+    ]
+  },
+  {
+    "key": "could_not_pin_shortcut_try_again",
+    "en": "Could not pin shortcut. Try again.",
+    "locations": [
+      "PinShortcutActivity.kt:166"
+    ]
+  },
+  {
+    "key": "could_not_save_shortcut_to_folder",
+    "en": "Could not save shortcut to folder.",
+    "locations": [
+      "PinShortcutActivity.kt:204"
+    ]
+  },
+  {
+    "key": "quick_launch_semaphore_per_color",
+    "en": "Quick Launch semaphore (per color)",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:143"
+    ]
+  },
+  {
+    "key": "time_between_new_floating_bubbles",
+    "en": "Time between new floating bubbles.",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:256"
+    ]
+  },
+  {
+    "key": "why_are_you_unlocking_optional",
+    "en": "Why are you unlocking? (optional)",
+    "locations": [
+      "ui/timer/TimerScreen.kt:189",
+      "ui/timer/TimerScreen.kt:189"
+    ]
+  },
+  {
+    "key": "max_focusgatemaxrounds_toint",
+    "en": "max ${focusGateMaxRounds.toInt()}",
+    "locations": [
+      "ui/settings/SettingsSections.kt:354"
+    ]
+  },
+  {
+    "key": "min_focusgateminrounds_toint",
+    "en": "min ${focusGateMinRounds.toInt()}",
+    "locations": [
+      "ui/settings/SettingsSections.kt:327"
+    ]
+  },
+  {
+    "key": "yeah_i_need_to_finish_this_thing",
+    "en": "…yeah I need to finish this thing",
+    "locations": [
+      "ui/overtime/ShouldYouBeHereScreen.kt:108"
+    ]
+  },
+  {
+    "key": "choose_which_gemini_model_to_use",
+    "en": "Choose which Gemini model to use",
+    "locations": [
+      "ui/settings/SettingsSections.kt:821"
+    ]
+  },
+  {
+    "key": "no_app_usage_recorded_yet_today",
+    "en": "No app usage recorded yet today.",
+    "locations": [
+      "ui/timer/TimerScreenParts.kt:332"
+    ]
+  },
+  {
+    "key": "choose_where_ai_processing_runs",
+    "en": "Choose where AI processing runs",
+    "locations": [
+      "ui/settings/SettingsSections.kt:588"
+    ]
+  },
+  {
+    "key": "adb_command_copied_to_clipboard",
+    "en": "adb command copied to clipboard",
+    "locations": [
+      "ui/settings/SettingsSections.kt:680"
+    ]
+  },
+  {
+    "key": "added_to_toastfoldername",
+    "en": "Added to ${toastFolderName ?: ",
+    "locations": [
+      "PinShortcutActivity.kt:210"
+    ]
+  },
+  {
+    "key": "notification_interaction_watch",
+    "en": "Notification interaction watch",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:297"
+    ]
+  },
+  {
+    "key": "p_p_if_local_priority_p",
+    "en": "P$p${if (local.priority == p) ",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:329"
+    ]
+  },
+  {
+    "key": "negative_karma_grace_divisor",
+    "en": "Negative karma grace divisor",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:174"
+    ]
+  },
+  {
+    "key": "timer_countdown_notification",
+    "en": "Timer countdown notification",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:221"
+    ]
+  },
+  {
+    "key": "or_type_an_emoji_emoticon",
+    "en": "Or type an emoji / emoticon",
+    "locations": [
+      "ui/icons/MaterialSymbolPickerDialog.kt:113",
+      "ui/icons/MaterialSymbolPickerDialog.kt:113"
+    ]
+  },
+  {
+    "key": "drop_to_move_out_of_folder",
+    "en": "Drop to move out of folder",
+    "locations": [
+      "ui/quicklaunch/QuickLaunchFolderParts.kt:287"
+    ]
+  },
+  {
+    "key": "open_timer_without_prefill",
+    "en": "Open timer without prefill",
+    "locations": [
+      "ui/quicklaunch/MissionIntentSection.kt:126"
+    ]
+  },
+  {
+    "key": "resume_resumesessionlabel",
+    "en": "Resume $resumeSessionLabel",
+    "locations": [
+      "ui/quicklaunch/MissionIntentLogic.kt:82"
+    ]
+  },
+  {
+    "key": "v_appversion_versionname",
+    "en": "v${AppVersion.versionName}",
+    "locations": [
+      "ui/common/VersionLabel.kt:68"
+    ]
+  },
+  {
+    "key": "no_sessions_for_this_day",
+    "en": "No sessions for this day.",
+    "locations": [
+      "ui/logs/LogsScreenParts.kt:230"
+    ]
+  },
+  {
+    "key": "no_sessions_recorded_yet",
+    "en": "No sessions recorded yet.",
+    "locations": [
+      "ui/logs/LogsScreenParts.kt:74"
+    ]
+  },
+  {
+    "key": "positive_karma_multiplier",
+    "en": "Positive karma multiplier",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:158"
+    ]
+  },
+  {
+    "key": "add_app_to_intent_folder",
+    "en": "Add app to intent folder",
+    "locations": [
+      "ui/quicklaunch/MissionIntentDialogs.kt:140"
+    ]
+  },
+  {
+    "key": "deadline_deadlinelabel",
+    "en": "Deadline: $deadlineLabel",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:348"
+    ]
+  },
+  {
+    "key": "focus_gate_prompts_saved",
+    "en": "Focus gate prompts saved",
+    "locations": [
+      "ui/settings/SettingsSections.kt:967"
+    ]
+  },
+  {
+    "key": "gatekeeper_prompts_saved",
+    "en": "Gatekeeper prompts saved",
+    "locations": [
+      "ui/settings/SettingsSections.kt:938"
+    ]
+  },
+  {
+    "key": "no_intervals_configured",
+    "en": "No intervals configured.",
+    "locations": [
+      "ui/settings/SettingsSections.kt:207"
+    ]
+  },
+  {
+    "key": "when_should_you_be_done",
+    "en": "When should you be done?",
+    "locations": [
+      "ui/timer/TimerScreen.kt:156"
+    ]
+  },
+  {
+    "key": "display_over_other_apps",
+    "en": "Display over other apps",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:516"
+    ]
+  },
+  {
+    "key": "notification_permission",
+    "en": "Notification Permission",
+    "locations": [
+      "ui/settings/SettingsLogic.kt:40"
+    ]
+  },
+  {
+    "key": "open_timing_intervals",
+    "en": "Open timing & intervals",
+    "locations": [
+      "ui/settings/SettingsSections.kt:466"
+    ]
+  },
+  {
+    "key": "set_karma_for_applabel",
+    "en": "Set karma for $appLabel",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:520"
+    ]
+  },
+  {
+    "key": "start_using_mindfulhome",
+    "en": "Start using MindfulHome",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:592"
+    ]
+  },
+  {
+    "key": "bubbles_before_banners",
+    "en": "Bubbles Before Banners",
+    "locations": [
+      "ui/settings/SettingsSections.kt:479"
+    ]
+  },
+  {
+    "key": "i_ll_do_something_else",
+    "en": "I'll do something else",
+    "locations": [
+      "ui/overtime/ShouldYouBeHereScreen.kt:83"
+    ]
+  },
+  {
+    "key": "model_for_this_session",
+    "en": "Model for this session",
+    "locations": [
+      "ui/negotiation/NegotiationScreenParts.kt:286"
+    ]
+  },
+  {
+    "key": "no_apps_in_this_group",
+    "en": "No apps in this group.",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:177"
+    ]
+  },
+  {
+    "key": "note_karma_appnote",
+    "en": "Note: ${karma.appNote}",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:480"
+    ]
+  },
+  {
+    "key": "pick_an_app_to_launch",
+    "en": "Pick an app to launch:",
+    "locations": [
+      "ui/negotiation/NegotiationScreenParts.kt:440"
+    ]
+  },
+  {
+    "key": "welcome_to_mindfulhome",
+    "en": "Welcome to MindfulHome",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:165"
+    ]
+  },
+  {
+    "key": "when_must_you_be_done",
+    "en": "When MUST you be done?",
+    "locations": [
+      "ui/timer/TimerScreenParts.kt:243"
+    ]
+  },
+  {
+    "key": "focus_time_ai_first",
+    "en": "Focus Time (AI-first)",
+    "locations": [
+      "ui/settings/SettingsSections.kt:182"
+    ]
+  },
+  {
+    "key": "on_device_litert_lm",
+    "en": "On-device (LiteRT-LM)",
+    "locations": [
+      "ui/negotiation/NegotiationScreenParts.kt:298",
+      "ui/settings/SettingsSections.kt:608"
+    ]
+  },
+  {
+    "key": "strikes_before_hiding",
+    "en": "Strikes Before Hiding",
+    "locations": [
+      "ui/settings/SettingsSections.kt:525"
+    ]
+  },
+  {
+    "key": "type_your_response",
+    "en": "Type your response...",
+    "locations": [
+      "ui/negotiation/NegotiationScreenParts.kt:233",
+      "ui/negotiation/NegotiationScreenParts.kt:233"
+    ]
+  },
+  {
+    "key": "what_is_your_mission",
+    "en": "What is your mission?",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:197"
+    ]
+  },
+  {
+    "key": "add_to_intent_folder",
+    "en": "Add to intent folder",
+    "locations": [
+      "ui/shortcut/AddToIntentFolderDialog.kt:100"
+    ]
+  },
+  {
+    "key": "choose_folder_symbol",
+    "en": "Choose folder symbol",
+    "locations": [
+      "ui/quicklaunch/AppFolderDetailDialog.kt:73"
+    ]
+  },
+  {
+    "key": "delay_before_bubbles",
+    "en": "Delay before bubbles",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:241"
+    ]
+  },
+  {
+    "key": "most_used_apps_today",
+    "en": "Most used apps today",
+    "locations": [
+      "ui/timer/TimerScreenParts.kt:303"
+    ]
+  },
+  {
+    "key": "no_tracked_apps_yet",
+    "en": "No tracked apps yet.",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:62"
+    ]
+  },
+  {
+    "key": "quick_launch_polling",
+    "en": "Quick Launch polling",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:129"
+    ]
+  },
+  {
+    "key": "set_as_home_launcher",
+    "en": "Set as home launcher",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:279"
+    ]
+  },
+  {
+    "key": "summarization_prompt",
+    "en": "Summarization prompt",
+    "locations": [
+      "ui/settings/SettingsSections.kt:996"
+    ]
+  },
+  {
+    "key": "typing_pause_timeout",
+    "en": "Typing pause timeout",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:283"
+    ]
+  },
+  {
+    "key": "unlimited_no_timer",
+    "en": "Unlimited (no timer)",
+    "locations": [
+      "ui/common/AddFolderAppDialog.kt:80"
+    ]
+  },
+  {
+    "key": "allow_notifications",
+    "en": "Allow notifications",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:369"
+    ]
+  },
+  {
+    "key": "daily_log_summaries",
+    "en": "Daily log summaries",
+    "locations": [
+      "ui/settings/SettingsSections.kt:991"
+    ]
+  },
+  {
+    "key": "quick_return_window",
+    "en": "Quick Return Window",
+    "locations": [
+      "ui/settings/SettingsSections.kt:405"
+    ]
+  },
+  {
+    "key": "should_you_be_here",
+    "en": "Should you be here?",
+    "locations": [
+      "ui/overtime/ShouldYouBeHereScreen.kt:51"
+    ]
+  },
+  {
+    "key": "drop_to_edit_timer",
+    "en": "Drop to edit timer",
+    "locations": [
+      "ui/quicklaunch/QuickLaunchFolderParts.kt:283"
+    ]
+  },
+  {
+    "key": "duration_minutes",
+    "en": "Duration (minutes)",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:312",
+      "ui/defaultpage/DefaultPageScreen.kt:312"
+    ]
+  },
+  {
+    "key": "hide_hard_deadline",
+    "en": "Hide hard deadline",
+    "locations": [
+      "ui/timer/TimerScreenParts.kt:283"
+    ]
+  },
+  {
+    "key": "new_intent_folder",
+    "en": "New intent folder…",
+    "locations": [
+      "ui/shortcut/AddToIntentFolderDialog.kt:161"
+    ]
+  },
+  {
+    "key": "no_open_items_yet",
+    "en": "No open items yet.",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:164"
+    ]
+  },
+  {
+    "key": "overlay_permission",
+    "en": "Overlay Permission",
+    "locations": [
+      "ui/settings/SettingsLogic.kt:50"
+    ]
+  },
+  {
+    "key": "session_log_copied",
+    "en": "Session log copied",
+    "locations": [
+      "ui/logs/LogsScreenParts.kt:280"
+    ]
+  },
+  {
+    "key": "timing_intervals",
+    "en": "Timing & intervals",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:107",
+      "ui/settings/SettingsSections.kt:449"
+    ]
+  },
+  {
+    "key": "focus_gate_length",
+    "en": "Focus Gate Length",
+    "locations": [
+      "ui/settings/SettingsSections.kt:292"
+    ]
+  },
+  {
+    "key": "new_intent_folder_2",
+    "en": "New intent folder",
+    "locations": [
+      "ui/shortcut/AddToIntentFolderDialog.kt:61"
+    ]
+  },
+  {
+    "key": "set_karma_for_app",
+    "en": "Set karma for app",
+    "locations": [
+      "ui/karma/KarmaScreen.kt:93"
+    ]
+  },
+  {
+    "key": "usage_stats_cache",
+    "en": "Usage stats cache",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:193"
+    ]
+  },
+  {
+    "key": "ai_model_options",
+    "en": "AI Model Options",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:565"
+    ]
+  },
+  {
+    "key": "context_template",
+    "en": "Context template",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1228",
+      "ui/settings/SettingsSections.kt:1228"
+    ]
+  },
+  {
+    "key": "copy_session_log",
+    "en": "Copy session log",
+    "locations": [
+      "ui/logs/LogsScreenParts.kt:349"
+    ]
+  },
+  {
+    "key": "reset_to_default",
+    "en": "Reset to default",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1244"
+    ]
+  },
+  {
+    "key": "adb_push_command",
+    "en": "adb push command",
+    "locations": [
+      "ui/settings/SettingsSections.kt:679"
+    ]
+  },
+  {
+    "key": "banner_interval",
+    "en": "Banner interval",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:269"
+    ]
+  },
+  {
+    "key": "bubble_interval",
+    "en": "Bubble interval",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:255"
+    ]
+  },
+  {
+    "key": "focus_time_gate",
+    "en": "Focus time gate",
+    "locations": [
+      "ui/settings/SettingsSections.kt:952"
+    ]
+  },
+  {
+    "key": "litert_lm_model",
+    "en": "LiteRT-LM Model",
+    "locations": [
+      "ui/settings/SettingsSections.kt:673"
+    ]
+  },
+  {
+    "key": "nudge_loop_tick",
+    "en": "Nudge loop tick",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:207"
+    ]
+  },
+  {
+    "key": "remote_gemini",
+    "en": "Remote (Gemini)",
+    "locations": [
+      "ui/settings/SettingsSections.kt:636"
+    ]
+  },
+  {
+    "key": "app_gatekeeper",
+    "en": "App gatekeeper",
+    "locations": [
+      "ui/settings/SettingsSections.kt:923"
+    ]
+  },
+  {
+    "key": "developer_logs",
+    "en": "Developer Logs",
+    "locations": [
+      "ui/settings/SettingsSections.kt:375"
+    ]
+  },
+  {
+    "key": "drop_to_remove",
+    "en": "Drop to remove",
+    "locations": [
+      "ui/quicklaunch/QuickLaunchRowParts.kt:401"
+    ]
+  },
+  {
+    "key": "google_account",
+    "en": "Google Account",
+    "locations": [
+      "ui/settings/SettingsSections.kt:729"
+    ]
+  },
+  {
+    "key": "search_apps",
+    "en": "Search apps...",
+    "locations": [
+      "ui/common/AddAppsDialog.kt:69",
+      "ui/common/AddAppsDialog.kt:69",
+      "ui/search/SearchScreen.kt:93",
+      "ui/search/SearchScreen.kt:93"
+    ]
+  },
+  {
+    "key": "set_as_default",
+    "en": "Set as default",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:299"
+    ]
+  },
+  {
+    "key": "hard_deadline",
+    "en": "hard deadline?",
+    "locations": [
+      "ui/timer/TimerScreenParts.kt:218"
+    ]
+  },
+  {
+    "key": "back_to_timer",
+    "en": "Back to timer",
+    "locations": [
+      "ui/home/HomeScreenParts.kt:83",
+      "ui/negotiation/NegotiationScreenParts.kt:80"
+    ]
+  },
+  {
+    "key": "folder_symbol",
+    "en": "Folder symbol",
+    "locations": [
+      "ui/icons/MaterialSymbolPickerDialog.kt:92"
+    ]
+  },
+  {
+    "key": "not_signed_in",
+    "en": "Not signed in",
+    "locations": [
+      "ui/settings/SettingsSections.kt:789"
+    ]
+  },
+  {
+    "key": "rename_folder",
+    "en": "Rename folder",
+    "locations": [
+      "ui/quicklaunch/AppFolderDetailDialog.kt:81",
+      "ui/quicklaunch/AppSlotStripDialogs.kt:163"
+    ]
+  },
+  {
+    "key": "rename_intent",
+    "en": "Rename intent",
+    "locations": [
+      "ui/quicklaunch/MissionIntentDialogs.kt:261"
+    ]
+  },
+  {
+    "key": "system_prompt",
+    "en": "System prompt",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1218",
+      "ui/settings/SettingsSections.kt:1218"
+    ]
+  },
+  {
+    "key": "add_interval",
+    "en": "Add interval",
+    "locations": [
+      "ui/settings/SettingsSections.kt:276"
+    ]
+  },
+  {
+    "key": "back_to_home",
+    "en": "Back to home",
+    "locations": [
+      "ui/timer/TimerScreenParts.kt:67"
+    ]
+  },
+  {
+    "key": "clear_symbol",
+    "en": "Clear symbol",
+    "locations": [
+      "ui/icons/MaterialSymbolPickerDialog.kt:185"
+    ]
+  },
+  {
+    "key": "close_search",
+    "en": "Close search",
+    "locations": [
+      "ui/search/SearchScreen.kt:84"
+    ]
+  },
+  {
+    "key": "gate_prompts",
+    "en": "Gate prompts",
+    "locations": [
+      "ui/settings/SettingsSections.kt:920"
+    ]
+  },
+  {
+    "key": "how_it_works",
+    "en": "How it works",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:193"
+    ]
+  },
+  {
+    "key": "instructions",
+    "en": "Instructions",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1021",
+      "ui/settings/SettingsSections.kt:1021"
+    ]
+  },
+  {
+    "key": "model_source",
+    "en": "Model Source",
+    "locations": [
+      "ui/settings/SettingsSections.kt:583"
+    ]
+  },
+  {
+    "key": "nudge_timing",
+    "en": "Nudge timing",
+    "locations": [
+      "ui/settings/IntervalSettingsScreen.kt:234"
+    ]
+  },
+  {
+    "key": "search_icons",
+    "en": "Search icons",
+    "locations": [
+      "ui/icons/MaterialSymbolPickerDialog.kt:105",
+      "ui/icons/MaterialSymbolPickerDialog.kt:105"
+    ]
+  },
+  {
+    "key": "session_logs",
+    "en": "Session Logs",
+    "locations": [
+      "ui/logs/LogsScreen.kt:78"
+    ]
+  },
+  {
+    "key": "session_logs_2",
+    "en": "Session logs",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:110",
+      "ui/home/HomeScreenParts.kt:111",
+      "ui/negotiation/NegotiationScreenParts.kt:109"
+    ]
+  },
+  {
+    "key": "usage_access",
+    "en": "Usage Access",
+    "locations": [
+      "ui/settings/SettingsLogic.kt:30"
+    ]
+  },
+  {
+    "key": "usage_access_2",
+    "en": "Usage access",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:435"
+    ]
+  },
+  {
+    "key": "you_re_back",
+    "en": "you're back?",
+    "locations": [
+      "service/OverlayNudgeManager.kt:407"
+    ]
+  },
+  {
+    "key": "add_to_dock",
+    "en": "Add to dock",
+    "locations": [
+      "ui/search/SearchScreen.kt:146"
+    ]
+  },
+  {
+    "key": "get_started",
+    "en": "Get Started",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:186"
+    ]
+  },
+  {
+    "key": "intent_name",
+    "en": "Intent name",
+    "locations": [
+      "ui/quicklaunch/MissionIntentDialogs.kt:266",
+      "ui/quicklaunch/MissionIntentDialogs.kt:321",
+      "ui/quicklaunch/MissionIntentDialogs.kt:266",
+      "ui/quicklaunch/MissionIntentDialogs.kt:321",
+      "ui/shortcut/AddToIntentFolderDialog.kt:72",
+      "ui/shortcut/AddToIntentFolderDialog.kt:72"
+    ]
+  },
+  {
+    "key": "karma_score",
+    "en": "Karma score",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:553",
+      "ui/karma/KarmaScreenParts.kt:553"
+    ]
+  },
+  {
+    "key": "makes_sense",
+    "en": "Makes sense",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:226"
+    ]
+  },
+  {
+    "key": "mindfulhome",
+    "en": "MindfulHome",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1125"
+    ]
+  },
+  {
+    "key": "permissions",
+    "en": "Permissions",
+    "locations": [
+      "ui/settings/SettingsSections.kt:70"
+    ]
+  },
+  {
+    "key": "search_apps_2",
+    "en": "Search apps",
+    "locations": [
+      "ui/home/HomeScreenParts.kt:108",
+      "ui/karma/KarmaScreenParts.kt:597",
+      "ui/karma/KarmaScreenParts.kt:597",
+      "ui/negotiation/NegotiationScreenParts.kt:461"
+    ]
+  },
+  {
+    "key": "todo_widget",
+    "en": "Todo Widget",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:148"
+    ]
+  },
+  {
+    "key": "new_intent",
+    "en": "New intent",
+    "locations": [
+      "ui/quicklaunch/MissionIntentDialogs.kt:310"
+    ]
+  },
+  {
+    "key": "talk_to_ai",
+    "en": "Talk to AI",
+    "locations": [
+      "ui/home/HomeScreenParts.kt:120"
+    ]
+  },
+  {
+    "key": "app_limit",
+    "en": "App limit",
+    "locations": [
+      "ui/quicklaunch/MissionIntentDialogs.kt:346"
+    ]
+  },
+  {
+    "key": "edit_note",
+    "en": "Edit note",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:361"
+    ]
+  },
+  {
+    "key": "in_folder",
+    "en": "In folder",
+    "locations": [
+      "ui/common/AddAppsDialog.kt:165"
+    ]
+  },
+  {
+    "key": "opted_out",
+    "en": "Opted out",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:381",
+      "ui/karma/KarmaScreenParts.kt:116"
+    ]
+  },
+  {
+    "key": "save_note",
+    "en": "Save note",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:474"
+    ]
+  },
+  {
+    "key": "set_karma",
+    "en": "Set karma",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:427"
+    ]
+  },
+  {
+    "key": "suggested",
+    "en": "Suggested",
+    "locations": [
+      "ui/home/HomeScreenParts.kt:134"
+    ]
+  },
+  {
+    "key": "point",
+    "en": "- $point",
+    "locations": [
+      "ui/onboarding/OnboardingScreen.kt:211"
+    ]
+  },
+  {
+    "key": "ai_model",
+    "en": "AI Model",
+    "locations": [
+      "ui/settings/SettingsSections.kt:816",
+      "ui/settings/SettingsSections.kt:578"
+    ]
+  },
+  {
+    "key": "add_todo",
+    "en": "Add todo",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:160"
+    ]
+  },
+  {
+    "key": "app_note",
+    "en": "App note",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:463",
+      "ui/karma/KarmaScreenParts.kt:463"
+    ]
+  },
+  {
+    "key": "behavior",
+    "en": "Behavior",
+    "locations": [
+      "ui/settings/SettingsSections.kt:166"
+    ]
+  },
+  {
+    "key": "complete",
+    "en": "Complete",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:264"
+    ]
+  },
+  {
+    "key": "negative",
+    "en": "Negative",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:102"
+    ]
+  },
+  {
+    "key": "on_strip",
+    "en": "On strip",
+    "locations": [
+      "ui/common/AddAppsDialog.kt:156"
+    ]
+  },
+  {
+    "key": "pick_app",
+    "en": "Pick app",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:590"
+    ]
+  },
+  {
+    "key": "positive",
+    "en": "Positive",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:130"
+    ]
+  },
+  {
+    "key": "settings",
+    "en": "Settings",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:124",
+      "ui/home/HomeScreenParts.kt:117",
+      "ui/negotiation/NegotiationScreenParts.kt:123",
+      "ui/settings/SettingsScreen.kt:185"
+    ]
+  },
+  {
+    "key": "sign_out",
+    "en": "Sign out",
+    "locations": [
+      "ui/settings/SettingsSections.kt:780"
+    ]
+  },
+  {
+    "key": "e_g_10",
+    "en": "e.g. -10",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:554",
+      "ui/karma/KarmaScreenParts.kt:554"
+    ]
+  },
+  {
+    "key": "forgive",
+    "en": "Forgive",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:498"
+    ]
+  },
+  {
+    "key": "minutes",
+    "en": "Minutes",
+    "locations": [
+      "ui/common/AddFolderAppDialog.kt:90",
+      "ui/common/AddFolderAppDialog.kt:90"
+    ]
+  },
+  {
+    "key": "opt_out",
+    "en": "Opt out",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:435"
+    ]
+  },
+  {
+    "key": "cancel",
+    "en": "Cancel",
+    "locations": [
+      "ui/common/AddFolderAppDialog.kt:110",
+      "ui/defaultpage/DefaultPageScreen.kt:291",
+      "ui/karma/KarmaScreenParts.kt:473",
+      "ui/karma/KarmaScreenParts.kt:536",
+      "ui/negotiation/NegotiationScreenParts.kt:330",
+      "ui/icons/MaterialSymbolPickerDialog.kt:188",
+      "ui/quicklaunch/AppSlotStripDialogs.kt:194",
+      "ui/quicklaunch/MissionIntentDialogs.kt:293",
+      "ui/quicklaunch/MissionIntentDialogs.kt:328",
+      "ui/shortcut/AddToIntentFolderDialog.kt:172"
+    ]
+  },
+  {
+    "key": "hidden",
+    "en": "Hidden",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:396"
+    ]
+  },
+  {
+    "key": "remove",
+    "en": "Remove",
+    "locations": [
+      "ui/settings/SettingsSections.kt:261"
+    ]
+  },
+  {
+    "key": "about",
+    "en": "About",
+    "locations": [
+      "ui/settings/SettingsSections.kt:1120"
+    ]
+  },
+  {
+    "key": "apply",
+    "en": "Apply",
+    "locations": [
+      "ui/negotiation/NegotiationScreenParts.kt:327"
+    ]
+  },
+  {
+    "key": "clear",
+    "en": "Clear",
+    "locations": [
+      "ui/common/AddAppsDialog.kt:75",
+      "ui/defaultpage/DefaultPageScreen.kt:353",
+      "ui/search/SearchScreen.kt:102"
+    ]
+  },
+  {
+    "key": "close",
+    "en": "Close",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:625"
+    ]
+  },
+  {
+    "key": "karma",
+    "en": "Karma",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:117",
+      "ui/home/HomeScreenParts.kt:114",
+      "ui/karma/KarmaScreen.kt:85",
+      "ui/negotiation/NegotiationScreenParts.kt:116"
+    ]
+  },
+  {
+    "key": "start",
+    "en": "Start",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:266",
+      "ui/timer/TimerScreen.kt:213"
+    ]
+  },
+  {
+    "key": "back",
+    "en": "Back",
+    "locations": [
+      "ui/karma/KarmaScreen.kt:88",
+      "ui/logs/LogsScreen.kt:81",
+      "ui/negotiation/NegotiationScreenParts.kt:143",
+      "ui/settings/IntervalSettingsScreen.kt:110",
+      "ui/settings/SettingsScreen.kt:188",
+      "ui/shortcut/AddToIntentFolderDialog.kt:92"
+    ]
+  },
+  {
+    "key": "done",
+    "en": "Done",
+    "locations": [
+      "ui/common/AddAppsDialog.kt:97",
+      "ui/quicklaunch/AppFolderDetailDialog.kt:103"
+    ]
+  },
+  {
+    "key": "edit",
+    "en": "Edit",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:265"
+    ]
+  },
+  {
+    "key": "home",
+    "en": "Home",
+    "locations": [
+      "ui/home/HomeScreenParts.kt:102",
+      "ui/negotiation/NegotiationScreenParts.kt:99"
+    ]
+  },
+  {
+    "key": "name",
+    "en": "Name",
+    "locations": [
+      "ui/quicklaunch/AppSlotStripDialogs.kt:168",
+      "ui/quicklaunch/AppSlotStripDialogs.kt:168"
+    ]
+  },
+  {
+    "key": "pick",
+    "en": "Pick",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:352"
+    ]
+  },
+  {
+    "key": "save",
+    "en": "Save",
+    "locations": [
+      "ui/defaultpage/DefaultPageScreen.kt:290",
+      "ui/karma/KarmaScreenParts.kt:533",
+      "ui/settings/SettingsSections.kt:1240",
+      "ui/quicklaunch/AppSlotStripDialogs.kt:184",
+      "ui/quicklaunch/MissionIntentDialogs.kt:284"
+    ]
+  },
+  {
+    "key": "send",
+    "en": "Send",
+    "locations": [
+      "service/OverlayNudgeManager.kt:289",
+      "ui/negotiation/NegotiationScreenParts.kt:264"
+    ]
+  },
+  {
+    "key": "zero",
+    "en": "Zero",
+    "locations": [
+      "ui/karma/KarmaScreenParts.kt:144"
+    ]
+  },
+  {
+    "key": "str",
+    "en": " - ",
+    "locations": [
+      "ui/settings/SettingsSections.kt:237"
+    ]
+  },
+  {
+    "key": "add",
+    "en": "Add",
+    "locations": [
+      "ui/quicklaunch/MissionIntentDialogs.kt:327",
+      "ui/shortcut/AddToIntentFolderDialog.kt:87"
+    ]
+  }
+]

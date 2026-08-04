@@ -274,7 +274,7 @@ class NegotiationManager(
 
         val karma = repository.getKarma(packageName)
 
-        val systemPrompt = PromptTemplates.nudgeSystemPrompt()
+        val systemPrompt = PromptTemplates.nudgeSystemPrompt(context)
         val userContext = PromptTemplates.buildNudgeContext(
             appName = appName,
             karmaScore = karma.karmaScore,
@@ -334,7 +334,7 @@ class NegotiationManager(
             loadDailySummaryPairs(),
         )
         val basePrompt = PromptTemplates.generalChatSystemPrompt(
-            hiddenAppsBriefing, notesBriefing, installedAppsBriefing,
+            appContext, hiddenAppsBriefing, notesBriefing, installedAppsBriefing,
         )
         return NegotiationManagerLogic.mergeSystemPromptWithDailySummaries(
             basePrompt, dailySummariesBriefing,

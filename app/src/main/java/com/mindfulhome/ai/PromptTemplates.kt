@@ -1,6 +1,7 @@
 package com.mindfulhome.ai
 
 import android.content.Context
+import com.mindfulhome.locale.AppLanguage
 import com.mindfulhome.settings.SettingsManager
 
 /**
@@ -11,6 +12,20 @@ import com.mindfulhome.settings.SettingsManager
 object PromptTemplates {
 
     const val GENERAL_CHAT_GREETING = "Hi! What do you want to do with your time?"
+
+    /** Appended to every system prompt so model replies match the in-app language. */
+    fun replyLanguageInstruction(language: AppLanguage): String =
+        "Always write your replies in ${language.englishName} (locale ${language.tag})."
+
+    fun withReplyLanguage(context: Context, systemPrompt: String): String {
+        val language = SettingsManager.getAppLanguage(context)
+        val instruction = replyLanguageInstruction(language)
+        return if (systemPrompt.contains(instruction)) {
+            systemPrompt
+        } else {
+            "$systemPrompt\n\n$instruction"
+        }
+    }
 
     val DEFAULT_FOCUS_GATE_SYSTEM_PROMPT = """
         The user is in a focus-time window and wants to spend phone time now.
@@ -62,47 +77,54 @@ object PromptTemplates {
         "{durationMinutes}, {declaredIntent}, {focusWindowDescription}, {minRounds}"
 
     fun focusGateSystemPrompt(context: Context): String =
-        SettingsManager.getFocusGateSystemPromptResolved(context)
+        withReplyLanguage(context, SettingsManager.getFocusGateSystemPromptResolved(context))
 
     fun gatekeeperSystemPrompt(context: Context): String =
-        SettingsManager.getGatekeeperSystemPromptResolved(context)
+        withReplyLanguage(context, SettingsManager.getGatekeeperSystemPromptResolved(context))
 
-    fun nudgeSystemPrompt(): String = """
+    fun nudgeSystemPrompt(context: Context): String = withReplyLanguage(
+        context,
+        """
         The user's timer expired. Gently suggest wrapping up. One sentence only.
         
         If they want more time and give a reason, call grantExtension(minutes).
         Do not block them. You are just a friendly nudge.
-    """.trimIndent()
+        """.trimIndent(),
+    )
 
     fun generalChatSystemPrompt(
+        context: Context,
         hiddenAppsBriefing: String,
         appNotesBriefing: String?,
         installedAppsBriefing: String? = null,
-    ): String = buildString {
-        appendLine("Use tools to control actions: launchApp(packageName), suggestApps(query), presentSuggestions(query). One sentence replies only.")
-        appendLine()
-        appendLine(hiddenAppsBriefing)
-        if (!installedAppsBriefing.isNullOrBlank()) {
+    ): String = withReplyLanguage(
+        context,
+        buildString {
+            appendLine("Use tools to control actions: launchApp(packageName), suggestApps(query), presentSuggestions(query). One sentence replies only.")
             appendLine()
-            appendLine(installedAppsBriefing)
-        }
-        if (!appNotesBriefing.isNullOrBlank()) {
-            appendLine(appNotesBriefing)
-        }
-        appendLine()
-        appendLine("Hidden app → say \"[name] has been overused. What do you need it for?\" then after they answer call launchApp.")
-        appendLine("Other app with high confidence → call launchApp immediately.")
-        appendLine("If a candidate app has a worrying note, ask one extra confirmation turn before launchApp.")
-        appendLine("Low confidence or ambiguous request -> call suggestApps with a short search query.")
-        appendLine("After suggestApps, you will receive ranked candidates with scores in a follow-up message.")
-        appendLine("Then choose exactly one path:")
-        appendLine("1) Confident -> call launchApp(packageName).")
-        appendLine("2) Need user pick -> call presentSuggestions(query).")
-        appendLine("3) Need clarification -> do not call any launch/suggestion tool and continue conversation.")
-        appendLine("When candidate notes/flags are provided in suggestApps results, treat them as constraints.")
-        appendLine("Risky note or needs_extra_confirmation=true -> ask one more confirmation turn or push back before launchApp.")
-        append("Never ask for exact package names.")
-    }
+            appendLine(hiddenAppsBriefing)
+            if (!installedAppsBriefing.isNullOrBlank()) {
+                appendLine()
+                appendLine(installedAppsBriefing)
+            }
+            if (!appNotesBriefing.isNullOrBlank()) {
+                appendLine(appNotesBriefing)
+            }
+            appendLine()
+            appendLine("Hidden app → say \"[name] has been overused. What do you need it for?\" then after they answer call launchApp.")
+            appendLine("Other app with high confidence → call launchApp immediately.")
+            appendLine("If a candidate app has a worrying note, ask one extra confirmation turn before launchApp.")
+            appendLine("Low confidence or ambiguous request -> call suggestApps with a short search query.")
+            appendLine("After suggestApps, you will receive ranked candidates with scores in a follow-up message.")
+            appendLine("Then choose exactly one path:")
+            appendLine("1) Confident -> call launchApp(packageName).")
+            appendLine("2) Need user pick -> call presentSuggestions(query).")
+            appendLine("3) Need clarification -> do not call any launch/suggestion tool and continue conversation.")
+            appendLine("When candidate notes/flags are provided in suggestApps results, treat them as constraints.")
+            appendLine("Risky note or needs_extra_confirmation=true -> ask one more confirmation turn or push back before launchApp.")
+            append("Never ask for exact package names.")
+        },
+    )
 
     fun buildFocusGateUserContext(
         context: Context,

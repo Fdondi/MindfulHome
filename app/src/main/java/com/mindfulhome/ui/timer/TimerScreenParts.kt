@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.timer
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -64,7 +67,7 @@ internal fun TimerScreenHeader(onBackToDefault: (() -> Unit)?) {
             OutlinedButton(onClick = onBackToDefault) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back to home",
+                    contentDescription = stringResource(R.string.back_to_home),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.width(4.dp))
@@ -215,14 +218,14 @@ internal fun HardDeadlineToggleRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = "hard deadline?",
+            text = stringResource(R.string.hard_deadline),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.weight(1f))
         Icon(
             imageVector = if (enabled) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-            contentDescription = if (enabled) "Hide hard deadline" else "Show hard deadline",
+            contentDescription = if (enabled) stringResource(R.string.hide_hard_deadline) else stringResource(R.string.show_hard_deadline),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -240,7 +243,7 @@ internal fun HardDeadlinePickerSection(
 ) {
     Spacer(modifier = Modifier.height(6.dp))
     Text(
-        text = "When MUST you be done?",
+        text = stringResource(R.string.when_must_you_be_done),
         style = MaterialTheme.typography.titleMedium,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.error,
@@ -280,7 +283,7 @@ internal fun HardDeadlinePickerSection(
             }
         }
     }
-    TextButton(onClick = onHide) { Text("Hide hard deadline") }
+    TextButton(onClick = onHide) { Text(stringResource(R.string.hide_hard_deadline)) }
 }
 
 @Composable
@@ -300,7 +303,7 @@ internal fun MostUsedAppsTodaySection(
             .padding(horizontal = 10.dp, vertical = 8.dp),
     ) {
         Text(
-            text = "Most used apps today",
+            text = stringResource(R.string.most_used_apps_today),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -322,14 +325,14 @@ private fun MostUsedAppsBody(
     when {
         !hasUsagePermission -> {
             Text(
-                text = "Enable Usage Access to read Digital Wellbeing stats.",
+                text = stringResource(R.string.enable_usage_access_to_read_digital_wellbeing_st),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
             )
         }
         usageItems.isEmpty() -> {
             Text(
-                text = "No app usage recorded yet today.",
+                text = stringResource(R.string.no_app_usage_recorded_yet_today),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f),
             )

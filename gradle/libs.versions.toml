@@ -1,6 +1,7 @@
 [versions]
 accompanistDrawablepainter = "0.37.3"
 activityCompose = "1.13.0"
+appcompat = "1.7.1"
 androidxComposeUi = "ui-tooling-preview"
 androidxComposeUiX2 = "ui"
 androidxComposeUiX3 = "ui-graphics"
@@ -28,6 +29,7 @@ workRuntimeKtx = "2.11.2"
 [libraries]
 accompanist-drawablepainter = { group = "com.google.accompanist", name = "accompanist-drawablepainter", version.ref = "accompanistDrawablepainter" }
 activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
 core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 credentials = { group = "androidx.credentials", name = "credentials", version.ref = "credentials" }
 credentials-play-services-auth = { group = "androidx.credentials", name = "credentials-play-services-auth", version.ref = "credentials" }

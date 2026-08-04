@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.MindfulHome" parent="android:Theme.Material.Light.NoActionBar">
+    <!-- AppCompatActivity is required for AppCompatDelegate.setApplicationLocales to refresh UI. -->
+    <style name="Theme.MindfulHome" parent="Theme.AppCompat.Light.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>

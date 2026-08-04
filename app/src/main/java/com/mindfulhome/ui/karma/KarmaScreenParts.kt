@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.karma
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import android.graphics.drawable.Drawable
 import androidx.compose.animation.animateContentSize
@@ -59,13 +62,13 @@ internal fun KarmaEmptyState() {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "No tracked apps yet.",
+            text = stringResource(R.string.no_tracked_apps_yet),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Tap + to set karma for any installed app and test Quick Launch timing.",
+            text = stringResource(R.string.tap_to_set_karma_for_any_installed_app_and_test_),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -99,7 +102,7 @@ internal fun KarmaSectionsList(
         item { Spacer(modifier = Modifier.height(4.dp)) }
         item {
             KarmaSection(
-                title = "Negative",
+                title = stringResource(R.string.negative),
                 apps = groups.negative,
                 expanded = negativeExpanded,
                 onToggle = onNegativeToggle,
@@ -113,7 +116,7 @@ internal fun KarmaSectionsList(
         }
         item {
             KarmaSection(
-                title = "Opted out",
+                title = stringResource(R.string.opted_out),
                 apps = groups.optedOut,
                 expanded = optedOutExpanded,
                 onToggle = onOptedOutToggle,
@@ -127,7 +130,7 @@ internal fun KarmaSectionsList(
         }
         item {
             KarmaSection(
-                title = "Positive",
+                title = stringResource(R.string.positive),
                 apps = groups.positive,
                 expanded = positiveExpanded,
                 onToggle = onPositiveToggle,
@@ -141,7 +144,7 @@ internal fun KarmaSectionsList(
         }
         item {
             KarmaSection(
-                title = "Zero",
+                title = stringResource(R.string.zero),
                 apps = groups.zero,
                 expanded = zeroExpanded,
                 onToggle = onZeroToggle,
@@ -174,7 +177,7 @@ internal fun KarmaSection(
     if (!expanded) return
     if (apps.isEmpty()) {
         Text(
-            text = "No apps in this group.",
+            text = stringResource(R.string.no_apps_in_this_group),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
@@ -358,7 +361,7 @@ private fun KarmaCardIdentity(
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
                 modifier = Modifier.height(26.dp),
             ) {
-                Text(text = "Edit note", style = MaterialTheme.typography.labelSmall)
+                Text(text = stringResource(R.string.edit_note), style = MaterialTheme.typography.labelSmall)
             }
         }
         Text(
@@ -378,7 +381,7 @@ private fun KarmaStatusBadges(karma: AppKarma) {
     ) {
         if (karma.isOptedOut) {
             Text(
-                text = "Opted out",
+                text = stringResource(R.string.opted_out),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -393,7 +396,7 @@ private fun KarmaStatusBadges(karma: AppKarma) {
                 )
                 Spacer(modifier = Modifier.width(2.dp))
                 Text(
-                    text = "Hidden",
+                    text = stringResource(R.string.hidden),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -416,7 +419,7 @@ private fun KarmaCardScoreControls(
             modifier = Modifier.height(36.dp),
         ) {
             Text(
-                text = if (karma.isOptedOut) "Set karma" else "${karma.karmaScore}",
+                text = if (karma.isOptedOut) stringResource(R.string.set_karma) else "${karma.karmaScore}",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = scoreColor,
@@ -424,7 +427,7 @@ private fun KarmaCardScoreControls(
             Spacer(modifier = Modifier.width(2.dp))
             Icon(
                 Icons.Default.Edit,
-                contentDescription = "Set karma",
+                contentDescription = stringResource(R.string.set_karma),
                 modifier = Modifier.size(14.dp),
                 tint = scoreColor,
             )
@@ -432,7 +435,7 @@ private fun KarmaCardScoreControls(
         Spacer(modifier = Modifier.width(10.dp))
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                text = "Opt out",
+                text = stringResource(R.string.opt_out),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -460,8 +463,8 @@ private fun KarmaCardNoteSection(
             value = noteDraft,
             onValueChange = onNoteDraftChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("App note") },
-            placeholder = { Text("Add context for future app-open decisions") },
+            label = { Text(stringResource(R.string.app_note)) },
+            placeholder = { Text(stringResource(R.string.add_context_for_future_app_open_decisions)) },
             singleLine = false,
             maxLines = 3,
         )
@@ -470,8 +473,8 @@ private fun KarmaCardNoteSection(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onCancelEdit) { Text("Cancel") }
-            TextButton(onClick = onSave, enabled = noteChanged) { Text("Save note") }
+            TextButton(onClick = onCancelEdit) { Text(stringResource(R.string.cancel)) }
+            TextButton(onClick = onSave, enabled = noteChanged) { Text(stringResource(R.string.save_note)) }
         }
         return
     }
@@ -495,7 +498,7 @@ private fun KarmaCardForgiveRow(karma: AppKarma, onForgive: () -> Unit) {
             TextButton(onClick = onForgive) {
                 Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Forgive")
+                Text(stringResource(R.string.forgive))
             }
         } else {
             Spacer(modifier = Modifier.width(1.dp))
@@ -517,7 +520,7 @@ internal fun SetKarmaDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set karma for $appLabel") },
+        title = { Text(stringResource(R.string.set_karma_for_applabel, appLabel)) },
         text = {
             SetKarmaDialogBody(
                 scoreText = scoreText,
@@ -530,10 +533,10 @@ internal fun SetKarmaDialog(
             TextButton(
                 onClick = { parsedScore?.let(onSave) },
                 enabled = parsedScore != null,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
@@ -550,8 +553,8 @@ private fun SetKarmaDialogBody(
             value = scoreText,
             onValueChange = onScoreTextChange,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Karma score") },
-            placeholder = { Text("e.g. -10") },
+            label = { Text(stringResource(R.string.karma_score)) },
+            placeholder = { Text(stringResource(R.string.e_g_10)) },
             singleLine = true,
         )
         if (parsedScore != null) {
@@ -587,14 +590,14 @@ internal fun PickAppForKarmaDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Pick app") },
+        title = { Text(stringResource(R.string.pick_app)) },
         text = {
             Column {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("Search apps") },
+                    label = { Text(stringResource(R.string.search_apps_2)) },
                     singleLine = true,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -622,7 +625,7 @@ internal fun PickAppForKarmaDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.close)) }
         },
     )
 }

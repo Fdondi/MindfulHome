@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.quicklaunch
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -35,6 +38,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import com.mindfulhome.locale.localizedIntentFolderName
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -84,7 +88,8 @@ internal fun QuickLaunchTile(
     dragHost: QuickLaunchRowDragHost,
     onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
 ) {
-    val folderLabel = folderLabelForTile(tileContent, tile.folderName, apps.size)
+    val rawFolderLabel = folderLabelForTile(tileContent, tile.folderName, apps.size)
+    val folderLabel = localizedIntentFolderName(rawFolderLabel) ?: rawFolderLabel
     val borderMod = if (dropHighlight) {
         Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
     } else {
@@ -398,7 +403,7 @@ internal fun QuickLaunchRemoveZone(
         ) {
             Icon(
                 Icons.Default.Close,
-                contentDescription = "Drop to remove",
+                contentDescription = stringResource(R.string.drop_to_remove),
                 tint = if (hovering) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
@@ -444,8 +449,9 @@ internal fun DragGhostOverlay(
     ) {
         when {
             tileContent == QuickLaunchTileContent.IntentLabels -> {
+                val rawGhost = ghostLabelForDrag(tileContent, folderName)
                 Text(
-                    text = ghostLabelForDrag(tileContent, folderName),
+                    text = localizedIntentFolderName(rawGhost) ?: rawGhost,
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

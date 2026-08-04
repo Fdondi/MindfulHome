@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.quicklaunch
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,11 +13,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.AppSlotPlacement
 import com.mindfulhome.data.QuickLaunchSlot
+import com.mindfulhome.locale.IntentFolderNames
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog
 import com.mindfulhome.ui.common.AddFolderAppDialog
@@ -137,7 +142,7 @@ private fun MissionIntentCreateDialogs(
     )
     if (showAddDialog) {
         AddAppsDialog(
-            title = "Add app to intent folder",
+            title = stringResource(R.string.add_app_to_intent_folder),
             apps = installedApps,
             placementByPackage = placementByPackage,
             onAdd = { packageName ->
@@ -194,6 +199,7 @@ private fun MissionIntentFolderDialogs(
     onQuickLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
 ) {
     val focusManager = LocalFocusManager.current
+    val resources = LocalContext.current.resources
     MissionIntentEditingAppDialog(
         repository = repository,
         scope = scope,
@@ -206,11 +212,17 @@ private fun MissionIntentFolderDialogs(
         AppFolderDetailDialog(
             folder = folder,
             onDismiss = { onFolderToShowChange(null) },
-            titleForFolder = { folderTitleForIntent(it) },
+            titleForFolder = {
+                val raw = folderTitleForIntent(it)
+                IntentFolderNames.localize(raw, resources) ?: raw
+            },
             showRenameIcon = true,
             onRenameIconClick = {
                 onFolderRenameSlotIndexChange(folder.slotIndex)
-                onFolderRenameTextChange(folder.folderName.orEmpty())
+                onFolderRenameTextChange(
+                    IntentFolderNames.localize(folder.folderName, resources)
+                        ?: folder.folderName.orEmpty(),
+                )
             },
             showSymbolIconButton = true,
             onSymbolIconClick = {
@@ -233,7 +245,7 @@ private fun MissionIntentFolderDialogs(
             dragHintText = "Drop on timer to edit limit, or ✕ to remove from folder",
             removeDropContentDescription = "Drop to remove from folder",
             onAddAppsClick = { onAddAppsClick(folder.slotIndex) },
-            addAppsContentDescription = "Add app to intent folder",
+            addAppsContentDescription = stringResource(R.string.add_app_to_intent_folder),
             onEditAppLimit = { app -> onEditingFolderAppChange(app) },
         )
     }
@@ -258,12 +270,12 @@ private fun MissionIntentFolderDialogs(
                 onFolderRenameSlotIndexChange(null)
                 onFolderRenameTextChange("")
             },
-            title = { Text("Rename intent") },
+            title = { Text(stringResource(R.string.rename_intent)) },
             text = {
                 OutlinedTextField(
                     value = folderRenameText,
                     onValueChange = onFolderRenameTextChange,
-                    label = { Text("Intent name") },
+                    label = { Text(stringResource(R.string.intent_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -275,13 +287,13 @@ private fun MissionIntentFolderDialogs(
                         scope.launch {
                             repository.setQuickLaunchFolderNameAt(
                                 slotIndex,
-                                folderRenameText.takeIf { it.isNotBlank() },
+                                IntentFolderNames.canonicalize(folderRenameText, resources),
                             )
                             onFolderRenameSlotIndexChange(null)
                             onFolderRenameTextChange("")
                         }
                     },
-                ) { Text("Save") }
+                ) { Text(stringResource(R.string.save)) }
             },
             dismissButton = {
                 TextButton(
@@ -290,7 +302,7 @@ private fun MissionIntentFolderDialogs(
                         onFolderRenameSlotIndexChange(null)
                         onFolderRenameTextChange("")
                     },
-                ) { Text("Cancel") }
+                ) { Text(stringResource(R.string.cancel)) }
             },
         )
     }
@@ -307,25 +319,25 @@ private fun MissionNewIntentDialog(
     if (!visible) return
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New intent") },
+        title = { Text(stringResource(R.string.new_intent)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Name this folder after your goal, not the app — e.g. Learn, Connect, Reflect.",
+                    text = stringResource(R.string.name_this_folder_after_your_goal_not_the_app_e_g),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 OutlinedTextField(
                     value = name,
                     onValueChange = onNameChange,
-                    label = { Text("Intent name") },
+                    label = { Text(stringResource(R.string.intent_name)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Add") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.add)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -343,8 +355,8 @@ private fun MissionIntentEditingAppDialog(
     val slot = folderIdx?.let { rawSlots.getOrNull(it) as? QuickLaunchSlot.Folder }
     AddFolderAppDialog(
         appInfo = app,
-        title = "App limit",
-        confirmLabel = "Save",
+        title = stringResource(R.string.app_limit),
+        confirmLabel = stringResource(R.string.save),
         initialLimitMinutes = slot?.limitMinutesFor(app.packageName),
         onConfirm = { limitMinutes ->
             scope.launch {

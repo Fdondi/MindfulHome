@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
 import com.mindfulhome.ai.PromptTemplates
+import com.mindfulhome.locale.AppLanguage
 import com.mindfulhome.service.UsageTracker
 import org.json.JSONArray
 import org.json.JSONObject
@@ -27,6 +28,10 @@ object SettingsManager {
 
     // Backend model selection
     private const val BACKEND_MODEL_KEY = "backend_model"
+
+    // In-app language (BCP-47 tag); separate flag tracks explicit user choice
+    private const val APP_LANGUAGE_KEY = "app_language"
+    private const val APP_LANGUAGE_CHOSEN_KEY = "app_language_chosen"
 
     // Quick return window (minutes)
     private const val QUICK_RETURN_THRESHOLD_KEY = "quick_return_threshold_minutes"
@@ -225,6 +230,23 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
 
     fun setBackendModel(context: Context, model: String) {
         prefs(context).edit { putString(BACKEND_MODEL_KEY, model) }
+    }
+
+    // ── App language ─────────────────────────────────────────────────
+
+    fun hasChosenAppLanguage(context: Context): Boolean =
+        prefs(context).getBoolean(APP_LANGUAGE_CHOSEN_KEY, false)
+
+    fun getAppLanguage(context: Context): AppLanguage {
+        val tag = prefs(context).getString(APP_LANGUAGE_KEY, null)
+        return AppLanguage.fromTag(tag) ?: AppLanguage.ENGLISH
+    }
+
+    fun setAppLanguage(context: Context, language: AppLanguage) {
+        prefs(context).edit {
+            putString(APP_LANGUAGE_KEY, language.tag)
+            putBoolean(APP_LANGUAGE_CHOSEN_KEY, true)
+        }
     }
 
     // ── Permission prompt suppression ────────────────────────────────

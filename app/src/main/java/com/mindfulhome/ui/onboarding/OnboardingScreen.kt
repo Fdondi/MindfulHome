@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -18,6 +19,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Button
@@ -35,18 +38,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringArrayResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import com.mindfulhome.R
+import com.mindfulhome.locale.AppLanguage
+import com.mindfulhome.locale.LocaleHelper
+import com.mindfulhome.service.ForegroundAppAccessibilityService
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.ui.common.LanguagePickerStep
 import kotlinx.coroutines.delay
 
 private const val PREF_NAME = "mindfulhome"
 private const val ONBOARDING_STEP_KEY = "onboarding_step"
+private const val ONBOARDING_LAST_STEP = 9
 
 @Composable
 fun OnboardingScreen(
@@ -56,12 +67,24 @@ fun OnboardingScreen(
     val prefs = remember(context) {
         context.getSharedPreferences(PREF_NAME, android.content.Context.MODE_PRIVATE)
     }
+    var languageChosen by remember {
+        mutableStateOf(SettingsManager.hasChosenAppLanguage(context))
+    }
+    var selectedLanguage by remember {
+        mutableStateOf(
+            if (SettingsManager.hasChosenAppLanguage(context)) {
+                SettingsManager.getAppLanguage(context)
+            } else {
+                AppLanguage.matchSystem() ?: AppLanguage.ENGLISH
+            }
+        )
+    }
     var step by remember {
-        mutableIntStateOf(prefs.getInt(ONBOARDING_STEP_KEY, 0).coerceIn(0, 6))
+        mutableIntStateOf(prefs.getInt(ONBOARDING_STEP_KEY, 0).coerceIn(0, ONBOARDING_LAST_STEP))
     }
 
     fun goToStep(nextStep: Int) {
-        val clamped = nextStep.coerceIn(0, 6)
+        val clamped = nextStep.coerceIn(0, ONBOARDING_LAST_STEP)
         step = clamped
         prefs.edit().putInt(ONBOARDING_STEP_KEY, clamped).apply()
     }
@@ -70,18 +93,31 @@ fun OnboardingScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .verticalScroll(rememberScrollState())
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        OnboardingStepContent(
-            step = step,
-            onGoToStep = { goToStep(it) },
-            onComplete = onComplete,
-            onGrantUsageAccess = {
-                context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
-            },
-        )
+        if (!languageChosen) {
+            LanguagePickerStep(
+                selected = selectedLanguage,
+                onSelect = { selectedLanguage = it },
+                onContinue = {
+                    // Persist + apply only. Do not set languageChosen=true here — that would
+                    // show Welcome with the old locale before AppCompat recreates the activity.
+                    LocaleHelper.setLanguage(context, selectedLanguage)
+                },
+            )
+        } else {
+            OnboardingStepContent(
+                step = step,
+                onGoToStep = { goToStep(it) },
+                onComplete = onComplete,
+                onGrantUsageAccess = {
+                    context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+                },
+            )
+        }
     }
 }
 
@@ -116,7 +152,10 @@ private fun OnboardingPermissionSteps(
         3 -> NotificationPermissionStep(onNext = { onGoToStep(4) })
         4 -> UsageAccessStep(onGrantUsageAccess = onGrantUsageAccess, onNext = { onGoToStep(5) })
         5 -> OverlayPermissionStep(onNext = { onGoToStep(6) })
-        else -> ModelStep(onNext = onComplete)
+        6 -> AccessibilityPermissionStep(onNext = { onGoToStep(7) })
+        7 -> ModelStep(onNext = { onGoToStep(8) })
+        8 -> AppTiersStep(onNext = { onGoToStep(9) })
+        else -> LayoutStep(onNext = onComplete)
     }
 }
 
@@ -132,7 +171,7 @@ private fun WelcomeStep(onNext: () -> Unit) {
     Spacer(modifier = Modifier.height(24.dp))
 
     Text(
-        text = "Welcome to MindfulHome",
+        text = stringResource(R.string.welcome_to_mindfulhome),
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center
@@ -141,7 +180,7 @@ private fun WelcomeStep(onNext: () -> Unit) {
     Spacer(modifier = Modifier.height(16.dp))
 
     Text(
-        text = "A home launcher that helps you use your phone more intentionally.",
+        text = stringResource(R.string.a_home_launcher_that_helps_you_use_your_phone_mo),
         style = MaterialTheme.typography.bodyLarge,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -153,37 +192,64 @@ private fun WelcomeStep(onNext: () -> Unit) {
         onClick = onNext,
         modifier = Modifier.fillMaxWidth(0.6f)
     ) {
-        Text("Get Started")
+        Text(stringResource(R.string.get_started))
     }
 }
 
 @Composable
 private fun PhilosophyStep(onNext: () -> Unit) {
+    OnboardingBulletStep(
+        title = stringResource(R.string.how_it_works),
+        bulletArrayRes = R.array.onboarding_philosophy_bullets,
+        buttonLabel = stringResource(R.string.makes_sense),
+        onNext = onNext,
+    )
+}
+
+@Composable
+private fun AppTiersStep(onNext: () -> Unit) {
+    OnboardingBulletStep(
+        title = stringResource(R.string.onboarding_app_tiers_title),
+        bulletArrayRes = R.array.onboarding_app_tiers_bullets,
+        buttonLabel = stringResource(R.string.makes_sense),
+        onNext = onNext,
+    )
+}
+
+@Composable
+private fun LayoutStep(onNext: () -> Unit) {
+    OnboardingBulletStep(
+        title = stringResource(R.string.onboarding_layout_title),
+        bulletArrayRes = R.array.onboarding_layout_bullets,
+        buttonLabel = stringResource(R.string.start_using_mindfulhome),
+        onNext = onNext,
+    )
+}
+
+@Composable
+private fun OnboardingBulletStep(
+    title: String,
+    bulletArrayRes: Int,
+    buttonLabel: String,
+    onNext: () -> Unit,
+) {
     Text(
-        text = "How it works",
+        text = title,
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center
+        textAlign = TextAlign.Center,
     )
 
     Spacer(modifier = Modifier.height(24.dp))
 
-    val points = listOf(
-        "Set a timer each time you unlock your phone",
-        "Apps earn karma based on whether you stick to your timer",
-        "Low-karma apps get hidden (but never blocked)",
-        "Talk to the AI to access hidden apps -- it will ask, but always relent",
-        "No app is ever closed or force-stopped by MindfulHome"
-    )
-
-    points.forEach { point ->
+    stringArrayResource(bulletArrayRes).forEach { point ->
         Text(
             text = "- $point",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 4.dp)
+                .padding(vertical = 4.dp),
         )
     }
 
@@ -191,9 +257,9 @@ private fun PhilosophyStep(onNext: () -> Unit) {
 
     Button(
         onClick = onNext,
-        modifier = Modifier.fillMaxWidth(0.6f)
+        modifier = Modifier.fillMaxWidth(0.6f),
     ) {
-        Text("Makes sense")
+        Text(buttonLabel)
     }
 }
 
@@ -246,18 +312,19 @@ private fun DefaultHomeStepBody(
     onNext: () -> Unit,
 ) {
     Text(
-        text = "Set as home launcher",
+        text = stringResource(R.string.set_as_home_launcher),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(16.dp))
+    val continueIfStuck = stringResource(R.string.onboarding_continue_if_stuck)
+    val skipForNow = stringResource(R.string.onboarding_skip_for_now)
     Text(
         text = if (isDefault) {
-            "MindfulHome is your default launcher."
+            stringResource(R.string.onboarding_default_launcher_is_default)
         } else {
-            "MindfulHome needs to be your default home app to work. " +
-                "Tap the button below and select MindfulHome."
+            stringResource(R.string.onboarding_default_launcher_instructions)
         },
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
@@ -266,13 +333,13 @@ private fun DefaultHomeStepBody(
     Spacer(modifier = Modifier.height(32.dp))
     if (!isDefault) {
         Button(onClick = onRequestDefault, modifier = Modifier.fillMaxWidth(0.6f)) {
-            Text("Set as default")
+            Text(stringResource(R.string.set_as_default))
         }
         Spacer(modifier = Modifier.height(16.dp))
     }
     if (!isDefault || showGrantedFallbackButton) {
         OutlinedButton(onClick = onNext, modifier = Modifier.fillMaxWidth(0.6f)) {
-            Text(if (isDefault) "Continue (if stuck)" else "Skip for now")
+            Text(if (isDefault) continueIfStuck else skipForNow)
         }
     }
 }
@@ -336,7 +403,7 @@ private fun NotificationPermissionStepBody(
     }
 
     Text(
-        text = "Allow notifications",
+        text = stringResource(R.string.allow_notifications),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center
@@ -346,10 +413,9 @@ private fun NotificationPermissionStepBody(
 
     Text(
         text = if (hasPermission) {
-            "Notifications enabled. You'll see your timer countdown and gentle nudges."
+            stringResource(R.string.onboarding_notifications_granted)
         } else {
-            "MindfulHome uses notifications to show your timer countdown " +
-                    "and send gentle nudges when time is up. No spam, promise."
+            stringResource(R.string.onboarding_notifications_rationale)
         },
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
@@ -361,7 +427,7 @@ private fun NotificationPermissionStepBody(
     PermissionGrantAndSkipButtons(
         hasPermission = hasPermission,
         showGrantedFallbackButton = showGrantedFallbackButton,
-        grantLabel = "Allow notifications",
+        grantLabel = stringResource(R.string.allow_notifications),
         onGrant = {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         },
@@ -402,7 +468,7 @@ private fun UsageAccessStep(
     }
 
     Text(
-        text = "Usage access",
+        text = stringResource(R.string.usage_access_2),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center
@@ -412,10 +478,9 @@ private fun UsageAccessStep(
 
     Text(
         text = if (hasPermission) {
-            "Usage access granted. Karma tracking will work."
+            stringResource(R.string.onboarding_usage_granted)
         } else {
-            "MindfulHome needs Usage Access to know which app is in the foreground " +
-                    "when your timer expires. This is how karma tracking works."
+            stringResource(R.string.onboarding_usage_rationale)
         },
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
@@ -427,7 +492,7 @@ private fun UsageAccessStep(
     PermissionGrantAndSkipButtons(
         hasPermission = hasPermission,
         showGrantedFallbackButton = showGrantedFallbackButton,
-        grantLabel = "Grant Usage Access",
+        grantLabel = stringResource(R.string.onboarding_grant_usage_access),
         onGrant = onGrantUsageAccess,
         onSkipOrContinue = {
             SettingsManager.setPermissionPromptSuppressed(
@@ -448,6 +513,8 @@ private fun PermissionGrantAndSkipButtons(
     onGrant: () -> Unit,
     onSkipOrContinue: () -> Unit,
 ) {
+    val continueIfStuck = stringResource(R.string.onboarding_continue_if_stuck)
+    val skipForNow = stringResource(R.string.onboarding_skip_for_now)
     if (!hasPermission) {
         Button(onClick = onGrant, modifier = Modifier.fillMaxWidth(0.6f)) {
             Text(grantLabel)
@@ -456,7 +523,7 @@ private fun PermissionGrantAndSkipButtons(
     }
     if (!hasPermission || showGrantedFallbackButton) {
         OutlinedButton(onClick = onSkipOrContinue, modifier = Modifier.fillMaxWidth(0.6f)) {
-            Text(if (hasPermission) "Continue (if stuck)" else "Skip for now")
+            Text(if (hasPermission) continueIfStuck else skipForNow)
         }
     }
 }
@@ -483,7 +550,7 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
     }
 
     Text(
-        text = "Display over other apps",
+        text = stringResource(R.string.display_over_other_apps),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center
@@ -493,12 +560,9 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
 
     Text(
         text = if (hasPermission) {
-            "Overlay permission granted. Nudge reminders will appear over any app."
+            stringResource(R.string.onboarding_overlay_granted)
         } else {
-            "MindfulHome can show a gentle reminder overlay when your session " +
-                    "timer expires, even while you're inside another app. " +
-                    "Without this, reminders will only appear as notifications " +
-                    "(which Android may silence over time)."
+            stringResource(R.string.onboarding_overlay_rationale)
         },
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
@@ -510,7 +574,7 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
     PermissionGrantAndSkipButtons(
         hasPermission = hasPermission,
         showGrantedFallbackButton = showGrantedFallbackButton,
-        grantLabel = "Grant overlay permission",
+        grantLabel = stringResource(R.string.onboarding_grant_overlay_permission),
         onGrant = {
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
@@ -530,9 +594,73 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
 }
 
 @Composable
+private fun AccessibilityPermissionStep(onNext: () -> Unit) {
+    val context = LocalContext.current
+    var hasPermission by remember {
+        mutableStateOf(ForegroundAppAccessibilityService.isEnabled(context))
+    }
+    var showGrantedFallbackButton by remember { mutableStateOf(false) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        hasPermission = ForegroundAppAccessibilityService.isEnabled(context)
+    }
+    LaunchedEffect(hasPermission) {
+        if (hasPermission) {
+            showGrantedFallbackButton = false
+            delay(300)
+            onNext()
+            delay(700)
+            showGrantedFallbackButton = true
+        } else {
+            showGrantedFallbackButton = false
+        }
+    }
+
+    Text(
+        text = stringResource(R.string.onboarding_accessibility_title),
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Text(
+        text = if (hasPermission) {
+            stringResource(R.string.onboarding_accessibility_granted)
+        } else {
+            stringResource(R.string.onboarding_accessibility_rationale)
+        },
+        style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+
+    Spacer(modifier = Modifier.height(32.dp))
+
+    PermissionGrantAndSkipButtons(
+        hasPermission = hasPermission,
+        showGrantedFallbackButton = showGrantedFallbackButton,
+        grantLabel = stringResource(R.string.onboarding_grant_accessibility),
+        onGrant = {
+            try {
+                context.startActivity(ForegroundAppAccessibilityService.settingsIntent())
+            } catch (_: Exception) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.couldn_t_open_accessibility_settings_on_this_dev),
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
+        },
+        onSkipOrContinue = onNext,
+    )
+}
+
+@Composable
 private fun ModelStep(onNext: () -> Unit) {
     Text(
-        text = "AI Model Options",
+        text = stringResource(R.string.ai_model_options),
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center
@@ -541,13 +669,7 @@ private fun ModelStep(onNext: () -> Unit) {
     Spacer(modifier = Modifier.height(16.dp))
 
     Text(
-        text = "Private, free, offline use is possible with a local model, " +
-                "such as a Gemma3-1B model (557 MB). Download it " +
-                "from HuggingFace and place it in the app's models folder.\n" +
-                "Be warned however that small models won't be as smart as you might expect.\n\n" +
-                "For a solution more powerful and less taxing on your space and compute " +
-                "we recommend signing in to use our AI service, powered by Gemini.\n\n" +
-                "If neither is configured, a scripted fallback will be used.",
+        text = stringResource(R.string.onboarding_ai_model_body),
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -559,7 +681,7 @@ private fun ModelStep(onNext: () -> Unit) {
         onClick = onNext,
         modifier = Modifier.fillMaxWidth(0.6f)
     ) {
-        Text("Start using MindfulHome")
+        Text(stringResource(R.string.language_picker_continue))
     }
 }
 

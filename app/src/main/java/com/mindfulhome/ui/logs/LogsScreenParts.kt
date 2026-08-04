@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.logs
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import android.content.Context
 import android.widget.Toast
@@ -71,13 +74,13 @@ internal fun LogsEmptyState(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "No sessions recorded yet.",
+            text = stringResource(R.string.no_sessions_recorded_yet),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "Logs will appear here after you unlock\nyour phone and use apps.",
+            text = stringResource(R.string.logs_will_appear_here_after_you_unlock_nyour_pho),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -227,7 +230,7 @@ private fun DaySessionsList(
         }
         sessions.isNullOrEmpty() -> {
             Text(
-                text = "No sessions for this day.",
+                text = stringResource(R.string.no_sessions_for_this_day),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -277,7 +280,7 @@ internal fun SessionCard(entry: SessionLogger.SessionSummary) {
                 onCopy = {
                     @Suppress("DEPRECATION")
                     clipboardManager.setText(AnnotatedString(content.orEmpty()))
-                    Toast.makeText(context, "Session log copied", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.session_log_copied), Toast.LENGTH_SHORT).show()
                 },
             )
             SessionCardBody(
@@ -346,7 +349,7 @@ private fun SessionCardHeaderActions(
         IconButton(onClick = onCopy) {
             Icon(
                 imageVector = Icons.Default.ContentCopy,
-                contentDescription = "Copy session log",
+                contentDescription = stringResource(R.string.copy_session_log),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }

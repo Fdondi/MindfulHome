@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.content.IntentFilter
 import android.util.Log
 import com.mindfulhome.data.AppDatabase
+import com.mindfulhome.locale.LocaleHelper
 import com.mindfulhome.logging.DailyLogSummaryScheduler
 import com.mindfulhome.logging.DailyLogSummaryStartupBackfill
 import com.mindfulhome.logging.SessionLogger
@@ -24,6 +25,10 @@ class MindfulHomeApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val onboardingDone = getSharedPreferences("mindfulhome", MODE_PRIVATE)
+            .getBoolean("onboarding_done", false)
+        LocaleHelper.migrateExistingUsersIfNeeded(this, onboardingDone)
+        LocaleHelper.applyStoredLocale(this)
         SessionLogger.init(this, database)
         DailyLogSummaryScheduler.ensureScheduled(this)
         appScope.launch(Dispatchers.IO) {

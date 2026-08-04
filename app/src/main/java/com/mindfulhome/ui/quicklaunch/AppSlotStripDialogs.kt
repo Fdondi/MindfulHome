@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.quicklaunch
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
@@ -7,11 +10,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.AppSlotPlacement
 import com.mindfulhome.data.QuickLaunchSlot
 import com.mindfulhome.data.placementsByPackage
+import com.mindfulhome.locale.IntentFolderNames
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog
 import com.mindfulhome.ui.icons.MaterialSymbolPickerDialog
@@ -155,17 +160,18 @@ private fun AppSlotStripRenameDialog(
     onSaved: () -> Unit,
 ) {
     val anchorPkg = anchorPackage ?: return
+    val resources = LocalContext.current.resources
     AlertDialog(
         onDismissRequest = {
             focusManagerClear()
             onClearAnchor()
         },
-        title = { Text("Rename folder") },
+        title = { Text(stringResource(R.string.rename_folder)) },
         text = {
             OutlinedTextField(
                 value = renameText,
                 onValueChange = onRenameTextChange,
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -175,13 +181,13 @@ private fun AppSlotStripRenameDialog(
                 onClick = {
                     focusManagerClear()
                     scope.launch {
-                        val name = renameText.takeIf { it.isNotBlank() }
+                        val name = IntentFolderNames.canonicalize(renameText, resources)
                         repository.setStripFolderName(kind, anchorPkg, name)
                         onSaved()
                     }
                 },
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
@@ -191,7 +197,7 @@ private fun AppSlotStripRenameDialog(
                     onClearAnchor()
                 },
             ) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         },
     )
@@ -249,16 +255,22 @@ private fun AppSlotStripFolderDialog(
     onLaunchApp: (packageName: String, allowedPackages: Set<String>, limitMinutes: Int?) -> Unit,
     onAddAppsClick: () -> Unit,
 ) {
+    val resources = LocalContext.current.resources
     AppFolderDetailDialog(
         folder = folder,
         onDismiss = { onFolderToShowChange(null) },
         titleForFolder = { f ->
-            f.folderName?.takeIf { it.isNotBlank() } ?: "Folder (${f.apps.size})"
+            val raw = f.folderName?.takeIf { it.isNotBlank() } ?: "Folder (${f.apps.size})"
+            IntentFolderNames.localize(raw, resources) ?: raw
         },
         showRenameIcon = true,
         onRenameIconClick = {
             folder.apps.firstOrNull()?.packageName?.let { anchor ->
-                onRequestRename(anchor, folder.folderName.orEmpty())
+                onRequestRename(
+                    anchor,
+                    IntentFolderNames.localize(folder.folderName, resources)
+                        ?: folder.folderName.orEmpty(),
+                )
             }
         },
         onSymbolIconClick = {

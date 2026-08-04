@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.timer
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import android.util.Log
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -153,7 +156,7 @@ fun TimerScreen(
         TimerScreenHeader(onBackToDefault)
         Spacer(modifier = Modifier.height(8.dp))
         Text(
-            text = "When should you be done?",
+            text = stringResource(R.string.when_should_you_be_done),
             style = MaterialTheme.typography.headlineMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onBackground,
@@ -186,7 +189,7 @@ fun TimerScreen(
             value = reason,
             onValueChange = { reason = it },
             modifier = Modifier.fillMaxWidth(0.8f),
-            placeholder = { Text("Why are you unlocking? (optional)") },
+            placeholder = { Text(stringResource(R.string.why_are_you_unlocking_optional)) },
             singleLine = false,
             maxLines = 2,
             shape = MaterialTheme.shapes.medium,
@@ -210,7 +213,7 @@ fun TimerScreen(
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
             shape = MaterialTheme.shapes.large,
         ) {
-            Text(text = "Start", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(text = stringResource(R.string.start), fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
         }
         Spacer(modifier = Modifier.height(20.dp))
         MostUsedAppsTodaySection(

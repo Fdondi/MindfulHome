@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.settings
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -182,10 +185,10 @@ fun SettingsScreen(
             .navigationBarsPadding()
     ) {
         TopAppBar(
-            title = { Text("Settings", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(R.string.settings), fontWeight = FontWeight.SemiBold) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                 }
             }
         )
@@ -196,6 +199,8 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp)
         ) {
+            LanguageSection()
+
             PermissionsSection(
                 hasUsageStats = hasUsageStats,
                 skippedUsagePrompt = skippedUsagePrompt,

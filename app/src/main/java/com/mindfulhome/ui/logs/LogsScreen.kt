@@ -1,4 +1,7 @@
 package com.mindfulhome.ui.logs
+import androidx.compose.ui.res.stringResource
+
+import com.mindfulhome.R
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,10 +78,10 @@ fun LogsScreen(
             .navigationBarsPadding(),
     ) {
         TopAppBar(
-            title = { Text("Session Logs", fontWeight = FontWeight.SemiBold) },
+            title = { Text(stringResource(R.string.session_logs), fontWeight = FontWeight.SemiBold) },
             navigationIcon = {
                 IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                 }
             },
         )
