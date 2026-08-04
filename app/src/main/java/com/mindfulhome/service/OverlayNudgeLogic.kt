@@ -1,6 +1,9 @@
 package com.mindfulhome.service
 
+import android.content.Context
 import android.view.Gravity
+import com.mindfulhome.R
+import com.mindfulhome.locale.LocaleHelper
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -165,10 +168,11 @@ object OverlayNudgeLogic {
         QuickLaunchBorderEdge("bottom", Gravity.BOTTOM or Gravity.START),
     )
 
-    fun conversationBannerTitle(): String = "MindfulHome conversation"
+    fun conversationBannerTitle(context: Context): String =
+        LocaleHelper.wrap(context).getString(R.string.notif_banner_title)
 
-    fun conversationBannerFooter(): String =
-        "Tap field to type here, or tap title for notification"
+    fun conversationBannerFooter(context: Context): String =
+        LocaleHelper.wrap(context).getString(R.string.notif_banner_footer)
 
     data class BadgeStyleColors(
         val backgroundColor: Int,

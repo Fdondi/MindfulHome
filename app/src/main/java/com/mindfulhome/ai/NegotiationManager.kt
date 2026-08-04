@@ -291,7 +291,7 @@ class NegotiationManager(
         )?.let { return@withContext it }
 
         exchangeCount++
-        val text = PromptTemplates.fallbackNudgeResponse(appName, nudgeCount)
+        val text = PromptTemplates.fallbackNudgeResponse(context, appName, nudgeCount)
         logDeveloper("fallback response used: nudge scripted response (exchangeCount=$exchangeCount)")
         NegotiationResult(responseText = text)
     }
@@ -584,7 +584,7 @@ class NegotiationManager(
         NegotiationType.NUDGE -> {
             exchangeCount++
             val appName = currentAppPackage.substringAfterLast('.')
-            val text = PromptTemplates.fallbackNudgeResponse(appName, exchangeCount - 1)
+            val text = PromptTemplates.fallbackNudgeResponse(context, appName, exchangeCount - 1)
             logDeveloper(
                 "fallback response used: nudge scripted reply in ongoing chat (exchangeCount=$exchangeCount)",
             )

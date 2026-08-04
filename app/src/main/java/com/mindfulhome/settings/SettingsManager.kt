@@ -239,7 +239,7 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
 
     fun getAppLanguage(context: Context): AppLanguage {
         val tag = prefs(context).getString(APP_LANGUAGE_KEY, null)
-        return AppLanguage.fromTag(tag) ?: AppLanguage.ENGLISH
+        return AppLanguage.fromTag(tag) ?: AppLanguage.SYSTEM
     }
 
     fun setAppLanguage(context: Context, language: AppLanguage) {

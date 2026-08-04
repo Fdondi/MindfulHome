@@ -1,3 +1,6 @@
+// 0.97.2 - Add System default language option (follow device locale)
+// 0.97.1 - Fix Service/Application getString ignoring in-app language (wrap locale context)
+// 0.97.0 - Localize timer/nudge/QL notification copy + offline nudge fallbacks
 // 0.96.1 - Fill missing Italian intent-folder keys; require emit_locale_xml success after i18n edits
 // 0.96.0 - Fix onboarding crash: nested verticalScroll in language picker step
 // 0.95.0 - Onboarding ends with app-tier + home-layout explanation pages
@@ -34,5 +37,5 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.96.1"
+    const val versionName = "0.97.2"
 }

@@ -3,6 +3,7 @@ package com.mindfulhome
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.content.IntentFilter
 import android.util.Log
 import com.mindfulhome.data.AppDatabase
@@ -22,6 +23,10 @@ class MindfulHomeApp : Application() {
     val database: AppDatabase by lazy { AppDatabase.getInstance(this) }
     private var unlockReceiver: ScreenUnlockReceiver? = null
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(base))
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -51,21 +56,22 @@ class MindfulHomeApp : Application() {
 
     private fun createNotificationChannels() {
         val notificationManager = getSystemService(NotificationManager::class.java)
+        val localized = LocaleHelper.wrap(this)
 
         val timerChannel = NotificationChannel(
             TIMER_CHANNEL_ID,
-            getString(R.string.timer_channel_name),
+            localized.getString(R.string.timer_channel_name),
             NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = getString(R.string.timer_channel_description)
+            description = localized.getString(R.string.timer_channel_description)
         }
 
         val nudgeChannel = NotificationChannel(
             NUDGE_CHANNEL_ID,
-            getString(R.string.nudge_channel_name),
+            localized.getString(R.string.nudge_channel_name),
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = getString(R.string.nudge_channel_description)
+            description = localized.getString(R.string.nudge_channel_description)
         }
 
         notificationManager.createNotificationChannel(timerChannel)

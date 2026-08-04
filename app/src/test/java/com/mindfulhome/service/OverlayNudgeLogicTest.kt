@@ -239,13 +239,11 @@ class OverlayNudgeLogicTest {
     }
 
     @Test
-    fun quickLaunchBorderEdges_andBannerCopy() {
+    fun quickLaunchBorderEdges() {
         val edges = OverlayNudgeLogic.quickLaunchBorderEdges()
         assertEquals(2, edges.size)
         assertEquals("top", edges[0].name)
         assertEquals("bottom", edges[1].name)
-        assertEquals("MindfulHome conversation", OverlayNudgeLogic.conversationBannerTitle())
-        assertTrue(OverlayNudgeLogic.conversationBannerFooter().contains("Tap field"))
     }
 
     @Test

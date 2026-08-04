@@ -2,11 +2,12 @@
 
 ## Languages
 
-In-app language (not system-only), chosen on first onboarding step and changeable in Settings:
+In-app language, chosen on first onboarding step and changeable in Settings. **System default** clears the per-app locale override and follows the device language (best supported match, else English).
 
 | Locale | Folder |
 |--------|--------|
-| English (default) | `values/` |
+| System default | (device) |
+| English | `values/` |
 | German | `values-de/` |
 | French | `values-fr/` |
 | Italian | `values-it/` |
@@ -25,7 +26,7 @@ Missing keys in a locale fall back to English.
 
 ## AI replies
 
-System prompts append `Always write your replies in <Language> (locale <tag>).` from `PromptTemplates.withReplyLanguage`.
+System prompts append `Always write your replies in <Language> (locale <tag>).` from `PromptTemplates.withReplyLanguage`. Offline nudge fallbacks (e.g. “Your time is up…”) and notification copy (timer countdown, Quick Launch status, reply actions, extension prompts) use `strings.xml` via `LocaleHelper.wrap` — Services do not inherit AppCompat per-app locales on their own.
 
 ## Tooling
 

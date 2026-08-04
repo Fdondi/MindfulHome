@@ -22,6 +22,7 @@ import com.mindfulhome.ai.NegotiationManager
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.BackendAuthHelper
 import com.mindfulhome.data.AppRepository
+import com.mindfulhome.locale.LocaleHelper
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
@@ -41,6 +42,20 @@ import kotlin.math.max
 
 class TimerService : Service() {
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(LocaleHelper.wrap(newBase))
+    }
+
+    /** User-visible copy for the current in-app language (Services keep a stale config). */
+    private fun locString(id: Int, vararg formatArgs: Any): String {
+        val localized = LocaleHelper.wrap(this)
+        return if (formatArgs.isEmpty()) {
+            localized.getString(id)
+        } else {
+            localized.getString(id, *formatArgs)
+        }
+    }
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var timerJob: Job? = null
     private var nudgeJob: Job? = null
@@ -58,7 +73,7 @@ class TimerService : Service() {
     /** Foreground app currently shown in the Quick Launch monitoring notification (even when allowed/ignored). */
     private var quickLaunchDetectedPackage: String = ""
     private var quickLaunchDetectedLabel: String = ""
-    private var quickLaunchDetectedStatus: String = "Quick Launch active - monitoring app switches"
+    private var quickLaunchDetectedStatus: String = DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT
     private var quickLaunchFrameSuppressedForSensitiveApp: Boolean = false
     /** Green/yellow/red segment length for the Quick Launch overlay; shorter when the exit app has negative karma. */
     private var quickLaunchSemaphorePhaseMs: Long = 20_000L
@@ -116,9 +131,15 @@ class TimerService : Service() {
     private val nudgeMessages = mutableListOf<NudgeMessage>()
     private var pendingExtensionMinutes: Int? = null
     private var pendingExtensionKeepBannerVisible: Boolean = true
-    private val userPerson = Person.Builder().setName("You").setKey("user").build()
-    private val aiPerson =
-        Person.Builder().setName("MindfulHome").setKey("ai").setBot(true).build()
+    private fun userPerson(): Person =
+        Person.Builder().setName(locString(R.string.notif_sender_you)).setKey("user").build()
+
+    private fun aiPerson(): Person =
+        Person.Builder().setName(locString(R.string.app_name)).setKey("ai").setBot(true).build()
+
+    private fun extendConfirmText(): String = locString(R.string.notif_extend_confirm)
+
+    private fun extendDeclineText(): String = locString(R.string.notif_extend_decline)
 
     private data class NudgeMessage(
         val text: String,
@@ -567,7 +588,7 @@ class TimerService : Service() {
         rememberQuickLaunchDetection(
             packageName = packageName,
             label = label,
-            status = "Detected $label — allowed Quick Launch app",
+            status = locString(R.string.notif_ql_detected_allowed, label),
         )
         Log.v(TAG, "quick-launch app allowed: $packageName")
         logDeveloperQuickLaunch(
@@ -587,7 +608,7 @@ class TimerService : Service() {
         rememberQuickLaunchDetection(
             packageName = packageName,
             label = label,
-            status = "Detected $label — ignored ($statusReason)",
+            status = locString(R.string.notif_ql_detected_ignored, label, statusReason),
         )
         if (decision.awaitingHome) {
             logDeveloperQuickLaunch(
@@ -623,7 +644,7 @@ class TimerService : Service() {
         rememberQuickLaunchDetection(
             packageName = packageName,
             label = label,
-            status = "Detected $label — instant ShouldYouBeHere",
+            status = locString(R.string.notif_ql_detected_instant_gate, label),
         )
         logWithSession("Restricted app from launcher/Recents: **$label** — opening gate now")
         logDeveloperQuickLaunch(
@@ -643,7 +664,7 @@ class TimerService : Service() {
         rememberQuickLaunchDetection(
             packageName = packageName,
             label = label,
-            status = "Detected $label — starting grace",
+            status = locString(R.string.notif_ql_detected_starting_grace, label),
         )
         serviceScope.launch { configureQuickLaunchExitGrace(packageName, now) }
         logWithSession("Quick Launch switch observed: **$label** — green → yellow → red, then gate")
@@ -659,7 +680,7 @@ class TimerService : Service() {
         rememberQuickLaunchDetection(
             packageName = packageName,
             label = label,
-            status = "Detected $label — monitoring",
+            status = locString(R.string.notif_ql_detected_monitoring, label),
         )
         logDeveloperQuickLaunch(
             "detected package=$packageName label=$label decision=monitor " +
@@ -1827,7 +1848,7 @@ class TimerService : Service() {
                 Log.e(TAG, "Error starting nudge conversation", e)
                 logSessionEvent("Nudge conversation start failed: ${e.javaClass.simpleName}")
                 nudgeMessages.add(
-                    NudgeMessage("Time's up! Your session has ended.", isFromUser = false)
+                    NudgeMessage(locString(R.string.nudge_error_session_ended), isFromUser = false)
                 )
                 showConversationNotification(alertUser = true)
             }
@@ -1861,7 +1882,7 @@ class TimerService : Service() {
         val manager = negotiationManager
         if (manager == null) {
             logSessionEvent("Nudge reply received but conversation manager is null")
-            val fallback = "Take a moment to reflect on whether you still need this app."
+            val fallback = locString(R.string.nudge_fallback_reflect)
             nudgeMessages.add(NudgeMessage(fallback, isFromUser = false))
             showConversationNotification(alertUser = false)
             overlayManager.updateConversationMessage(fallback, _nudgeCount.value)
@@ -1896,7 +1917,7 @@ class TimerService : Service() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error handling nudge reply", e)
                 logSessionEvent("AI reply handling failed: ${e.javaClass.simpleName}")
-                val fallback = "Sorry, I couldn't process that. Take a moment to reflect."
+                val fallback = locString(R.string.nudge_error_process_failed)
                 nudgeMessages.add(NudgeMessage(fallback, isFromUser = false))
                 showConversationNotification(alertUser = false)
                 overlayManager.updateConversationMessage(fallback, _nudgeCount.value)
@@ -1932,7 +1953,13 @@ class TimerService : Service() {
         source: String,
     ): Boolean {
         val pendingMinutes = pendingExtensionMinutes ?: return false
-        return when (parseExtensionConfirmationReply(payload)) {
+        return when (
+            parseExtensionConfirmationReply(
+                payload,
+                confirmText = extendConfirmText(),
+                declineText = extendDeclineText(),
+            )
+        ) {
             ExtensionConfirmationParse.NotADecision -> false
             ExtensionConfirmationParse.Confirm -> applyConfirmedExtension(
                 payload, pendingMinutes, keepBannerVisible, source,
@@ -1959,8 +1986,7 @@ class TimerService : Service() {
             endNudgeConversation()
             return true
         }
-        val blocked =
-            "I can't grant that extension now - your hard deadline is now the closest limit."
+        val blocked = locString(R.string.nudge_extension_blocked_deadline)
         nudgeMessages.add(NudgeMessage(blocked, isFromUser = false))
         showConversationNotification(alertUser = false)
         overlayManager.updateConversationMessage(blocked, _nudgeCount.value)
@@ -1986,7 +2012,7 @@ class TimerService : Service() {
             SettingsManager.getNudgeInitialNotificationDelayMinutes(this)
                 .coerceAtLeast(0) * 60_000L
             )
-        val declinedMessage = "Understood - no extension applied. If it is late, close the app now."
+        val declinedMessage = locString(R.string.nudge_extension_declined)
         nudgeMessages.add(NudgeMessage(declinedMessage, isFromUser = false))
         showConversationNotification(alertUser = false)
         overlayManager.updateConversationMessage(declinedMessage, _nudgeCount.value)
@@ -2003,7 +2029,12 @@ class TimerService : Service() {
         val formattedTime = projectedExpirationMs?.let {
             DateFormat.getTimeFormat(this).format(Date(it))
         }
-        return formatExtensionConfirmationMessage(minutes, formattedTime)
+        return formatExtensionConfirmationMessage(
+            minutes,
+            formattedTime,
+            byMinutesFormat = locString(R.string.nudge_extension_confirm_by_minutes),
+            atTimeFormat = locString(R.string.nudge_extension_confirm_at_time),
+        )
     }
 
     private fun calculateProjectedExpirationTimeMs(extraMinutes: Int): Long? {
@@ -2075,9 +2106,9 @@ class TimerService : Service() {
     }
 
     private fun buildConversationMessagingStyle(): NotificationCompat.MessagingStyle {
-        val messagingStyle = NotificationCompat.MessagingStyle(userPerson)
+        val messagingStyle = NotificationCompat.MessagingStyle(userPerson())
         for (msg in nudgeMessages) {
-            val sender = if (msg.isFromUser) null else aiPerson
+            val sender = if (msg.isFromUser) null else aiPerson()
             messagingStyle.addMessage(
                 NotificationCompat.MessagingStyle.Message(msg.text, msg.timestamp, sender),
             )
@@ -2095,7 +2126,9 @@ class TimerService : Service() {
     }
 
     private fun buildConversationReplyAction(): NotificationCompat.Action {
-        val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY).setLabel("Reply...").build()
+        val remoteInput = RemoteInput.Builder(KEY_TEXT_REPLY)
+            .setLabel(locString(R.string.notif_reply_hint))
+            .build()
         val replyIntent = Intent(this, TimerService::class.java).apply {
             action = ACTION_HANDLE_REPLY
         }
@@ -2104,7 +2137,7 @@ class TimerService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
         )
         return NotificationCompat.Action.Builder(
-            R.drawable.ic_nudge_notification, "Reply", replyPendingIntent,
+            R.drawable.ic_nudge_notification, locString(R.string.notif_reply), replyPendingIntent,
         )
             .addRemoteInput(remoteInput)
             .setAllowGeneratedReplies(true)
@@ -2112,30 +2145,32 @@ class TimerService : Service() {
     }
 
     private fun buildQuickConfirmExtensionAction(): NotificationCompat.Action {
+        val confirm = extendConfirmText()
         val intent = Intent(this, TimerService::class.java).apply {
             action = ACTION_HANDLE_REPLY
-            putExtra(EXTRA_QUICK_REPLY_TEXT, QUICK_REPLY_CONFIRM_EXTENSION)
+            putExtra(EXTRA_QUICK_REPLY_TEXT, confirm)
         }
         val pending = PendingIntent.getService(
             this, NUDGE_NOTIFICATION_ID + 1, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Action.Builder(
-            R.drawable.ic_nudge_notification, QUICK_REPLY_CONFIRM_EXTENSION, pending,
+            R.drawable.ic_nudge_notification, confirm, pending,
         ).build()
     }
 
     private fun buildQuickDeclineExtensionAction(): NotificationCompat.Action {
+        val decline = extendDeclineText()
         val intent = Intent(this, TimerService::class.java).apply {
             action = ACTION_HANDLE_REPLY
-            putExtra(EXTRA_QUICK_REPLY_TEXT, QUICK_REPLY_DECLINE_EXTENSION)
+            putExtra(EXTRA_QUICK_REPLY_TEXT, decline)
         }
         val pending = PendingIntent.getService(
             this, NUDGE_NOTIFICATION_ID + 2, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Action.Builder(
-            R.drawable.ic_nudge_notification, QUICK_REPLY_DECLINE_EXTENSION, pending,
+            R.drawable.ic_nudge_notification, decline, pending,
         ).build()
     }
 
@@ -2182,9 +2217,13 @@ class TimerService : Service() {
     }
 
     private fun buildBannerPreviewLines(): List<String> {
-        if (nudgeMessages.isEmpty()) return listOf("MindfulHome has a new message.")
+        if (nudgeMessages.isEmpty()) return listOf(locString(R.string.notif_new_message))
         return nudgeMessages.takeLast(3).map { message ->
-            val sender = if (message.isFromUser) "You" else "MindfulHome"
+            val sender = if (message.isFromUser) {
+                locString(R.string.notif_sender_you)
+            } else {
+                locString(R.string.app_name)
+            }
             "$sender: ${message.text}"
         }
     }
@@ -2209,8 +2248,8 @@ class TimerService : Service() {
         val seconds = ((remainingMs % 60000) / 1000).toInt()
 
         return NotificationCompat.Builder(this, MindfulHomeApp.TIMER_CHANNEL_ID)
-            .setContentTitle("MindfulHome")
-            .setContentText("$minutes:${seconds.toString().padStart(2, '0')} remaining")
+            .setContentTitle(locString(R.string.app_name))
+            .setContentText(locString(R.string.notif_timer_remaining, minutes, seconds))
             .setSmallIcon(R.drawable.ic_nudge_notification)
             .setOngoing(true)
             .setSilent(true)
@@ -2225,8 +2264,8 @@ class TimerService : Service() {
 
     private fun buildQuickLaunchMonitoringNotification(): Notification {
         return NotificationCompat.Builder(this, MindfulHomeApp.TIMER_CHANNEL_ID)
-            .setContentTitle("MindfulHome")
-            .setContentText(DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT)
+            .setContentTitle(locString(R.string.app_name))
+            .setContentText(locString(R.string.notif_quick_launch_active))
             .setSmallIcon(R.drawable.ic_nudge_notification)
             .setOngoing(true)
             .setSilent(true)
@@ -2244,7 +2283,7 @@ class TimerService : Service() {
         lastQuickLaunchNotificationText = contentText
 
         val notification = NotificationCompat.Builder(this, MindfulHomeApp.TIMER_CHANNEL_ID)
-            .setContentTitle("MindfulHome")
+            .setContentTitle(locString(R.string.app_name))
             .setContentText(contentText)
             .setSmallIcon(R.drawable.ic_nudge_notification)
             .setOngoing(true)
@@ -2271,6 +2310,13 @@ class TimerService : Service() {
             nowMs = System.currentTimeMillis(),
             detectedPackage = quickLaunchDetectedPackage,
             detectedStatus = quickLaunchDetectedStatus,
+            defaultText = locString(R.string.notif_quick_launch_active),
+            openingTimerNow = locString(R.string.notif_ql_opening_timer_now),
+            openingTimerIn = locString(R.string.notif_ql_opening_timer_in),
+            statusFormat = locString(R.string.notif_ql_status),
+            phaseGreen = locString(R.string.notif_ql_phase_green),
+            phaseYellow = locString(R.string.notif_ql_phase_yellow),
+            phaseRed = locString(R.string.notif_ql_phase_red),
         )
     }
 

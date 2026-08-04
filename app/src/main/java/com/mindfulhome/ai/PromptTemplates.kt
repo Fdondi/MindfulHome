@@ -1,7 +1,9 @@
 package com.mindfulhome.ai
 
 import android.content.Context
+import com.mindfulhome.R
 import com.mindfulhome.locale.AppLanguage
+import com.mindfulhome.locale.LocaleHelper
 import com.mindfulhome.settings.SettingsManager
 
 /**
@@ -18,7 +20,7 @@ object PromptTemplates {
         "Always write your replies in ${language.englishName} (locale ${language.tag})."
 
     fun withReplyLanguage(context: Context, systemPrompt: String): String {
-        val language = SettingsManager.getAppLanguage(context)
+        val language = SettingsManager.getAppLanguage(context).resolve()
         val instruction = replyLanguageInstruction(language)
         return if (systemPrompt.contains(instruction)) {
             systemPrompt
@@ -259,11 +261,12 @@ object PromptTemplates {
     /** Whether the offline fallback should allow access at this completed round count. */
     fun fallbackShouldGrantAccess(exchangeCount: Int): Boolean = exchangeCount >= 2
 
-    fun fallbackNudgeResponse(appName: String, nudgeCount: Int): String {
+    fun fallbackNudgeResponse(context: Context, appName: String, nudgeCount: Int): String {
+        val localized = LocaleHelper.wrap(context)
         return when {
-            nudgeCount <= 1 -> "Your time is up. Ready to wrap up with $appName?"
-            nudgeCount <= 3 -> "Still on $appName - just checking in."
-            else -> "You've been over your limit for a while. No pressure, but your $appName karma is taking a hit."
+            nudgeCount <= 1 -> localized.getString(R.string.nudge_fallback_time_up, appName)
+            nudgeCount <= 3 -> localized.getString(R.string.nudge_fallback_still_on, appName)
+            else -> localized.getString(R.string.nudge_fallback_over_limit, appName)
         }
     }
 }

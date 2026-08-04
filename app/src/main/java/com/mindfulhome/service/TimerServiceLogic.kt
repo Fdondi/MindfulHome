@@ -238,10 +238,13 @@ internal fun quickLaunchFrameLevelForNow(
 internal fun semaphorePhaseName(
     elapsedMs: Long,
     phaseMs: Long,
+    green: String = "green",
+    yellow: String = "yellow",
+    red: String = "red",
 ): String = when {
-    elapsedMs < phaseMs -> "green"
-    elapsedMs < phaseMs * 2 -> "yellow"
-    else -> "red"
+    elapsedMs < phaseMs -> green
+    elapsedMs < phaseMs * 2 -> yellow
+    else -> red
 }
 
 internal fun formatQuickLaunchMonitoringStatusText(
@@ -254,6 +257,12 @@ internal fun formatQuickLaunchMonitoringStatusText(
     detectedStatus: String,
     defaultText: String = DEFAULT_QUICK_LAUNCH_NOTIFICATION_TEXT,
     gracePhases: Int = QUICK_LAUNCH_SEMAPHORE_GRACE_PHASES,
+    openingTimerNow: String = "opening timer now",
+    openingTimerIn: String = "opening timer in %1\$ds",
+    statusFormat: String = "Detected %1\$s. Phase %2\$s, %3\$s.",
+    phaseGreen: String = "green",
+    phaseYellow: String = "yellow",
+    phaseRed: String = "red",
 ): String {
     if (candidatePackage.isNullOrBlank() || deadlineMs <= 0L) {
         return if (detectedPackage.isNotBlank()) detectedStatus else defaultText
@@ -264,15 +273,18 @@ internal fun formatQuickLaunchMonitoringStatusText(
     } else {
         0L
     }
-    val phase = semaphorePhaseName(elapsedMs, phaseMs)
+    val phase = semaphorePhaseName(
+        elapsedMs, phaseMs,
+        green = phaseGreen, yellow = phaseYellow, red = phaseRed,
+    )
     val remainingMs = (deadlineMs - nowMs).coerceAtLeast(0L)
     val remainingSeconds = (remainingMs + 999L) / 1_000L
     val countdownLabel = if (remainingMs <= 0L) {
-        "opening timer now"
+        openingTimerNow
     } else {
-        "opening timer in ${remainingSeconds}s"
+        String.format(openingTimerIn, remainingSeconds)
     }
-    return "Detected $label. Phase $phase, $countdownLabel."
+    return String.format(statusFormat, label, phase, countdownLabel)
 }
 
 internal fun mergeLastUserActivityAtMs(
@@ -399,9 +411,10 @@ internal fun parseExtensionConfirmationReply(
     declineText: String = QUICK_REPLY_DECLINE_EXTENSION,
 ): ExtensionConfirmationParse {
     val normalized = payload.trim().lowercase()
-    val isConfirm = normalized == confirmText ||
+    val confirm = confirmText.lowercase()
+    val isConfirm = normalized == confirm ||
         normalized == "y" ||
-        normalized.startsWith("$confirmText ")
+        normalized.startsWith("$confirm ")
     val isDecline = normalized == declineText.lowercase() ||
         normalized.contains("i'll close")
     return when {
@@ -433,11 +446,13 @@ internal fun projectExpirationTimeMs(
 internal fun formatExtensionConfirmationMessage(
     minutes: Int,
     formattedExpirationTime: String?,
+    byMinutesFormat: String = "This will now make your timer expire later by %1\$d minutes. Are you sure?",
+    atTimeFormat: String = "This will now make your timer expire at %1\$s. Are you sure?",
 ): String {
     return if (formattedExpirationTime == null) {
-        "This will now make your timer expire later by $minutes minutes. Are you sure?"
+        String.format(byMinutesFormat, minutes)
     } else {
-        "This will now make your timer expire at $formattedExpirationTime. Are you sure?"
+        String.format(atTimeFormat, formattedExpirationTime)
     }
 }
 

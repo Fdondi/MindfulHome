@@ -23,6 +23,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.mindfulhome.R
+import com.mindfulhome.locale.LocaleHelper
 import kotlin.random.Random
 
 /**
@@ -38,6 +39,15 @@ class OverlayNudgeManager(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
     private val quickLaunchBorderViews = mutableListOf<View>()
+
+    private fun locString(id: Int, vararg formatArgs: Any): String {
+        val localized = LocaleHelper.wrap(context)
+        return if (formatArgs.isEmpty()) {
+            localized.getString(id)
+        } else {
+            localized.getString(id, *formatArgs)
+        }
+    }
     private var conversationBannerView: View? = null
     private var conversationBannerParams: WindowManager.LayoutParams? = null
     private var conversationBannerBodyView: TextView? = null
@@ -234,20 +244,20 @@ class OverlayNudgeManager(private val context: Context) {
     )
 
     private fun buildBannerTitleView(): TextView = TextView(context).apply {
-        text = OverlayNudgeLogic.conversationBannerTitle()
+        text = OverlayNudgeLogic.conversationBannerTitle(context)
         setTextColor(Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
         typeface = Typeface.DEFAULT_BOLD
     }
 
     private fun buildBannerFooterView(): TextView = TextView(context).apply {
-        text = OverlayNudgeLogic.conversationBannerFooter()
+        text = OverlayNudgeLogic.conversationBannerFooter(context)
         setTextColor(Color.parseColor("#FFFFCC80"))
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 12f)
     }
 
     private fun buildConversationBannerReplyInput(): EditText = EditText(context).apply {
-        hint = "Reply to MindfulHome..."
+        hint = locString(R.string.notif_banner_reply_hint)
         setHintTextColor(Color.parseColor("#99FFFFFF"))
         setTextColor(Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
@@ -863,7 +873,7 @@ class OverlayNudgeManager(private val context: Context) {
             setOnTouchListener { _, _ -> true }
         }
         val messageView = TextView(context).apply {
-            text = context.getString(R.string.quick_launch_cheat_message)
+            text = locString(R.string.quick_launch_cheat_message)
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             gravity = Gravity.CENTER

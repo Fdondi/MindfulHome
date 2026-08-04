@@ -75,7 +75,7 @@ fun OnboardingScreen(
             if (SettingsManager.hasChosenAppLanguage(context)) {
                 SettingsManager.getAppLanguage(context)
             } else {
-                AppLanguage.matchSystem() ?: AppLanguage.ENGLISH
+                AppLanguage.SYSTEM
             }
         )
     }

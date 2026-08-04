@@ -22,8 +22,8 @@ import com.mindfulhome.R
 import com.mindfulhome.locale.AppLanguage
 
 /**
- * Language list. Labels use [AppLanguage.nativeName] so the picker is readable
- * before the chosen locale's resources are applied.
+ * Language list. Fixed locales use [AppLanguage.nativeName]; System default uses a
+ * translated label plus the currently resolved device language.
  */
 @Composable
 fun LanguagePickerList(
@@ -32,31 +32,59 @@ fun LanguagePickerList(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
-        AppLanguage.entries.forEach { language ->
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onSelect(language) }
-                    .padding(vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(
-                    selected = language == selected,
-                    onClick = { onSelect(language) },
-                )
-                Column(modifier = Modifier.padding(start = 4.dp)) {
-                    Text(
-                        text = language.nativeName,
-                        style = MaterialTheme.typography.bodyLarge,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = language.englishName,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+        LanguagePickerRow(
+            language = AppLanguage.SYSTEM,
+            selected = selected,
+            onSelect = onSelect,
+        )
+        AppLanguage.fixedEntries.forEach { language ->
+            LanguagePickerRow(
+                language = language,
+                selected = selected,
+                onSelect = onSelect,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LanguagePickerRow(
+    language: AppLanguage,
+    selected: AppLanguage,
+    onSelect: (AppLanguage) -> Unit,
+) {
+    val title = if (language == AppLanguage.SYSTEM) {
+        stringResource(R.string.language_system_default)
+    } else {
+        language.nativeName
+    }
+    val subtitle = if (language == AppLanguage.SYSTEM) {
+        language.resolve().nativeName
+    } else {
+        language.englishName
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect(language) }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(
+            selected = language == selected,
+            onClick = { onSelect(language) },
+        )
+        Column(modifier = Modifier.padding(start = 4.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
