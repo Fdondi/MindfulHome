@@ -37,6 +37,7 @@
     <string name="nudge_extension_confirm_at_time">Cela fera expirer votre minuteur à %1$s. Êtes-vous sûr ?</string>
     <string name="nudge_extension_blocked_deadline">Je ne peux pas accorder cette extension maintenant – votre échéance stricte est la limite la plus proche.</string>
     <string name="nudge_extension_declined">Compris – pas d\'extension. S\'il est tard, fermez l\'app maintenant.</string>
+    <string name="nudge_conversation_grace_expired">Délai de conversation expiré !</string>
     <string name="quick_launch_cheat_message">S\'il te plaît, ne triche pas, tu ne fais que te faire du mal</string>
     <string name="accessibility_service_description">Permet à MindfulHome de remarquer l\'instant où vous changez d\'application, afin qu\'il puisse vous guider en douceur sans vérifier constamment en arrière-plan (économise la batterie). MindfulHome lit uniquement quelle application se trouve devant, jamais le contenu de votre écran.</string>
     <string name="language_picker_title">Choisissez votre langue</string>

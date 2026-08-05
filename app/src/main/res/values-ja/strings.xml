@@ -35,6 +35,7 @@
     <string name="nudge_extension_confirm_at_time">タイマーは %1$s に期限切れになります。よろしいですか？</string>
     <string name="nudge_extension_blocked_deadline">今はその延長を許可できません – ハード期限が最も近い制限です。</string>
     <string name="nudge_extension_declined">了解 – 延長なし。遅いなら今すぐアプリを閉じてください。</string>
+    <string name="nudge_conversation_grace_expired">会話の猶予が切れました！</string>
     <string name="back">戻る</string>
     <string name="backend_sign_in_description">リモートの Gemini モデルを使うには Google アカウントでサインインしてください。サインインしない場合は端末上の応答にフォールバックします。</string>
     <string name="behavior">動作</string>

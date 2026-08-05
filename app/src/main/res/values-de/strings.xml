@@ -37,6 +37,7 @@
     <string name="nudge_extension_confirm_at_time">Dadurch läuft dein Timer um %1$s ab. Bist du sicher?</string>
     <string name="nudge_extension_blocked_deadline">Ich kann diese Verlängerung jetzt nicht gewähren – deine harte Deadline ist jetzt das engste Limit.</string>
     <string name="nudge_extension_declined">Verstanden – keine Verlängerung. Wenn es spät ist, schließe die App jetzt.</string>
+    <string name="nudge_conversation_grace_expired">Gesprächsfrist abgelaufen!</string>
     <string name="quick_launch_cheat_message">Bitte betrüge nicht, du tust nur dir selbst weh</string>
     <string name="accessibility_service_description">MindfulHome erkennt den Moment, in dem Sie die App wechseln, und kann Sie sanft zurückführen, ohne ständig im Hintergrund nachzuschauen (spart Batterie). MindfulHome liest nur, welche App vorne ist – niemals den Inhalt Ihres Bildschirms.</string>
     <string name="language_picker_title">Wählen Sie Ihre Sprache</string>

@@ -75,9 +75,6 @@ fun IntervalSettingsScreen(
     var bannerMin by remember {
         mutableIntStateOf(SettingsManager.getNudgeBannerIntervalMinutes(context))
     }
-    var typingMin by remember {
-        mutableIntStateOf(SettingsManager.getNudgeTypingIdleTimeoutMinutes(context))
-    }
     var watchMin by remember {
         mutableIntStateOf(SettingsManager.getNudgeInteractionWatchTimeoutMinutes(context))
     }
@@ -92,7 +89,6 @@ fun IntervalSettingsScreen(
         initialDelayMin = SettingsManager.getNudgeInitialNotificationDelayMinutes(context)
         bubbleSec = SettingsManager.getNudgeBubbleIntervalSeconds(context)
         bannerMin = SettingsManager.getNudgeBannerIntervalMinutes(context)
-        typingMin = SettingsManager.getNudgeTypingIdleTimeoutMinutes(context)
         watchMin = SettingsManager.getNudgeInteractionWatchTimeoutMinutes(context)
     }
 
@@ -276,20 +272,6 @@ fun IntervalSettingsScreen(
                 onSelect = {
                     bannerMin = it
                     SettingsManager.setNudgeBannerIntervalMinutes(context, it)
-                },
-                labelFor = { m -> "$m min" },
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            IntOptionCard(
-                title = stringResource(R.string.typing_pause_timeout),
-                description = stringResource(R.string.while_typing_or_shortly_after_nudge_timers_pause),
-                options = SettingsManager.NUDGE_TYPING_IDLE_TIMEOUT_MINUTES_OPTIONS,
-                selected = typingMin,
-                onSelect = {
-                    typingMin = it
-                    SettingsManager.setNudgeTypingIdleTimeoutMinutes(context, it)
                 },
                 labelFor = { m -> "$m min" },
             )

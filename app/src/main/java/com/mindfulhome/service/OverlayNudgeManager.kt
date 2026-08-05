@@ -63,14 +63,79 @@ class OverlayNudgeManager(private val context: Context) {
     private var softDeadlineAtMs: Long? = null
     private var hardDeadlineAtMs: Long? = null
     private var lastBadgeRefreshSecond: Long = -1L
+    private var transientToastView: View? = null
+    private var transientToastHideRunnable: Runnable? = null
 
     var onDismissed: (() -> Unit)? = null
     var onNotificationRequested: (() -> Unit)? = null
     var onBannerReplySubmitted: ((String) -> Unit)? = null
+    var onBannerReplyFocusChanged: ((Boolean) -> Unit)? = null
     var onAwayShieldTapped: (() -> Unit)? = null
     var onAwayReturnRequested: (() -> Unit)? = null
 
     fun canDrawOverlay(): Boolean = Settings.canDrawOverlays(context)
+
+    /** Semi-transparent overlay toast (non-focusable) for nudge grace expiry and similar. */
+    fun showTransientToast(message: String, durationMs: Long = 3_500L) {
+        handler.post { showTransientToastInternal(message, durationMs) }
+    }
+
+    private fun showTransientToastInternal(message: String, durationMs: Long) {
+        if (!canDrawOverlay()) return
+        dismissTransientToastInternal()
+        val dp = { value: Int ->
+            TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, value.toFloat(),
+                context.resources.displayMetrics,
+            ).toInt()
+        }
+        val text = TextView(context).apply {
+            this.text = message
+            setTextColor(Color.parseColor("#F8FAFC"))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
+            gravity = Gravity.CENTER
+            setPadding(dp(20), dp(12), dp(20), dp(12))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(12).toFloat()
+                setColor(Color.parseColor("#990F172A"))
+            }
+        }
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayLayoutType(),
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT,
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            y = dp(96)
+        }
+        try {
+            windowManager.addView(text, params)
+            transientToastView = text
+            val hide = Runnable { dismissTransientToastInternal() }
+            transientToastHideRunnable = hide
+            handler.postDelayed(hide, durationMs)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to show transient toast", e)
+        }
+    }
+
+    private fun dismissTransientToastInternal() {
+        transientToastHideRunnable?.let { handler.removeCallbacks(it) }
+        transientToastHideRunnable = null
+        transientToastView?.let { view ->
+            try {
+                windowManager.removeView(view)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to remove transient toast", e)
+            }
+        }
+        transientToastView = null
+    }
 
     fun showQuickLaunchFrame(level: QuickLaunchFrameLevel = QuickLaunchFrameLevel.RED) {
         handler.post { showQuickLaunchFrameInternal(level) }
@@ -279,6 +344,7 @@ class OverlayNudgeManager(private val context: Context) {
             false
         }
         setOnFocusChangeListener { _, hasFocus ->
+            onBannerReplyFocusChanged?.invoke(hasFocus)
             if (!hasFocus) setConversationBannerFocusable(false)
         }
     }
@@ -290,7 +356,7 @@ class OverlayNudgeManager(private val context: Context) {
             onBannerReplySubmitted?.invoke(payload)
             input.setText("")
         }
-        setConversationBannerFocusable(false)
+        // Keep focus so conversation grace continues while the user is still composing.
         return true
     }
 
@@ -331,7 +397,7 @@ class OverlayNudgeManager(private val context: Context) {
         if (payload.isBlank()) return
         onBannerReplySubmitted?.invoke(payload)
         replyInput.setText("")
-        setConversationBannerFocusable(false)
+        // Keep focus so conversation grace continues while the user is still composing.
     }
 
     private fun attachConversationBanner(container: FrameLayout) {
@@ -689,6 +755,7 @@ class OverlayNudgeManager(private val context: Context) {
         softDeadlineAtMs = null
         hardDeadlineAtMs = null
         lastBadgeRefreshSecond = -1L
+        dismissTransientToastInternal()
         dismissConversationBannerInternal()
         dismissAwayShieldInternal()
         dismissCheatScreenInternal()

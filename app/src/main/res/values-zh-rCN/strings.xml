@@ -37,6 +37,7 @@
     <string name="nudge_extension_confirm_at_time">这将让计时器在 %1$s 到期。确定吗？</string>
     <string name="nudge_extension_blocked_deadline">现在无法延长 — 硬性截止时间已是最近的限制。</string>
     <string name="nudge_extension_declined">明白了 — 未延长。如果已经晚了，现在就关掉应用。</string>
+    <string name="nudge_conversation_grace_expired">对话宽限已结束！</string>
     <string name="quick_launch_cheat_message">请不要欺骗，你只会伤害自己</string>
     <string name="accessibility_service_description">让 MindfulHome 注意到您切换应用程序的瞬间，这样它就可以轻轻地引导您返回，而无需不断检查后台（节省电池）。 MindfulHome 只读取前面的应用程序，而不会读取屏幕的内容。</string>
     <string name="language_picker_title">选择您的语言</string>

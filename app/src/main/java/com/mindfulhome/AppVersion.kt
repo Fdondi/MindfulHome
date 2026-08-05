@@ -1,3 +1,8 @@
+// 0.98.3 - Conversation grace only while banner reply field is focused (not bird tap)
+// 0.98.2 - Fix catch-up unit test: debt caps 10× stage advance
+// 0.98.1 - Conversation grace for nudge chat only; 10× bird catch-up; defer karma until normal pace
+// 0.98.0 - Auto-resume suspended timer when returning to that app during Quick Launch (skip gates)
+// 0.97.3 - Karma -1 only when predatory bird ignored after timer expiry (not Quick Launch gate)
 // 0.97.2 - Add System default language option (follow device locale)
 // 0.97.1 - Fix Service/Application getString ignoring in-app language (wrap locale context)
 // 0.97.0 - Localize timer/nudge/QL notification copy + offline nudge fallbacks

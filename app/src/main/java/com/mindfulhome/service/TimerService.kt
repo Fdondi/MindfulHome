@@ -189,6 +189,7 @@ class TimerService : Service() {
         overlayManager.onDismissed = { onOverlayDismissed() }
         overlayManager.onNotificationRequested = { onOverlayNotificationRequested() }
         overlayManager.onBannerReplySubmitted = { onBannerReplySubmitted(it) }
+        overlayManager.onBannerReplyFocusChanged = { onBannerReplyFocusChanged(it) }
         overlayManager.onAwayShieldTapped = { onAwayShieldTapped() }
         overlayManager.onAwayReturnRequested = { onAwayReturnRequested() }
         preferBannerFallbackForOverlayTap = SettingsManager.isNudgeBannerFallbackArmed(this)
@@ -1508,11 +1509,16 @@ class TimerService : Service() {
     private fun onOverlayNotificationRequested() {
         logSessionEvent("Overlay tapped to open notification conversation")
         logWithSession("Overlay requested notification conversation")
-        if (conversationGraceUntilMs <= 0L) {
-            beginConversationGrace(source = "bird tap")
-        }
         overlayManager.showConversationBanner(buildBannerPreviewLines())
-        logSessionEvent("Bird tap opened banner (grace only if not already active)")
+        logSessionEvent("Bird tap opened banner (no conversation grace until reply field focused)")
+    }
+
+    private fun onBannerReplyFocusChanged(hasFocus: Boolean) {
+        if (hasFocus) {
+            beginConversationGrace(source = "reply field focused")
+        } else {
+            expireConversationGrace()
+        }
     }
 
     private fun onBannerReplySubmitted(replyText: String) {
@@ -1523,7 +1529,6 @@ class TimerService : Service() {
         if (handlePendingExtensionConfirmationReply(payload, keepBannerVisible = true, source = "banner")) {
             return
         }
-        refreshConversationGrace(source = "banner reply")
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
         overlayManager.showConversationBanner(buildBannerPreviewLines())
         showConversationNotification(alertUser = false)
@@ -1904,7 +1909,6 @@ class TimerService : Service() {
         if (handlePendingExtensionConfirmationReply(payload, keepBannerVisible = false, source = "inline")) {
             return
         }
-        refreshConversationGrace(source = "notification reply")
         nudgeMessages.add(NudgeMessage(payload, isFromUser = true))
         showConversationNotification(alertUser = false)
         logWithSession("You: $payload")
@@ -1954,7 +1958,6 @@ class TimerService : Service() {
     private fun handleExtension(minutes: Int, keepBannerVisible: Boolean = true) {
         pendingExtensionMinutes = minutes
         pendingExtensionKeepBannerVisible = keepBannerVisible
-        refreshConversationGrace(source = "extension offer pending")
         val message = buildExtensionConfirmationMessage(minutes)
         nudgeMessages.add(NudgeMessage(message, isFromUser = false))
         showConversationNotification(alertUser = false)
@@ -2072,33 +2075,14 @@ class TimerService : Service() {
         pendingExtensionKeepBannerVisible = true
     }
 
-    private fun conversationGraceDurationMs(): Long =
-        SettingsManager.getNudgeTypingIdleTimeoutMinutes(this).coerceAtLeast(1) * 60_000L
-
     private fun beginConversationGrace(source: String) {
-        val now = System.currentTimeMillis()
-        conversationGraceUntilMs = now + conversationGraceDurationMs()
-        scheduleConversationGraceExpiry()
-        logSessionEvent(
-            "Conversation grace until $conversationGraceUntilMs (source=$source, debtMs=$catchUpDebtMs)",
-        )
-    }
-
-    private fun refreshConversationGrace(source: String) {
-        beginConversationGrace(source)
-    }
-
-    private fun scheduleConversationGraceExpiry() {
         conversationGraceExpiryJob?.cancel()
-        val until = conversationGraceUntilMs
-        if (until <= 0L) return
-        val delayMs = (until - System.currentTimeMillis()).coerceAtLeast(0L)
-        conversationGraceExpiryJob = serviceScope.launch {
-            delay(delayMs)
-            if (System.currentTimeMillis() >= conversationGraceUntilMs) {
-                expireConversationGrace()
-            }
-        }
+        conversationGraceExpiryJob = null
+        // Pause while the reply field stays focused; expire immediately on blur.
+        conversationGraceUntilMs = Long.MAX_VALUE
+        logSessionEvent(
+            "Conversation grace active (source=$source, debtMs=$catchUpDebtMs)",
+        )
     }
 
     private fun clearConversationGrace(reason: String) {
@@ -2112,7 +2096,7 @@ class TimerService : Service() {
 
     private fun expireConversationGrace() {
         if (conversationGraceUntilMs <= 0L) return
-        clearConversationGrace(reason = "idle timeout")
+        clearConversationGrace(reason = "reply field unfocused")
         overlayManager.showTransientToast(locString(R.string.nudge_conversation_grace_expired))
         logWithSession("Conversation grace expired — birds catching up at 10×")
         logSessionEvent("Conversation grace expired; catch-up debtMs=$catchUpDebtMs")

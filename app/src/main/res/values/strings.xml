@@ -37,6 +37,7 @@
     <string name="nudge_extension_confirm_at_time">This will now make your timer expire at %1$s. Are you sure?</string>
     <string name="nudge_extension_blocked_deadline">I can\'t grant that extension now - your hard deadline is now the closest limit.</string>
     <string name="nudge_extension_declined">Understood - no extension applied. If it is late, close the app now.</string>
+    <string name="nudge_conversation_grace_expired">Conversation grace expired!</string>
     <string name="quick_launch_cheat_message">Please don’t cheat, you’re only hurting yourself</string>
     <string name="accessibility_service_description">Lets MindfulHome notice the instant you switch apps, so it can gently steer you back without constantly checking in the background (saves battery). MindfulHome only reads which app is in front — never the content of your screen.</string>
     <string name="language_picker_title">Choose your language</string>

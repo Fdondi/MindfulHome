@@ -494,6 +494,70 @@ class TimerServiceLogicTest {
         )
     }
 
+    // --- conversation grace / catch-up ---
+
+    @Test
+    fun resolveNudgeEscalationPace_graceCatchUpNormal() {
+        assertEquals(
+            NudgeEscalationPace.ConversationGracePaused,
+            resolveNudgeEscalationPace(nowMs = 100L, conversationGraceUntilMs = 500L, catchUpDebtMs = 0L),
+        )
+        assertEquals(
+            NudgeEscalationPace.CatchUp,
+            resolveNudgeEscalationPace(nowMs = 600L, conversationGraceUntilMs = 0L, catchUpDebtMs = 50L),
+        )
+        assertEquals(
+            NudgeEscalationPace.Normal,
+            resolveNudgeEscalationPace(nowMs = 600L, conversationGraceUntilMs = 0L, catchUpDebtMs = 0L),
+        )
+    }
+
+    @Test
+    fun computeNudgeEscalationTickAdvance_graceBanksDebt() {
+        val grace = computeNudgeEscalationTickAdvance(
+            pace = NudgeEscalationPace.ConversationGracePaused,
+            nudgeTickMs = 20_000L,
+            catchUpDebtMs = 10_000L,
+        )
+        assertEquals(0L, grace.stageAdvanceMs)
+        assertEquals(30_000L, grace.catchUpDebtMsAfter)
+
+        val catchUp = computeNudgeEscalationTickAdvance(
+            pace = NudgeEscalationPace.CatchUp,
+            nudgeTickMs = 20_000L,
+            catchUpDebtMs = 50_000L,
+        )
+        // 10× would be 200s, but debt is only 50s — burn the remaining debt only.
+        assertEquals(50_000L, catchUp.stageAdvanceMs)
+        assertEquals(0L, catchUp.catchUpDebtMsAfter)
+
+        val catchUpPartial = computeNudgeEscalationTickAdvance(
+            pace = NudgeEscalationPace.CatchUp,
+            nudgeTickMs = 20_000L,
+            catchUpDebtMs = 500_000L,
+        )
+        assertEquals(200_000L, catchUpPartial.stageAdvanceMs)
+        assertEquals(300_000L, catchUpPartial.catchUpDebtMsAfter)
+    }
+
+    @Test
+    fun shouldSuppressPredatoryKarmaForTick_duringCatchUp() {
+        assertTrue(
+            shouldSuppressPredatoryKarmaForTick(
+                pace = NudgeEscalationPace.CatchUp,
+                catchUpDebtMsBefore = 5_000L,
+                catchUpDebtMsAfter = 0L,
+            ),
+        )
+        assertFalse(
+            shouldSuppressPredatoryKarmaForTick(
+                pace = NudgeEscalationPace.Normal,
+                catchUpDebtMsBefore = 0L,
+                catchUpDebtMsAfter = 0L,
+            ),
+        )
+    }
+
     // --- nudge stage / predatory ---
 
     @Test
