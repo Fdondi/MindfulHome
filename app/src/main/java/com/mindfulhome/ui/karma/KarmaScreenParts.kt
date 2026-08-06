@@ -559,12 +559,8 @@ private fun SetKarmaDialogBody(
         )
         if (parsedScore != null) {
             val stayMs = KarmaManager.quickLaunchAllowedStayMs(parsedScore, baseGraceMs)
-            val cheatMs = KarmaManager.cheatScreenDurationMs(parsedScore)
             Text(
-                text = buildString {
-                    append("Quick Launch grace: ${stayMs / 1_000}s")
-                    if (cheatMs != null) append(" · cheat screen: ${cheatMs / 1_000}s")
-                },
+                text = "Quick Launch grace: ${stayMs / 1_000}s",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

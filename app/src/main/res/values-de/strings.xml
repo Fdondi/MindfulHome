@@ -15,7 +15,7 @@
     <string name="notif_ql_phase_red">rot</string>
     <string name="notif_ql_detected_allowed">%1$s erkannt — erlaubte Schnellstart-App</string>
     <string name="notif_ql_detected_ignored">%1$s erkannt — ignoriert (%2$s)</string>
-    <string name="notif_ql_detected_instant_gate">%1$s erkannt — sofort ShouldYouBeHere</string>
+    <string name="notif_ql_detected_instant_gate">%1$s erkannt — Vogel-Erinnerungen starten</string>
     <string name="notif_ql_detected_starting_grace">%1$s erkannt — Nachfrist beginnt</string>
     <string name="notif_ql_detected_monitoring">%1$s erkannt — Überwachung</string>
     <string name="notif_reply">Antworten</string>
@@ -38,7 +38,6 @@
     <string name="nudge_extension_blocked_deadline">Ich kann diese Verlängerung jetzt nicht gewähren – deine harte Deadline ist jetzt das engste Limit.</string>
     <string name="nudge_extension_declined">Verstanden – keine Verlängerung. Wenn es spät ist, schließe die App jetzt.</string>
     <string name="nudge_conversation_grace_expired">Gesprächsfrist abgelaufen!</string>
-    <string name="quick_launch_cheat_message">Bitte betrüge nicht, du tust nur dir selbst weh</string>
     <string name="accessibility_service_description">MindfulHome erkennt den Moment, in dem Sie die App wechseln, und kann Sie sanft zurückführen, ohne ständig im Hintergrund nachzuschauen (spart Batterie). MindfulHome liest nur, welche App vorne ist – niemals den Inhalt Ihres Bildschirms.</string>
     <string name="language_picker_title">Wählen Sie Ihre Sprache</string>
     <string name="language_picker_subtitle">Sie können dies später in den Einstellungen ändern.</string>
@@ -121,7 +120,6 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="quick_launch_semaphore_per_color">Schnellstart-Semaphor (pro Farbe)</string>
     <string name="time_between_new_floating_bubbles">Zeit zwischen neuen schwebenden Blasen.</string>
     <string name="why_are_you_unlocking_optional">Warum entsperren Sie? (optional)</string>
-    <string name="yeah_i_need_to_finish_this_thing">…ja, ich muss das Ding zu Ende bringen</string>
     <string name="choose_which_gemini_model_to_use">Wählen Sie das zu verwendende Gemini-Modell</string>
     <string name="no_app_usage_recorded_yet_today">Heute wurde noch keine App-Nutzung erfasst.</string>
     <string name="choose_where_ai_processing_runs">Wählen Sie, wo die KI-Verarbeitung ausgeführt wird</string>
@@ -148,7 +146,6 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="set_karma_for_applabel">Karma für %1$s festlegen</string>
     <string name="start_using_mindfulhome">Beginnen Sie mit der Nutzung von MindfulHome</string>
     <string name="bubbles_before_banners">Blasen vor Bannern</string>
-    <string name="i_ll_do_something_else">Ich werde etwas anderes tun</string>
     <string name="intent_folder_search">Suchen</string>
     <string name="intent_folder_reflect">Reflektieren</string>
     <string name="intent_folder_travel">Reisen</string>
@@ -181,7 +178,6 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="allow_notifications">Benachrichtigungen zulassen</string>
     <string name="daily_log_summaries">Tägliche Protokollzusammenfassungen</string>
     <string name="quick_return_window">Schnelles Rückkehrfenster</string>
-    <string name="should_you_be_here">Sollten Sie hier sein?</string>
     <string name="drop_to_edit_timer">Ablegen, um den Timer zu bearbeiten</string>
     <string name="duration_minutes">Dauer (Minuten)</string>
     <string name="hide_hard_deadline">Verstecken Sie harte Fristen</string>
@@ -311,6 +307,10 @@ Für eine leistungsfähigere Lösung, die Ihren Speicherplatz und Ihre Rechenlei
 
 Wenn keines von beiden konfiguriert ist, wird ein skriptgesteuerter Fallback verwendet.</string>
     <string name="onboarding_app_tiers_title">Drei Arten von Apps</string>
+    <string name="onboarding_system_apps_title">Vorinstallierte Apps</string>
+    <string name="onboarding_system_apps_body">Diese sehen wie System-Apps aus. Wir lassen sie uneingeschränkt, damit Telefon und Ähnliches nutzbar bleiben. Entfernen Sie das Häkchen bei Apps, die MindfulHome überwachen soll.</string>
+    <string name="onboarding_system_apps_empty">Keine vorinstallierten Kandidaten auf diesem Gerät gefunden.</string>
+    <string name="onboarding_system_apps_continue">Weiter</string>
     <string name="onboarding_layout_title">So funktioniert der Startbildschirm</string>
     <string-array name="onboarding_philosophy_bullets">
         <item>Stellen Sie jedes Mal, wenn Sie Ihr Telefon entsperren, einen Timer ein</item>

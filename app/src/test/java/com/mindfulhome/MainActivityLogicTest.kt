@@ -182,7 +182,7 @@ class MainActivityLogicTest {
     }
 
     @Test
-    fun decideIncomingIntent_shouldYouBeHereRequiresExpired() {
+    fun decideIncomingIntent_quickLaunchForceIgnored() {
         assertEquals(
             IncomingIntentDecision.IgnoreExpiredForce(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH),
             MainActivityLogic.decideIncomingIntent(
@@ -198,7 +198,7 @@ class MainActivityLogicTest {
             ),
         )
         assertEquals(
-            IncomingIntentDecision.NavigateShouldYouBeHere,
+            IncomingIntentDecision.IgnoreExpiredForce(MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH),
             MainActivityLogic.decideIncomingIntent(
                 openPrefill = false,
                 prefillMinutes = -1,
@@ -207,7 +207,7 @@ class MainActivityLogicTest {
                 onboardingDone = true,
                 fromUnlock = false,
                 forceTimer = true,
-                forceTimerReason = MainActivity.FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE,
+                forceTimerReason = MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH,
                 timerIsExpired = true,
             ),
         )

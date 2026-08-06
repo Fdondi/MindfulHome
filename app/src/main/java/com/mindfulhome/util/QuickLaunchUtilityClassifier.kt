@@ -13,9 +13,9 @@ import android.view.inputmethod.InputMethodManager
  * Decides whether a foreground package should be ignored during Quick Launch
  * (system/utility shell) or monitored as a normal app switch.
  *
- * Never treats [ApplicationInfo.FLAG_SYSTEM] alone as utility — OEM-preinstalled
- * Instagram/X must still be monitored. Uses vendor-agnostic intent/role signals
- * (home launchers, Settings, dialer, no launch intent) plus media/IME filters.
+ * [PreinstalledAppPolicy] known social/media packages always stay monitored
+ * (they take precedence over utility heuristics, including IMAGE/VIDEO category).
+ * Other pre-installed ([ApplicationInfo.FLAG_SYSTEM]) apps are treated as utilities.
  */
 class QuickLaunchUtilityClassifier(
     private val signals: PackageSignals,
@@ -27,6 +27,8 @@ class QuickLaunchUtilityClassifier(
     fun utilityReason(packageName: String): String? {
         if (packageName.isBlank()) return null
         if (packageName == selfPackageName) return "self"
+        // Known social/media apps are never utilities, even if CATEGORY_VIDEO/IMAGE.
+        if (PreinstalledAppPolicy.isKnownMediaPackage(packageName)) return null
         if (signals.isInputMethodPackage(packageName)) return "keyboard/IME"
 
         if (signals.isHomeLauncherPackage(packageName)) return "home launcher"
@@ -52,7 +54,10 @@ class QuickLaunchUtilityClassifier(
             return "utility label keyword=$matchedLabel"
         }
 
-        // Do NOT treat FLAG_SYSTEM / FLAG_UPDATED_SYSTEM_APP as "utility".
+        if (signals.isSystemPackage(packageName)) {
+            return "preinstalled system"
+        }
+
         return when (signals.applicationCategory(packageName)) {
             ApplicationInfo.CATEGORY_IMAGE -> "media category=IMAGE"
             ApplicationInfo.CATEGORY_VIDEO -> "media category=VIDEO"
@@ -75,6 +80,7 @@ class QuickLaunchUtilityClassifier(
         fun appLabel(packageName: String): String
         /** [ApplicationInfo.category], or a sentinel when unavailable. */
         fun applicationCategory(packageName: String): Int
+        fun isSystemPackage(packageName: String): Boolean
     }
 
     /**
@@ -147,6 +153,16 @@ class QuickLaunchUtilityClassifier(
                 pm.getApplicationInfo(packageName, 0).category
             } catch (_: Exception) {
                 ApplicationInfo.CATEGORY_UNDEFINED
+            }
+        }
+
+        override fun isSystemPackage(packageName: String): Boolean {
+            return try {
+                val flags = pm.getApplicationInfo(packageName, 0).flags
+                (flags and ApplicationInfo.FLAG_SYSTEM) != 0 ||
+                    (flags and ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0
+            } catch (_: Exception) {
+                false
             }
         }
 

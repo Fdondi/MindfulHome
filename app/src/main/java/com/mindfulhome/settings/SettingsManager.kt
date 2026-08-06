@@ -149,6 +149,7 @@ object SettingsManager {
     // Karma hide threshold (number of bad-karma points before the app is hidden)
     private const val HIDE_THRESHOLD_KEY = "karma_hide_threshold"
     private const val LAST_KARMA_RECOVERY_EPOCH_DAY_KEY = "last_karma_recovery_epoch_day"
+    private const val SYSTEM_APPS_REVIEW_DONE_KEY = "system_apps_unrestricted_review_done"
     const val DEFAULT_HIDE_THRESHOLD = 2
     const val MIN_HIDE_THRESHOLD = 0
     const val MAX_HIDE_THRESHOLD = 10
@@ -910,6 +911,13 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         prefs(context).edit {
             putLong(LAST_KARMA_RECOVERY_EPOCH_DAY_KEY, epochDay)
         }
+    }
+
+    fun isSystemAppsReviewDone(context: Context): Boolean =
+        prefs(context).getBoolean(SYSTEM_APPS_REVIEW_DONE_KEY, false)
+
+    fun setSystemAppsReviewDone(context: Context, done: Boolean = true) {
+        prefs(context).edit { putBoolean(SYSTEM_APPS_REVIEW_DONE_KEY, done) }
     }
 
     // ── Screen-off timestamp ────────────────────────────────────────

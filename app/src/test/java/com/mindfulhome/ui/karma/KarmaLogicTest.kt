@@ -65,4 +65,20 @@ class KarmaLogicTest {
         assertEquals(1, filterAppsForKarmaPick(apps, "foo").size)
         assertEquals(2, filterAppsForKarmaPick(apps, "").size)
     }
+
+    @Test
+    fun filterKarmaGroupsByQuery_matchesLabelOrPackage() {
+        val groups = partitionKarmaApps(
+            listOf(karma("com.phone", -3), karma("com.chat", -1), karma("com.zero", 0)),
+            mapOf("com.phone" to "Phone", "com.chat" to "Chat", "com.zero" to "Zero"),
+        )
+        val filtered = filterKarmaGroupsByQuery(groups, mapOf(
+            "com.phone" to "Phone",
+            "com.chat" to "Chat",
+            "com.zero" to "Zero",
+        ), "phone")
+        assertEquals(listOf("com.phone"), filtered.negative.map { it.packageName })
+        assertTrue(filtered.zero.isEmpty())
+        assertEquals(setOf("negative"), sectionsToExpandForQuery(filtered, true))
+    }
 }

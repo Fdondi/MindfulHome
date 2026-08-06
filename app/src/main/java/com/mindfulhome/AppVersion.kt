@@ -1,3 +1,11 @@
+package com.mindfulhome
+
+object AppVersion {
+    const val versionName = "0.99.1"
+}
+
+// 0.99.1 - QL: known media packages take precedence over IMAGE/VIDEO category ignore
+// 0.99.0 - Never-block: remove ShouldYouBeHere; QL grace→birds; auto-unrestrict preinstalled (ex media); Karma search
 // 0.98.3 - Conversation grace only while banner reply field is focused (not bird tap)
 // 0.98.2 - Fix catch-up unit test: debt caps 10× stage advance
 // 0.98.1 - Conversation grace for nudge chat only; 10× bird catch-up; defer karma until normal pace
@@ -39,8 +47,3 @@
 // 0.84.2 - Make crapCheck an Exec task; fix detekt basePath types
 // 0.84.1 - Fix crapCheck Gradle DSL (basePath string, project.exec)
 // 0.84.0 - Add Kover + detekt CRAP metric check (scripts/crap, docs/crap.md)
-package com.mindfulhome
-
-object AppVersion {
-    const val versionName = "0.97.2"
-}

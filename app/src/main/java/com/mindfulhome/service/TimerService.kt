@@ -79,7 +79,6 @@ class TimerService : Service() {
     /** Green/yellow/red segment length for the Quick Launch overlay; shorter when the exit app has negative karma. */
     private var quickLaunchSemaphorePhaseMs: Long = 20_000L
     /** Debounce repeated instant overtime redirects while MainActivity is coming to the front. */
-    private var overtimeForceInFlight: Boolean = false
     private lateinit var repository: AppRepository
     private lateinit var karmaManager: KarmaManager
     private lateinit var overlayManager: OverlayNudgeManager
@@ -98,19 +97,12 @@ class TimerService : Service() {
     private var lastAwayOverlayTapAtMs: Long = 0L
     /**
      * Bumped whenever a new timer or Quick Launch session starts. Async [stopTimer] cleanup
-     * aborts if this no longer matches the generation it captured — otherwise dismissing
-     * ShouldYouBeHere races with [ensureQuickLaunchMonitoringAtHome] and [stopSelf] kills the
-     * freshly restarted monitor (no notification / no color countdown).
+     * aborts if this no longer matches the generation it captured — otherwise a stale stop
+     * races with [ensureQuickLaunchMonitoringAtHome] and [stopSelf] kills the freshly
+     * restarted monitor (no notification / no color countdown).
      */
     private var sessionGeneration: Int = 0
-    /** Cancels in-flight Recents/home probes so they cannot re-open ShouldYouBeHere after green. */
     private var launcherBackgroundProbeJob: Job? = null
-    /**
-     * After ShouldYouBeHere green (redirect home), ignore restricted-app readings until home/an
-     * allowed app is observed again. Stale UsageStats still naming the left app must not count
-     * as a new switch — only the next real change after home settles should gate.
-     */
-    private var awaitHomeSettleAfterGateLeave: Boolean = false
     private val utilityClassifier: QuickLaunchUtilityClassifier by lazy {
         QuickLaunchUtilityClassifier(
             signals = QuickLaunchUtilityClassifier.AndroidPackageSignals(this),
@@ -315,7 +307,6 @@ class TimerService : Service() {
 
     private fun dispatchSessionCommands(command: TimerServiceCommand, intent: Intent?): Boolean =
         when (command) {
-            TimerServiceCommand.DismissShouldYouBeHere,
             TimerServiceCommand.EngageExtendChat,
             TimerServiceCommand.ClearVisibleNudges,
             TimerServiceCommand.HandleReply,
@@ -329,7 +320,6 @@ class TimerService : Service() {
 
     private fun handleSessionSideCommand(command: TimerServiceCommand, intent: Intent?) {
         when (command) {
-            TimerServiceCommand.DismissShouldYouBeHere -> dismissShouldYouBeHereCommand()
             TimerServiceCommand.EngageExtendChat -> engageExtendChatCommand()
             TimerServiceCommand.ClearVisibleNudges -> clearVisibleNudgesCommand()
             TimerServiceCommand.HandleReply -> handleReplyCommand(intent)
@@ -339,11 +329,6 @@ class TimerService : Service() {
 
     private fun handleReplyCommand(intent: Intent?) {
         if (intent != null) handleNudgeReply(intent)
-    }
-
-    private fun dismissShouldYouBeHereCommand() {
-        logSessionEvent("ACTION_DISMISS_SHOULD_YOU_BE_HERE requested")
-        dismissShouldYouBeHereAndStop()
     }
 
     private fun engageExtendChatCommand() {
@@ -404,10 +389,7 @@ class TimerService : Service() {
         hardDeadlineAtMs: Long?,
     ) {
         sessionGeneration++
-        awaitHomeSettleAfterGateLeave = false
-        // Committing to a timed session — expiry from here is birds/notification, not the gate.
-        shouldYouBeHereGateActive = false
-        shouldYouBeHereDismissed = false
+        // Committing to a timed session — expiry from here is birds/notification only.
         resetNudgesForNewTimer()
         softDeadlineAtMs = null
         this.hardDeadlineAtMs = hardDeadlineAtMs
@@ -549,13 +531,8 @@ class TimerService : Service() {
         val now = System.currentTimeMillis()
         val decision = decideQuickLaunchSwitch(
             packageName = packageName,
-            previousPackage = previousPackage,
-            selfPackageName = this.packageName,
             allowedPackages = allowedPackages,
             utilityReason = systemOrUtilityReason(packageName),
-            previousIsUtilityOrSystem = previousPackage.isNotBlank() &&
-                systemOrUtilityReason(previousPackage) != null,
-            awaitHomeSettleAfterGateLeave = awaitHomeSettleAfterGateLeave,
             currentExitCandidatePackage = quickLaunchExitCandidatePackage,
             resume = quickLaunchExitResumeByPackage[packageName]?.toLogicSnapshot(),
             nowMs = now,
@@ -576,8 +553,8 @@ class TimerService : Service() {
                 handleQlAllowed(packageName, label, now, allowlistSize)
             is QuickLaunchSwitchDecision.Ignore ->
                 handleQlIgnored(decision, packageName, label, now)
-            is QuickLaunchSwitchDecision.InstantGate ->
-                handleQlInstantGate(decision, packageName, previousPackage, label, now)
+            QuickLaunchSwitchDecision.StartBirds ->
+                handleQlStartBirds(packageName, label, now)
             QuickLaunchSwitchDecision.StartGrace ->
                 handleQlStartGrace(packageName, label, now)
             QuickLaunchSwitchDecision.ContinueMonitor ->
@@ -586,10 +563,6 @@ class TimerService : Service() {
     }
 
     private fun handleQlAllowed(packageName: String, label: String, now: Long, allowlistSize: Int) {
-        if (awaitHomeSettleAfterGateLeave) {
-            awaitHomeSettleAfterGateLeave = false
-            logSessionEvent("Home settled after ShouldYouBeHere leave — monitoring armed")
-        }
         clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
         rememberQuickLaunchDetection(
             packageName = packageName,
@@ -610,20 +583,12 @@ class TimerService : Service() {
         label: String,
         now: Long,
     ) {
-        val statusReason = quickLaunchIgnoreStatusReason(decision.reason, decision.awaitingHome)
+        val statusReason = quickLaunchIgnoreStatusReason(decision.reason)
         rememberQuickLaunchDetection(
             packageName = packageName,
             label = label,
             status = locString(R.string.notif_ql_detected_ignored, label, statusReason),
         )
-        if (decision.awaitingHome) {
-            logDeveloperQuickLaunch(
-                "detected package=$packageName label=$label decision=ignored " +
-                    "reason=${decision.reason} awaiting_home_settle=true",
-            )
-            refreshQuickLaunchMonitoringNotification()
-            return
-        }
         clearQuickLaunchExitCandidate(preserveProgress = true, nowMs = now)
         Log.v(TAG, "quick-launch system/utility app ignored: $packageName (${decision.reason})")
         logDeveloperQuickLaunch(
@@ -632,31 +597,18 @@ class TimerService : Service() {
         refreshQuickLaunchMonitoringNotification()
     }
 
-    private fun handleQlInstantGate(
-        decision: QuickLaunchSwitchDecision.InstantGate,
-        packageName: String,
-        previousPackage: String,
-        label: String,
-        now: Long,
-    ) {
+    private fun handleQlStartBirds(packageName: String, label: String, now: Long) {
         rememberQuickLaunchExitProgress(now)
         quickLaunchExitCandidatePackage = packageName
         quickLaunchExitCandidateLabel = label
-        val fields = instantGateResumeFields(decision.resume, now)
-        quickLaunchExitDeadlineMs = fields.deadlineMs
-        fields.phaseMs?.let { quickLaunchSemaphorePhaseMs = it }
-        fields.karmaScore?.let { quickLaunchExitCandidateKarmaScore = it }
-        fields.startedAtMs?.let { quickLaunchExitCandidateStartedAtMs = it }
         rememberQuickLaunchDetection(
             packageName = packageName,
             label = label,
             status = locString(R.string.notif_ql_detected_instant_gate, label),
         )
-        logWithSession("Restricted app from launcher/Recents: **$label** — opening gate now")
+        logWithSession("Restricted app grace used up: **$label** — starting birds (never block)")
         logDeveloperQuickLaunch(
-            "detected package=$packageName label=$label decision=instant_gate " +
-                "previous=$previousPackage fromLauncherOrRecents=${decision.fromLauncherOrRecents} " +
-                "graceAlreadyUsedUp=${decision.graceAlreadyUsedUp}",
+            "detected package=$packageName label=$label decision=start_birds",
         )
         triggerQuickLaunchExit(packageName)
     }
@@ -673,7 +625,7 @@ class TimerService : Service() {
             status = locString(R.string.notif_ql_detected_starting_grace, label),
         )
         serviceScope.launch { configureQuickLaunchExitGrace(packageName, now) }
-        logWithSession("Quick Launch switch observed: **$label** — green → yellow → red, then gate")
+        logWithSession("Quick Launch switch observed: **$label** — green → yellow → red, then birds")
         logSessionEvent("Quick Launch grace window started for package=$packageName")
         logDeveloperQuickLaunch(
             "detected package=$packageName label=$label decision=monitor " +
@@ -918,34 +870,26 @@ class TimerService : Service() {
         cancelQuickLaunchExitDeadlineJob()
         launcherBackgroundProbeJob?.cancel()
         launcherBackgroundProbeJob = null
-        val karmaScore = quickLaunchExitCandidateKarmaScore
         val appLabel = getAppLabel(foregroundPackage)
         Log.d(TAG, "non-quick app still active after grace: $foregroundPackage")
         logWithSession(
-            "Quick Launch exit detected: opened **$appLabel** — opening Should you be here?",
+            "Quick Launch exit detected: opened **$appLabel** — starting bird nudges (stay in app)",
         )
         clearQuickLaunchExitCandidate()
         SettingsManager.clearQuickLaunchSession(this)
         quickLaunchMonitorJob?.cancel()
         overlayManager.dismissQuickLaunchFrame()
-        val cheatMs = KarmaManager.cheatScreenDurationMs(karmaScore)
-        if (cheatMs != null && cheatMs > 0L) {
-            overlayManager.showCheatScreen(cheatMs) {
-                promoteToExpiredShouldYouBeHere(foregroundPackage)
-            }
-        } else {
-            promoteToExpiredShouldYouBeHere(foregroundPackage)
-        }
+        promoteToExpiredBirds(foregroundPackage)
     }
 
     /**
-     * QL exit / Recents cheat: keep the service alive in [TimerState.Expired] and open the
-     * ShouldYouBeHere gate. Must not stop→Idle→default, or [MainActivity] would restart QL
-     * monitoring and the green→yellow→red grace would begin again.
+     * QL grace expired: keep service in [TimerState.Expired] and start bird nudges.
+     * Never force home. Must not stop→Idle→default or QL monitoring restarts.
      */
-    private fun promoteToExpiredShouldYouBeHere(packageName: String) {
-        shouldYouBeHereDismissed = false
-        shouldYouBeHereGateActive = true
+    private fun promoteToExpiredBirds(packageName: String) {
+        serviceScope.launch {
+            repository.getKarma(packageName) // ensure tracked for Karma screen / opt-out
+        }
         _currentPackage.value = packageName
         timerEndAtMs = 0L
         timerSessionTotalMs = 0L
@@ -954,15 +898,11 @@ class TimerService : Service() {
         overlayManager.setDeadlineState(softDeadlineAtMs, hardDeadlineAtMs)
         SettingsManager.setTimerRunning(this, false)
         logSessionEvent(
-            "Timer state -> Expired via ShouldYouBeHere (package=${packageName.ifBlank { "<none>" }})",
+            "Timer state -> Expired via QL birds (package=${packageName.ifBlank { "<none>" }})",
         )
-        // Do not start the notification nudge chat here — the in-app extend gate
-        // (NegotiationScreen + nudge script) starts when the user taps red.
-        startOvertimeMonitoringLoop()
-        forceBackToTimer(
-            MainActivity.FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE,
-            packageName = packageName,
-        )
+        startNudgeConversation(packageName)
+        _nudgeCount.value = 0
+        startNudging(packageName)
     }
 
     private fun startQuickLaunchMonitoringLoop() {
@@ -992,35 +932,6 @@ class TimerService : Service() {
         }
     }
 
-    /** Foreground monitor while the session timer is expired (Recents cheat → ShouldYouBeHere). */
-    private fun startOvertimeMonitoringLoop() {
-        if (SettingsManager.isQuickLaunchSessionActive(this) && quickLaunchMonitorJob?.isActive == true) {
-            // Shared probe path already covers expired inside handleForegroundPackage.
-            return
-        }
-        if (quickLaunchMonitorJob?.isActive == true) return
-        quickLaunchLastSeenPackage = _currentPackage.value
-        Log.d(TAG, "startOvertimeMonitoringLoop")
-        logSessionEvent("Expired-session monitor loop started")
-        quickLaunchMonitorJob = serviceScope.launch(Dispatchers.Default) {
-            while (_timerState.value is TimerState.Expired) {
-                withContext(Dispatchers.Main) {
-                    runQuickLaunchForegroundProbe("expired-poll")
-                }
-                val intervalMs = if (ForegroundAppAccessibilityService.isEnabled(this@TimerService)) {
-                    EVENT_DRIVEN_SAFETY_POLL_MS
-                } else {
-                    SettingsManager.getQuickLaunchMonitorMs(this@TimerService)
-                }
-                delay(intervalMs)
-            }
-            withContext(Dispatchers.Main) {
-                Log.d(TAG, "expired-session monitoring loop ended")
-                logSessionEvent("Expired-session monitor loop ended")
-            }
-        }
-    }
-
     private fun maybeResumeSuspendedSessionForPackage(packageName: String): Boolean {
         val saved = SettingsManager.getLastSession(this) ?: return false
         val state = _timerState.value
@@ -1037,17 +948,13 @@ class TimerService : Service() {
         }
         val label = getAppLabel(saved.packageName)
         logWithSession(
-            "Returning to suspended session app **$label** — resuming timer without gate",
+            "Returning to suspended session app **$label** — resuming timer invisibly",
         )
         logSessionEvent(
             "Auto-resume suspended session for package=${saved.packageName} " +
                 "remainingMs=${saved.remainingMs}",
         )
         clearQuickLaunchExitCandidate()
-        shouldYouBeHereGateActive = false
-        shouldYouBeHereDismissed = false
-        awaitHomeSettleAfterGateLeave = false
-        overtimeForceInFlight = false
         overlayManager.dismissQuickLaunchFrame()
         startTimer(saved.remainingMs, saved.packageName, null)
         return true
@@ -1079,60 +986,12 @@ class TimerService : Service() {
         if (packageName.isBlank()) return
         if (packageChanged && maybeStartTimedQuickLaunchTimer(packageName)) return
         if (packageChanged && maybeResumeSuspendedSessionForPackage(packageName)) return
-        handleExpiredForegroundRedirect(packageName, packageChanged)
         if (!SettingsManager.isQuickLaunchSessionActive(this)) return
         if (packageChanged) {
             maybeForceTimerForQuickLaunchSwitch(packageName, previousPackage)
         }
         evaluateQuickLaunchExitProgress(packageName)
         refreshQuickLaunchMonitoringNotification()
-    }
-
-    private suspend fun handleExpiredForegroundRedirect(packageName: String, packageChanged: Boolean) {
-        if (_timerState.value is TimerState.Expired && packageChanged) {
-            maybeForceShouldYouBeHere(packageName)
-        }
-    }
-
-    /**
-     * Instant redirect when Recents returns to a restricted app while the *pre-timer*
-     * ShouldYouBeHere gate is active. Normal countdown expiry must not use this path.
-     */
-    private suspend fun maybeForceShouldYouBeHere(packageName: String) {
-        val quickLaunchPackages = repository.allQuickLaunchPackages()
-        if (!shouldForceShouldYouBeHere(
-                gateActive = shouldYouBeHereGateActive,
-                gateDismissed = shouldYouBeHereDismissed,
-                timerIsExpired = _timerState.value is TimerState.Expired,
-                packageName = packageName,
-                ownPackageName = this.packageName,
-                isSystemOrUtility = systemOrUtilityReason(packageName) != null,
-                isQuickLaunchPackage = packageName in quickLaunchPackages,
-                overtimeForceInFlight = overtimeForceInFlight,
-            )
-        ) {
-            if (packageName in quickLaunchPackages &&
-                shouldYouBeHereGateActive &&
-                !shouldYouBeHereDismissed &&
-                _timerState.value is TimerState.Expired
-            ) {
-                Log.d(TAG, "expired allowlist: $packageName is Quick Launch — no redirect")
-            }
-            return
-        }
-        overtimeForceInFlight = true
-        val label = getAppLabel(packageName)
-        _currentPackage.value = packageName
-        logWithSession("Expired Recents return: **$label** — opening Should you be here?")
-        logSessionEvent("ShouldYouBeHere forced for package=$packageName")
-        forceBackToTimer(
-            MainActivity.FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE,
-            packageName = packageName,
-        )
-        serviceScope.launch {
-            delay(1_500L)
-            overtimeForceInFlight = false
-        }
     }
 
     private fun runQuickLaunchForegroundProbe(reason: String) {
@@ -1156,20 +1015,6 @@ class TimerService : Service() {
         val previousPackage = quickLaunchLastSeenPackage
         val packageChanged = foregroundPackage != previousPackage
         if (packageChanged) {
-            if (shouldIgnoreForegroundWhileAwaitingHome(
-                    awaitHomeSettle = awaitHomeSettleAfterGateLeave,
-                    foregroundPackage = foregroundPackage,
-                    ownPackageName = packageName,
-                    isSystemOrUtility = systemOrUtilityReason(foregroundPackage) != null,
-                    isQuickLaunchPackage = foregroundPackage in SettingsManager.getQuickLaunchPackages(this),
-                )
-            ) {
-                Log.d(
-                    TAG,
-                    "foreground ignored ($reason): $previousPackage -> $foregroundPackage (awaiting home settle)",
-                )
-                return
-            }
             Log.d(TAG, "foreground changed ($reason): $previousPackage -> $foregroundPackage")
             quickLaunchLastSeenPackage = foregroundPackage
             _currentPackage.value = foregroundPackage
@@ -1216,8 +1061,6 @@ class TimerService : Service() {
 
     private fun onTimerExpired(packageName: String) {
         // Countdown finished after a committed timer — birds + notification only.
-        shouldYouBeHereGateActive = false
-        shouldYouBeHereDismissed = false
         timerEndAtMs = 0L
         timerSessionTotalMs = 0L
         _timerState.value = TimerState.Expired(0)
@@ -1554,14 +1397,6 @@ class TimerService : Service() {
     }
 
     private fun forceBackToTimer(reason: String, packageName: String = "") {
-        if (reason == MainActivity.FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE &&
-            (shouldYouBeHereDismissed || _timerState.value !is TimerState.Expired)
-        ) {
-            logSessionEvent(
-                "Skipping ShouldYouBeHere force (dismissed=$shouldYouBeHereDismissed state=${_timerState.value})",
-            )
-            return
-        }
         logSessionEvent(
             "Force returning to timer screen (reason=$reason package=${packageName.ifBlank { "<none>" }})",
         )
@@ -1577,32 +1412,6 @@ class TimerService : Service() {
         startActivity(intent)
     }
 
-    /**
-     * Green path on ShouldYouBeHere: leave immediately. Cancels monitors and marks dismissed
-     * before [stopTimer] so a stale Recents probe cannot reopen the gate.
-     */
-    private fun dismissShouldYouBeHereAndStop() {
-        shouldYouBeHereDismissed = true
-        overtimeForceInFlight = false
-        launcherBackgroundProbeJob?.cancel()
-        launcherBackgroundProbeJob = null
-        // Pin to home and wait until home is observed; ignore stale "still in left app" readings.
-        awaitHomeSettleAfterGateLeave = true
-        shouldYouBeHereGateActive = false
-        quickLaunchLastSeenPackage = packageName
-        _currentPackage.value = packageName
-        quickLaunchMonitorJob?.cancel()
-        cancelQuickLaunchExitDeadlineJob()
-        clearQuickLaunchExitCandidate()
-        SettingsManager.clearQuickLaunchSession(this)
-        logSessionEvent("ShouldYouBeHere dismissed by user — stopping session, awaiting home settle")
-        stopTimer()
-    }
-
-    /**
-     * Red path from ShouldYouBeHere used to surface the notification chat; the in-app
-     * extend gate now owns that conversation. Kept as a no-op safety hook.
-     */
     private fun engageExtendChat() {
         logSessionEvent("engageExtendChat ignored — extend gate uses in-app NegotiationScreen")
     }
@@ -2473,7 +2282,6 @@ class TimerService : Service() {
         const val ACTION_FOREGROUND_APP_CHANGED = "com.mindfulhome.ACTION_FOREGROUND_APP_CHANGED"
         const val ACTION_EXTEND = "com.mindfulhome.ACTION_EXTEND_TIMER"
         const val ACTION_STOP = "com.mindfulhome.ACTION_STOP_TIMER"
-        const val ACTION_DISMISS_SHOULD_YOU_BE_HERE = "com.mindfulhome.ACTION_DISMISS_SHOULD_YOU_BE_HERE"
         const val ACTION_ENGAGE_EXTEND_CHAT = "com.mindfulhome.ACTION_ENGAGE_EXTEND_CHAT"
         const val ACTION_CLEAR_VISIBLE_NUDGES = "com.mindfulhome.ACTION_CLEAR_VISIBLE_NUDGES"
         const val ACTION_HANDLE_REPLY = "com.mindfulhome.ACTION_HANDLE_REPLY"
@@ -2499,22 +2307,6 @@ class TimerService : Service() {
 
         private val _nudgeCount = MutableStateFlow(0)
         val nudgeCount: StateFlow<Int> = _nudgeCount
-
-        /**
-         * Set synchronously when the user taps green on ShouldYouBeHere, before the service
-         * intent is handled, so an in-flight Recents force cannot reopen the gate.
-         */
-        @Volatile
-        var shouldYouBeHereDismissed: Boolean = false
-            private set
-
-        /**
-         * True only while Expired came from a pre-timer Quick Launch / Recents gate.
-         * Normal countdown expiry uses birds + notification and must not redirect.
-         */
-        @Volatile
-        var shouldYouBeHereGateActive: Boolean = false
-            private set
 
         fun start(
             context: Context,
@@ -2638,16 +2430,7 @@ class TimerService : Service() {
             context.startService(intent)
         }
 
-        /** Green path on ShouldYouBeHere — leave without letting a stale force reopen the gate. */
-        fun dismissShouldYouBeHere(context: Context) {
-            shouldYouBeHereDismissed = true
-            val intent = Intent(context, TimerService::class.java).apply {
-                action = ACTION_DISMISS_SHOULD_YOU_BE_HERE
-            }
-            context.startService(intent)
-        }
-
-        /** Red path from ShouldYouBeHere — same expire→extend notification chat. */
+        /** Legacy no-op hook for extend chat (in-app NegotiationScreen owns that flow). */
         fun engageExtendChat(context: Context) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_ENGAGE_EXTEND_CHAT

@@ -13,9 +13,6 @@ class KarmaManager(private val context: Context, private val repository: AppRepo
         const val KARMA_PER_NUDGE_IGNORED = -1
         const val KARMA_CLOSED_ON_TIME = 1
         const val KARMA_DAILY_RECOVERY = 1
-        const val CHEAT_SCREEN_KARMA_THRESHOLD = -10
-        const val CHEAT_SCREEN_MAX_MS = 120_000L
-
         /**
          * Divides [baseGraceMs] by |karma| for zero/negative karma (minimum divisor 1).
          * e.g. base 60s: karma 0/-1 → 60s, -2 → 30s, -3 → 20s, -10 → 6s.
@@ -24,12 +21,6 @@ class KarmaManager(private val context: Context, private val repository: AppRepo
             if (karmaScore > 0) return baseGraceMs
             val divisor = if (karmaScore == 0) 1 else -karmaScore
             return baseGraceMs / divisor
-        }
-
-        /** Seconds to show the anti-cheat overlay when karma is below [CHEAT_SCREEN_KARMA_THRESHOLD]. */
-        fun cheatScreenDurationMs(karmaScore: Int): Long? {
-            if (karmaScore >= CHEAT_SCREEN_KARMA_THRESHOLD) return null
-            return ((-karmaScore - 10) * 1_000L).coerceAtMost(CHEAT_SCREEN_MAX_MS)
         }
     }
 

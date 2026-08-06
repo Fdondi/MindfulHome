@@ -55,8 +55,6 @@ class OverlayNudgeManager(private val context: Context) {
     private var awayShieldView: View? = null
     private var awayShieldPromptButton: TextView? = null
     private var awayShieldEscalationRunnable: Runnable? = null
-    private var cheatScreenView: View? = null
-    private var cheatScreenDismissRunnable: Runnable? = null
     private val bubbleEntries = mutableListOf<BubbleEntry>()
     private var nextBubbleId = 1
     private var birdTickerRunning = false
@@ -180,14 +178,6 @@ class OverlayNudgeManager(private val context: Context) {
 
     fun dismissAwayShield() {
         handler.post { dismissAwayShieldInternal() }
-    }
-
-    fun showCheatScreen(durationMs: Long, onComplete: () -> Unit) {
-        handler.post { showCheatScreenInternal(durationMs, onComplete) }
-    }
-
-    fun dismissCheatScreen() {
-        handler.post { dismissCheatScreenInternal() }
     }
 
     /**
@@ -758,7 +748,6 @@ class OverlayNudgeManager(private val context: Context) {
         dismissTransientToastInternal()
         dismissConversationBannerInternal()
         dismissAwayShieldInternal()
-        dismissCheatScreenInternal()
     }
 
     private fun dismissAllNudgesInternalIfPresent(): Boolean {
@@ -915,90 +904,6 @@ class OverlayNudgeManager(private val context: Context) {
         awayShieldPromptButton = null
     }
 
-    private fun showCheatScreenInternal(durationMs: Long, onComplete: () -> Unit) {
-        dismissCheatScreenInternal()
-        if (!canDrawOverlay()) {
-            onComplete()
-            return
-        }
-        val safeDurationMs = durationMs.coerceAtLeast(1_000L)
-        val container = buildCheatScreenContainer()
-        val params = cheatScreenLayoutParams()
-        try {
-            addCheatScreenView(container, params, safeDurationMs, onComplete)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to add cheat screen overlay", e)
-            onComplete()
-        }
-    }
-
-    private fun buildCheatScreenContainer(): FrameLayout {
-        val container = FrameLayout(context).apply {
-            setBackgroundColor(Color.parseColor("#F0000000"))
-            isClickable = true
-            isFocusable = true
-            setOnTouchListener { _, _ -> true }
-        }
-        val messageView = TextView(context).apply {
-            text = locString(R.string.quick_launch_cheat_message)
-            setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
-            gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            setPadding(dp(32), dp(32), dp(32), dp(32))
-        }
-        container.addView(
-            messageView,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT,
-            ).apply { gravity = Gravity.CENTER },
-        )
-        return container
-    }
-
-    private fun cheatScreenLayoutParams(): WindowManager.LayoutParams =
-        WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            WindowManager.LayoutParams.MATCH_PARENT,
-            overlayLayoutType(),
-            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-            PixelFormat.TRANSLUCENT,
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = 0
-            y = 0
-        }
-
-    private fun addCheatScreenView(
-        container: FrameLayout,
-        params: WindowManager.LayoutParams,
-        safeDurationMs: Long,
-        onComplete: () -> Unit,
-    ) {
-        windowManager.addView(container, params)
-        cheatScreenView = container
-        val runnable = Runnable {
-            dismissCheatScreenInternal()
-            onComplete()
-        }
-        cheatScreenDismissRunnable = runnable
-        handler.postDelayed(runnable, safeDurationMs)
-        Log.d(TAG, "Cheat screen shown for ${safeDurationMs}ms")
-    }
-
-    private fun dismissCheatScreenInternal() {
-        cheatScreenDismissRunnable?.let { handler.removeCallbacks(it) }
-        cheatScreenDismissRunnable = null
-        cheatScreenView?.let {
-            try {
-                windowManager.removeView(it)
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to remove cheat screen overlay", e)
-            }
-        }
-        cheatScreenView = null
-    }
 
     private fun setConversationBannerFocusable(
         focusable: Boolean,

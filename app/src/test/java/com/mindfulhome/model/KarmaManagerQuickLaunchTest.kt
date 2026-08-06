@@ -1,7 +1,6 @@
 package com.mindfulhome.model
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
 class KarmaManagerQuickLaunchTest {
@@ -22,13 +21,5 @@ class KarmaManagerQuickLaunchTest {
     @Test
     fun quickLaunchAllowedStayMs_positiveKarma_returnsBaseGraceUnchanged() {
         assertEquals(90_000L, KarmaManager.quickLaunchAllowedStayMs(3, 90_000L))
-    }
-
-    @Test
-    fun cheatScreenDurationMs_onlyWhenKarmaBelowThreshold() {
-        assertNull(KarmaManager.cheatScreenDurationMs(-10))
-        assertEquals(1_000L, KarmaManager.cheatScreenDurationMs(-11))
-        assertEquals(5_000L, KarmaManager.cheatScreenDurationMs(-15))
-        assertEquals(120_000L, KarmaManager.cheatScreenDurationMs(-200))
     }
 }

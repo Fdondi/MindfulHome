@@ -13,7 +13,7 @@
     <string name="notif_ql_phase_red">赤</string>
     <string name="notif_ql_detected_allowed">%1$s を検出 — 許可されたクイック起動アプリ</string>
     <string name="notif_ql_detected_ignored">%1$s を検出 — 無視（%2$s）</string>
-    <string name="notif_ql_detected_instant_gate">%1$s を検出 — 即時 ShouldYouBeHere</string>
+    <string name="notif_ql_detected_instant_gate">%1$s を検出 — 鳥の通知を開始</string>
     <string name="notif_ql_detected_starting_grace">%1$s を検出 — 猶予開始</string>
     <string name="notif_ql_detected_monitoring">%1$s を検出 — 監視中</string>
     <string name="notif_reply">返信</string>
@@ -131,6 +131,10 @@
     <string name="intent_folder_util">その他</string>
     <string name="something_else_question">他のこと？</string>
     <string name="onboarding_app_tiers_title">アプリの三つの区分</string>
+    <string name="onboarding_system_apps_title">プリインストールアプリ</string>
+    <string name="onboarding_system_apps_body">システムアプリに見えるものです。電話などが使えるよう、既定では制限しません。MindfulHome に監視させたいものはチェックを外してください。</string>
+    <string name="onboarding_system_apps_empty">この端末にプリインストール候補はありません。</string>
+    <string name="onboarding_system_apps_continue">続ける</string>
     <string name="onboarding_layout_title">ホーム画面の仕組み</string>
     <string-array name="onboarding_app_tiers_bullets">
         <item>信頼できる — 役に立ち、時間を無駄にしないと分かるアプリ：クイック起動に入れ、タイマーなし</item>

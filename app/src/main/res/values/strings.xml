@@ -15,7 +15,7 @@
     <string name="notif_ql_phase_red">red</string>
     <string name="notif_ql_detected_allowed">Detected %1$s — allowed Quick Launch app</string>
     <string name="notif_ql_detected_ignored">Detected %1$s — ignored (%2$s)</string>
-    <string name="notif_ql_detected_instant_gate">Detected %1$s — instant ShouldYouBeHere</string>
+    <string name="notif_ql_detected_instant_gate">Detected %1$s — starting bird nudges</string>
     <string name="notif_ql_detected_starting_grace">Detected %1$s — starting grace</string>
     <string name="notif_ql_detected_monitoring">Detected %1$s — monitoring</string>
     <string name="notif_reply">Reply</string>
@@ -38,7 +38,6 @@
     <string name="nudge_extension_blocked_deadline">I can\'t grant that extension now - your hard deadline is now the closest limit.</string>
     <string name="nudge_extension_declined">Understood - no extension applied. If it is late, close the app now.</string>
     <string name="nudge_conversation_grace_expired">Conversation grace expired!</string>
-    <string name="quick_launch_cheat_message">Please don’t cheat, you’re only hurting yourself</string>
     <string name="accessibility_service_description">Lets MindfulHome notice the instant you switch apps, so it can gently steer you back without constantly checking in the background (saves battery). MindfulHome only reads which app is in front — never the content of your screen.</string>
     <string name="language_picker_title">Choose your language</string>
     <string name="language_picker_subtitle">You can change this later in Settings.</string>
@@ -121,7 +120,6 @@ your phone and use apps.</string>
     <string name="quick_launch_semaphore_per_color">Quick Launch semaphore (per color)</string>
     <string name="time_between_new_floating_bubbles">Time between new floating bubbles.</string>
     <string name="why_are_you_unlocking_optional">Why are you unlocking? (optional)</string>
-    <string name="yeah_i_need_to_finish_this_thing">…yeah I need to finish this thing</string>
     <string name="choose_which_gemini_model_to_use">Choose which Gemini model to use</string>
     <string name="no_app_usage_recorded_yet_today">No app usage recorded yet today.</string>
     <string name="choose_where_ai_processing_runs">Choose where AI processing runs</string>
@@ -148,7 +146,6 @@ your phone and use apps.</string>
     <string name="set_karma_for_applabel">Set karma for %1$s</string>
     <string name="start_using_mindfulhome">Start using MindfulHome</string>
     <string name="bubbles_before_banners">Bubbles Before Banners</string>
-    <string name="i_ll_do_something_else">I\'ll do something else</string>
     <string name="intent_folder_search">Search</string>
     <string name="intent_folder_reflect">Reflect</string>
     <string name="intent_folder_travel">Travel</string>
@@ -181,7 +178,6 @@ your phone and use apps.</string>
     <string name="allow_notifications">Allow notifications</string>
     <string name="daily_log_summaries">Daily log summaries</string>
     <string name="quick_return_window">Quick Return Window</string>
-    <string name="should_you_be_here">Should you be here?</string>
     <string name="drop_to_edit_timer">Drop to edit timer</string>
     <string name="duration_minutes">Duration (minutes)</string>
     <string name="hide_hard_deadline">Hide hard deadline</string>
@@ -306,11 +302,15 @@ your phone and use apps.</string>
     <string name="onboarding_grant_accessibility">Enable app-switch detection</string>
     <string name="onboarding_ai_model_body">Private, free, offline use is possible with a local model, such as a Gemma3-1B model (557 MB). Download it from HuggingFace and place it in the app\'s models folder.\nBe warned however that small models won\'t be as smart as you might expect.\n\nFor a solution more powerful and less taxing on your space and compute we recommend signing in to use our AI service, powered by Gemini.\n\nIf neither is configured, a scripted fallback will be used.</string>
     <string name="onboarding_app_tiers_title">Three kinds of apps</string>
+    <string name="onboarding_system_apps_title">Pre-installed apps</string>
+    <string name="onboarding_system_apps_body">These look like system apps. We will leave them unrestricted so Phone and similar stay usable. Uncheck any you want MindfulHome to monitor.</string>
+    <string name="onboarding_system_apps_empty">No pre-installed candidates found on this device.</string>
+    <string name="onboarding_system_apps_continue">Continue</string>
     <string name="onboarding_layout_title">How the home screen works</string>
     <string-array name="onboarding_philosophy_bullets">
         <item>Set a timer each time you unlock your phone</item>
         <item>Apps earn karma based on whether you stick to your timer</item>
-        <item>Low-karma apps get hidden (but never blocked)</item>
+        <item>Low-karma apps get hidden — birds nag, never force you out</item>
         <item>Talk to the AI to access hidden apps -- it will ask, but always relent</item>
         <item>No app is ever closed or force-stopped by MindfulHome</item>
     </string-array>

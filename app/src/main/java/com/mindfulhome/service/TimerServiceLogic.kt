@@ -20,18 +20,10 @@ sealed class QuickLaunchSwitchDecision {
 
     data class Ignore(
         val reason: String,
-        val awaitingHome: Boolean,
     ) : QuickLaunchSwitchDecision()
 
-    /**
-     * Open ShouldYouBeHere immediately. [resume] is the per-package snapshot when present
-     * (service restores deadline/phase from it, or uses [nowMs] when null).
-     */
-    data class InstantGate(
-        val fromLauncherOrRecents: Boolean,
-        val graceAlreadyUsedUp: Boolean,
-        val resume: QuickLaunchExitResumeSnapshot?,
-    ) : QuickLaunchSwitchDecision()
+    /** Grace already used up — start bird nudges; never force home. */
+    data object StartBirds : QuickLaunchSwitchDecision()
 
     data object StartGrace : QuickLaunchSwitchDecision()
 
@@ -121,12 +113,8 @@ internal const val QUICK_REPLY_DECLINE_EXTENSION = "oh, it IS late, I'll close"
  */
 internal fun decideQuickLaunchSwitch(
     packageName: String,
-    previousPackage: String,
-    selfPackageName: String,
     allowedPackages: Set<String>,
     utilityReason: String?,
-    previousIsUtilityOrSystem: Boolean,
-    awaitHomeSettleAfterGateLeave: Boolean,
     currentExitCandidatePackage: String?,
     resume: QuickLaunchExitResumeSnapshot?,
     nowMs: Long,
@@ -134,34 +122,15 @@ internal fun decideQuickLaunchSwitch(
     when {
         packageName in allowedPackages -> return QuickLaunchSwitchDecision.Allowed
         utilityReason != null -> {
-            return QuickLaunchSwitchDecision.Ignore(
-                reason = utilityReason,
-                awaitingHome = awaitHomeSettleAfterGateLeave,
-            )
+            return QuickLaunchSwitchDecision.Ignore(reason = utilityReason)
         }
         else -> {
-            if (awaitHomeSettleAfterGateLeave) {
-                return QuickLaunchSwitchDecision.Ignore(
-                    reason = "awaiting_home_settle",
-                    awaitingHome = true,
-                )
-            }
-            // Allowlisted previous (e.g. Settings as a QL app) is a real session destination —
-            // leaving it for a restricted app gets grace, not the launcher/Recents instant gate.
-            val previousUtilityCountsAsLauncher =
-                previousIsUtilityOrSystem && previousPackage !in allowedPackages
-            val fromLauncherOrRecents = previousPackage == selfPackageName ||
-                previousPackage.isBlank() ||
-                previousUtilityCountsAsLauncher
             val graceAlreadyUsedUp =
                 resume != null && resume.deadlineMs > 0L && nowMs >= resume.deadlineMs
-            if (fromLauncherOrRecents || graceAlreadyUsedUp) {
-                return QuickLaunchSwitchDecision.InstantGate(
-                    fromLauncherOrRecents = fromLauncherOrRecents,
-                    graceAlreadyUsedUp = graceAlreadyUsedUp,
-                    resume = resume,
-                )
+            if (graceAlreadyUsedUp) {
+                return QuickLaunchSwitchDecision.StartBirds
             }
+            // Launcher, Recents, or switch from another app: always grace first (never block).
             return if (currentExitCandidatePackage != packageName) {
                 QuickLaunchSwitchDecision.StartGrace
             } else {
@@ -566,7 +535,6 @@ sealed class TimerServiceCommand {
     data class Extend(val extraMinutes: Int) : TimerServiceCommand()
 
     data object Stop : TimerServiceCommand()
-    data object DismissShouldYouBeHere : TimerServiceCommand()
     data object EngageExtendChat : TimerServiceCommand()
     data object ClearVisibleNudges : TimerServiceCommand()
     data object HandleReply : TimerServiceCommand()
@@ -623,7 +591,6 @@ internal fun mapIntentToCommand(
             TimerServiceCommand.ForegroundAppChanged(packageName)
         TimerService.ACTION_EXTEND -> TimerServiceCommand.Extend(durationMinutes)
         TimerService.ACTION_STOP -> TimerServiceCommand.Stop
-        TimerService.ACTION_DISMISS_SHOULD_YOU_BE_HERE -> TimerServiceCommand.DismissShouldYouBeHere
         TimerService.ACTION_ENGAGE_EXTEND_CHAT -> TimerServiceCommand.EngageExtendChat
         TimerService.ACTION_CLEAR_VISIBLE_NUDGES -> TimerServiceCommand.ClearVisibleNudges
         TimerService.ACTION_HANDLE_REPLY -> TimerServiceCommand.HandleReply
@@ -631,14 +598,7 @@ internal fun mapIntentToCommand(
     }
 }
 
-internal fun quickLaunchIgnoreStatusReason(reason: String, awaitingHome: Boolean): String {
-    if (!awaitingHome) return reason
-    return if (reason == "awaiting_home_settle") {
-        "awaiting home after gate leave"
-    } else {
-        "$reason, awaiting home"
-    }
-}
+internal fun quickLaunchIgnoreStatusReason(reason: String): String = reason
 
 /** Whether conversation notification should offer extension confirm/decline actions. */
 internal fun conversationNotificationIncludesExtensionActions(
@@ -680,60 +640,8 @@ internal fun shouldFireCountdownExpiry(endAtMs: Long, nowMs: Long): Boolean =
     endAtMs > 0L && nowMs >= endAtMs
 
 /**
- * Instant-gate resume fields: keep prior deadline/phase/karma when present, else expire now.
- */
-data class InstantGateResumeFields(
-    val deadlineMs: Long,
-    val phaseMs: Long?,
-    val karmaScore: Int?,
-    val startedAtMs: Long?,
-)
-
-internal fun instantGateResumeFields(
-    resume: QuickLaunchExitResumeSnapshot?,
-    nowMs: Long,
-): InstantGateResumeFields {
-    return if (resume != null) {
-        InstantGateResumeFields(
-            deadlineMs = resume.deadlineMs,
-            phaseMs = resume.phaseMs,
-            karmaScore = resume.karmaScore,
-            startedAtMs = null,
-        )
-    } else {
-        InstantGateResumeFields(
-            deadlineMs = nowMs,
-            phaseMs = null,
-            karmaScore = null,
-            startedAtMs = nowMs,
-        )
-    }
-}
-
-internal fun shouldForceShouldYouBeHere(
-    gateActive: Boolean,
-    gateDismissed: Boolean,
-    timerIsExpired: Boolean,
-    packageName: String,
-    ownPackageName: String,
-    isSystemOrUtility: Boolean,
-    isQuickLaunchPackage: Boolean,
-    overtimeForceInFlight: Boolean,
-): Boolean {
-    if (!gateActive) return false
-    if (gateDismissed) return false
-    if (!timerIsExpired) return false
-    if (packageName.isBlank()) return false
-    if (packageName == ownPackageName) return false
-    if (isSystemOrUtility) return false
-    if (isQuickLaunchPackage) return false
-    if (overtimeForceInFlight) return false
-    return true
-}
-
-/**
- * True when the user returned to the app whose timer was suspended for Quick Launch (resume tile).
- * Resuming skips grace / ShouldYouBeHere gates.
+ * True when the user returned to the app whose timer was suspended for Quick Launch.
+ * Resuming is invisible — no confrontation UI or home redirect.
  */
 internal fun shouldAutoResumeSuspendedSession(
     foregroundPackage: String,
@@ -747,19 +655,6 @@ internal fun shouldAutoResumeSuspendedSession(
     return foregroundPackage == savedSessionPackage ||
         foregroundOwnerPackage == savedSessionPackage
 }
-
-/** True when a restricted foreground reading should be ignored until home settles after the gate. */
-internal fun shouldIgnoreForegroundWhileAwaitingHome(
-    awaitHomeSettle: Boolean,
-    foregroundPackage: String,
-    ownPackageName: String,
-    isSystemOrUtility: Boolean,
-    isQuickLaunchPackage: Boolean,
-): Boolean =
-    awaitHomeSettle &&
-        foregroundPackage != ownPackageName &&
-        !isSystemOrUtility &&
-        !isQuickLaunchPackage
 
 internal fun shouldStartTimedQuickLaunchFromTimerState(isIdle: Boolean): Boolean = isIdle
 

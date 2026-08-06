@@ -22,6 +22,6 @@ object ForegroundA11yLogic {
 
     fun shouldNotifyTimerService(
         quickLaunchActive: Boolean,
-        shouldYouBeHereGateActive: Boolean,
-    ): Boolean = quickLaunchActive || shouldYouBeHereGateActive
+        timerIsExpired: Boolean,
+    ): Boolean = quickLaunchActive || timerIsExpired
 }

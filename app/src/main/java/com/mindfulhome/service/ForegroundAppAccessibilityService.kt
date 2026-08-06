@@ -9,6 +9,7 @@ import android.text.TextUtils
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.inputmethod.InputMethodManager
+import com.mindfulhome.model.TimerState
 import com.mindfulhome.settings.SettingsManager
 
 /**
@@ -51,7 +52,7 @@ class ForegroundAppAccessibilityService : AccessibilityService() {
         lastPackage = pkg
         if (!ForegroundA11yLogic.shouldNotifyTimerService(
                 quickLaunchActive = SettingsManager.isQuickLaunchSessionActive(this),
-                shouldYouBeHereGateActive = TimerService.shouldYouBeHereGateActive,
+                timerIsExpired = TimerService.timerState.value is TimerState.Expired,
             )
         ) {
             return

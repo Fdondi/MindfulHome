@@ -21,6 +21,7 @@ class QuickLaunchUtilityClassifierTest(
         val launchable: Set<String> = emptySet(),
         val labels: Map<String, String> = emptyMap(),
         val categories: Map<String, Int> = emptyMap(),
+        val system: Set<String> = emptySet(),
     ) : QuickLaunchUtilityClassifier.PackageSignals {
         override fun isInputMethodPackage(packageName: String) = packageName in ime
         override fun isHomeLauncherPackage(packageName: String) = packageName in home
@@ -30,6 +31,7 @@ class QuickLaunchUtilityClassifierTest(
         override fun appLabel(packageName: String) = labels[packageName] ?: packageName
         override fun applicationCategory(packageName: String) =
             categories[packageName] ?: ApplicationInfo.CATEGORY_UNDEFINED
+        override fun isSystemPackage(packageName: String) = packageName in system
     }
 
     private val signals = FakeSignals(
@@ -40,9 +42,11 @@ class QuickLaunchUtilityClassifierTest(
         ),
         settings = "com.android.settings",
         dialer = "com.google.android.dialer",
+        system = setOf("com.android.phone", "com.instagram.android"),
         launchable = setOf(
             "com.instagram.android",
             "com.twitter.android",
+            "com.google.android.youtube",
             "com.android.settings",
             "com.sec.android.app.launcher",
             "com.google.android.apps.nexuslauncher",
@@ -50,14 +54,18 @@ class QuickLaunchUtilityClassifierTest(
             "com.android.camera",
             "com.example.albumviewer",
             "com.example.sharetarget",
+            "com.android.phone",
+            "com.instagram.android",
         ),
         labels = mapOf(
             "com.example.albumviewer" to "My Gallery",
             "com.instagram.android" to "Instagram",
             "com.twitter.android" to "X",
+            "com.google.android.youtube" to "YouTube",
         ),
         categories = mapOf(
             "com.example.sharetarget" to ApplicationInfo.CATEGORY_IMAGE,
+            "com.google.android.youtube" to ApplicationInfo.CATEGORY_VIDEO,
         ),
     )
 
@@ -118,8 +126,14 @@ class QuickLaunchUtilityClassifierTest(
                 "media category=IMAGE",
                 "image_category",
             ),
+            arrayOf("com.android.phone", "preinstalled system", "phone_system_unrestricted"),
             arrayOf("com.instagram.android", null, "instagram_monitored"),
             arrayOf("com.twitter.android", null, "x_monitored"),
+            arrayOf(
+                "com.google.android.youtube",
+                null,
+                "youtube_monitored_despite_video_category",
+            ),
             arrayOf("", null, "blank_monitor"),
         )
     }
@@ -139,6 +153,7 @@ class QuickLaunchUtilityClassifierNonParameterizedTest {
                 override fun appLabel(packageName: String) = packageName
                 override fun applicationCategory(packageName: String) =
                     ApplicationInfo.CATEGORY_UNDEFINED
+                override fun isSystemPackage(packageName: String) = false
             },
             selfPackageName = "com.mindfulhome",
         )
@@ -154,6 +169,7 @@ class QuickLaunchUtilityClassifierNonParameterizedTest {
                     override fun appLabel(packageName: String) = "Instagram"
                     override fun applicationCategory(packageName: String) =
                         ApplicationInfo.CATEGORY_UNDEFINED
+                    override fun isSystemPackage(packageName: String) = true
                 },
                 selfPackageName = "com.mindfulhome",
             ).utilityReason("com.instagram.android"),

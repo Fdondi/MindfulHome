@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -24,6 +25,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,19 +53,25 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import com.mindfulhome.R
 import com.mindfulhome.locale.AppLanguage
 import com.mindfulhome.locale.LocaleHelper
+import com.mindfulhome.model.AppInfo
+import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.service.ForegroundAppAccessibilityService
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.ui.common.LanguagePickerStep
+import com.mindfulhome.util.PackageManagerHelper
+import com.mindfulhome.util.PreinstalledAppPolicy
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val PREF_NAME = "mindfulhome"
 private const val ONBOARDING_STEP_KEY = "onboarding_step"
-private const val ONBOARDING_LAST_STEP = 9
+private const val ONBOARDING_LAST_STEP = 10
 
 @Composable
 fun OnboardingScreen(
-    onComplete: () -> Unit
+    karmaManager: KarmaManager,
+    onComplete: () -> Unit,
 ) {
     val context = LocalContext.current
     val prefs = remember(context) {
@@ -111,6 +121,7 @@ fun OnboardingScreen(
         } else {
             OnboardingStepContent(
                 step = step,
+                karmaManager = karmaManager,
                 onGoToStep = { goToStep(it) },
                 onComplete = onComplete,
                 onGrantUsageAccess = {
@@ -124,6 +135,7 @@ fun OnboardingScreen(
 @Composable
 private fun OnboardingStepContent(
     step: Int,
+    karmaManager: KarmaManager,
     onGoToStep: (Int) -> Unit,
     onComplete: () -> Unit,
     onGrantUsageAccess: () -> Unit,
@@ -134,6 +146,7 @@ private fun OnboardingStepContent(
         2 -> DefaultHomeStep(onNext = { onGoToStep(3) })
         else -> OnboardingPermissionSteps(
             step = step,
+            karmaManager = karmaManager,
             onGoToStep = onGoToStep,
             onComplete = onComplete,
             onGrantUsageAccess = onGrantUsageAccess,
@@ -144,6 +157,7 @@ private fun OnboardingStepContent(
 @Composable
 private fun OnboardingPermissionSteps(
     step: Int,
+    karmaManager: KarmaManager,
     onGoToStep: (Int) -> Unit,
     onComplete: () -> Unit,
     onGrantUsageAccess: () -> Unit,
@@ -154,7 +168,11 @@ private fun OnboardingPermissionSteps(
         5 -> OverlayPermissionStep(onNext = { onGoToStep(6) })
         6 -> AccessibilityPermissionStep(onNext = { onGoToStep(7) })
         7 -> ModelStep(onNext = { onGoToStep(8) })
-        8 -> AppTiersStep(onNext = { onGoToStep(9) })
+        8 -> SystemAppsReviewStep(
+            karmaManager = karmaManager,
+            onNext = { onGoToStep(9) },
+        )
+        9 -> AppTiersStep(onNext = { onGoToStep(10) })
         else -> LayoutStep(onNext = onComplete)
     }
 }
@@ -214,6 +232,101 @@ private fun AppTiersStep(onNext: () -> Unit) {
         buttonLabel = stringResource(R.string.makes_sense),
         onNext = onNext,
     )
+}
+
+@Composable
+private fun SystemAppsReviewStep(
+    karmaManager: KarmaManager,
+    onNext: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var candidates by remember { mutableStateOf<List<AppInfo>?>(null) }
+    var selected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var saving by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        val apps = PackageManagerHelper.getInstalledApps(context)
+        val list = PreinstalledAppPolicy.unrestrictedSystemCandidates(apps)
+        candidates = list
+        selected = list.map { it.packageName }.toSet()
+    }
+
+    Text(
+        text = stringResource(R.string.onboarding_system_apps_title),
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+    )
+    Spacer(modifier = Modifier.height(12.dp))
+    Text(
+        text = stringResource(R.string.onboarding_system_apps_body),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        textAlign = TextAlign.Center,
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+
+    when (val list = candidates) {
+        null -> CircularProgressIndicator()
+        else -> {
+            if (list.isEmpty()) {
+                Text(
+                    text = stringResource(R.string.onboarding_system_apps_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    list.forEach { app ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = app.packageName in selected,
+                                onCheckedChange = { checked ->
+                                    selected = if (checked) {
+                                        selected + app.packageName
+                                    } else {
+                                        selected - app.packageName
+                                    }
+                                },
+                            )
+                            Text(
+                                text = app.label,
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(24.dp))
+    Button(
+        onClick = {
+            if (saving) return@Button
+            saving = true
+            scope.launch {
+                val pkgs = selected
+                for (pkg in pkgs) {
+                    karmaManager.setOptedOut(pkg, true)
+                }
+                SettingsManager.setSystemAppsReviewDone(context, true)
+                saving = false
+                onNext()
+            }
+        },
+        enabled = !saving && candidates != null,
+        modifier = Modifier.fillMaxWidth(0.8f),
+    ) {
+        Text(stringResource(R.string.onboarding_system_apps_continue))
+    }
 }
 
 @Composable

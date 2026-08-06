@@ -15,7 +15,7 @@
     <string name="notif_ql_phase_red">rouge</string>
     <string name="notif_ql_detected_allowed">%1$s détecté — app de lancement rapide autorisée</string>
     <string name="notif_ql_detected_ignored">%1$s détecté — ignoré (%2$s)</string>
-    <string name="notif_ql_detected_instant_gate">%1$s détecté — ShouldYouBeHere immédiat</string>
+    <string name="notif_ql_detected_instant_gate">%1$s détecté — démarrage des oiseaux</string>
     <string name="notif_ql_detected_starting_grace">%1$s détecté — délai de grâce démarre</string>
     <string name="notif_ql_detected_monitoring">%1$s détecté — surveillance</string>
     <string name="notif_reply">Répondre</string>
@@ -38,7 +38,6 @@
     <string name="nudge_extension_blocked_deadline">Je ne peux pas accorder cette extension maintenant – votre échéance stricte est la limite la plus proche.</string>
     <string name="nudge_extension_declined">Compris – pas d\'extension. S\'il est tard, fermez l\'app maintenant.</string>
     <string name="nudge_conversation_grace_expired">Délai de conversation expiré !</string>
-    <string name="quick_launch_cheat_message">S\'il te plaît, ne triche pas, tu ne fais que te faire du mal</string>
     <string name="accessibility_service_description">Permet à MindfulHome de remarquer l\'instant où vous changez d\'application, afin qu\'il puisse vous guider en douceur sans vérifier constamment en arrière-plan (économise la batterie). MindfulHome lit uniquement quelle application se trouve devant, jamais le contenu de votre écran.</string>
     <string name="language_picker_title">Choisissez votre langue</string>
     <string name="language_picker_subtitle">Vous pourrez modifier cela ultérieurement dans Paramètres.</string>
@@ -121,7 +120,6 @@ votre téléphone et utiliser des applications.</string>
     <string name="quick_launch_semaphore_per_color">Sémaphore de lancement rapide (par couleur)</string>
     <string name="time_between_new_floating_bubbles">Temps entre les nouvelles bulles flottantes.</string>
     <string name="why_are_you_unlocking_optional">Pourquoi tu déverrouilles ? (facultatif)</string>
-    <string name="yeah_i_need_to_finish_this_thing">…ouais, je dois finir ce truc</string>
     <string name="choose_which_gemini_model_to_use">Choisissez quel modèle Gemini utiliser</string>
     <string name="no_app_usage_recorded_yet_today">Aucune utilisation de l\'application n\'a encore été enregistrée aujourd\'hui.</string>
     <string name="choose_where_ai_processing_runs">Choisissez où le traitement de l\'IA s\'exécute</string>
@@ -148,7 +146,6 @@ votre téléphone et utiliser des applications.</string>
     <string name="set_karma_for_applabel">Définir le karma pour %1$s</string>
     <string name="start_using_mindfulhome">Commencez à utiliser MindfulHome</string>
     <string name="bubbles_before_banners">Bulles avant les bannières</string>
-    <string name="i_ll_do_something_else">je ferai autre chose</string>
     <string name="intent_folder_search">Chercher</string>
     <string name="intent_folder_reflect">Réfléchir</string>
     <string name="intent_folder_travel">Voyager</string>
@@ -181,7 +178,6 @@ votre téléphone et utiliser des applications.</string>
     <string name="allow_notifications">Autoriser les notifications</string>
     <string name="daily_log_summaries">Résumés des journaux quotidiens</string>
     <string name="quick_return_window">Fenêtre de retour rapide</string>
-    <string name="should_you_be_here">Devrais-tu être ici ?</string>
     <string name="drop_to_edit_timer">Déposer pour modifier le minuteur</string>
     <string name="duration_minutes">Durée (minutes)</string>
     <string name="hide_hard_deadline">Masquer les délais fermes</string>
@@ -306,6 +302,10 @@ votre téléphone et utiliser des applications.</string>
     <string name="onboarding_grant_accessibility">Activer la détection de changement d\'appli</string>
     <string name="onboarding_ai_model_body">Une utilisation privée, gratuite et hors ligne est possible avec un modèle local, comme un modèle Gemma3-1B (557 Mo). Téléchargez-le depuis HuggingFace et placez-le dans le dossier des modèles de l\'application.\nSoyez toutefois averti que les petits modèles ne seront pas aussi intelligents que vous pourriez l\'espérer.\n\nPour une solution plus puissante et moins gourmande en espace et en calcul, nous vous recommandons de vous connecter pour utiliser notre service d\'IA, alimenté par Gemini.\n\nSi aucun des deux n\'est configuré, une solution de secours scriptée sera utilisée.</string>
     <string name="onboarding_app_tiers_title">Trois types d\'apps</string>
+    <string name="onboarding_system_apps_title">Apps préinstallées</string>
+    <string name="onboarding_system_apps_body">Ces apps semblent système. Nous les laissons sans restriction pour que Téléphone et similaires restent utilisables. Décochez celles que MindfulHome doit surveiller.</string>
+    <string name="onboarding_system_apps_empty">Aucun candidat préinstallé trouvé sur cet appareil.</string>
+    <string name="onboarding_system_apps_continue">Continuer</string>
     <string name="onboarding_layout_title">Comment fonctionne l\'écran d\'accueil</string>
     <string-array name="onboarding_philosophy_bullets">
         <item>Réglez une minuterie à chaque fois que vous déverrouillez votre téléphone</item>

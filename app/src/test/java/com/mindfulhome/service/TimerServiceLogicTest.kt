@@ -15,12 +15,8 @@ class TimerServiceLogicTest {
     fun decideQuickLaunchSwitch_allowedWhenInAllowlist() {
         val decision = decideQuickLaunchSwitch(
             packageName = "com.allowed",
-            previousPackage = "com.other",
-            selfPackageName = "com.mindfulhome",
             allowedPackages = setOf("com.allowed", "com.mindfulhome"),
             utilityReason = null,
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = true,
             currentExitCandidatePackage = null,
             resume = null,
             nowMs = 1_000L,
@@ -29,130 +25,24 @@ class TimerServiceLogicTest {
     }
 
     @Test
-    fun decideQuickLaunchSwitch_utilityAwaitingHome_isIgnoreAwaiting() {
+    fun decideQuickLaunchSwitch_utility_isIgnore() {
         val decision = decideQuickLaunchSwitch(
             packageName = "com.android.systemui",
-            previousPackage = "com.allowed",
-            selfPackageName = "com.mindfulhome",
             allowedPackages = setOf("com.allowed"),
             utilityReason = "system_ui",
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = true,
             currentExitCandidatePackage = null,
             resume = null,
             nowMs = 1_000L,
         )
-        assertEquals(
-            QuickLaunchSwitchDecision.Ignore(reason = "system_ui", awaitingHome = true),
-            decision,
-        )
+        assertEquals(QuickLaunchSwitchDecision.Ignore(reason = "system_ui"), decision)
     }
 
     @Test
-    fun decideQuickLaunchSwitch_utilityNotAwaiting_isIgnore() {
-        val decision = decideQuickLaunchSwitch(
-            packageName = "com.android.systemui",
-            previousPackage = "com.allowed",
-            selfPackageName = "com.mindfulhome",
-            allowedPackages = setOf("com.allowed"),
-            utilityReason = "system_ui",
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = false,
-            currentExitCandidatePackage = null,
-            resume = null,
-            nowMs = 1_000L,
-        )
-        assertEquals(
-            QuickLaunchSwitchDecision.Ignore(reason = "system_ui", awaitingHome = false),
-            decision,
-        )
-    }
-
-    @Test
-    fun decideQuickLaunchSwitch_restrictedAwaitingHome_isIgnore() {
+    fun decideQuickLaunchSwitch_fromLauncher_startsGrace() {
         val decision = decideQuickLaunchSwitch(
             packageName = "com.restricted",
-            previousPackage = "com.restricted",
-            selfPackageName = "com.mindfulhome",
-            allowedPackages = setOf("com.allowed"),
-            utilityReason = null,
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = true,
-            currentExitCandidatePackage = null,
-            resume = null,
-            nowMs = 1_000L,
-        )
-        assertEquals(
-            QuickLaunchSwitchDecision.Ignore(reason = "awaiting_home_settle", awaitingHome = true),
-            decision,
-        )
-    }
-
-    @Test
-    fun decideQuickLaunchSwitch_fromLauncher_instantGate() {
-        val decision = decideQuickLaunchSwitch(
-            packageName = "com.restricted",
-            previousPackage = "com.mindfulhome",
-            selfPackageName = "com.mindfulhome",
             allowedPackages = setOf("com.allowed", "com.mindfulhome"),
             utilityReason = null,
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = false,
-            currentExitCandidatePackage = null,
-            resume = null,
-            nowMs = 1_000L,
-        )
-        assertTrue(decision is QuickLaunchSwitchDecision.InstantGate)
-        val gate = decision as QuickLaunchSwitchDecision.InstantGate
-        assertTrue(gate.fromLauncherOrRecents)
-        assertFalse(gate.graceAlreadyUsedUp)
-        assertEquals(null, gate.resume)
-    }
-
-    @Test
-    fun decideQuickLaunchSwitch_fromBlankPrevious_instantGate() {
-        val decision = decideQuickLaunchSwitch(
-            packageName = "com.restricted",
-            previousPackage = "",
-            selfPackageName = "com.mindfulhome",
-            allowedPackages = setOf("com.allowed"),
-            utilityReason = null,
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = false,
-            currentExitCandidatePackage = null,
-            resume = null,
-            nowMs = 1_000L,
-        )
-        assertTrue((decision as QuickLaunchSwitchDecision.InstantGate).fromLauncherOrRecents)
-    }
-
-    @Test
-    fun decideQuickLaunchSwitch_fromUtilityPrevious_instantGate() {
-        val decision = decideQuickLaunchSwitch(
-            packageName = "com.restricted",
-            previousPackage = "com.android.systemui",
-            selfPackageName = "com.mindfulhome",
-            allowedPackages = setOf("com.allowed"),
-            utilityReason = null,
-            previousIsUtilityOrSystem = true,
-            awaitHomeSettleAfterGateLeave = false,
-            currentExitCandidatePackage = null,
-            resume = null,
-            nowMs = 1_000L,
-        )
-        assertTrue((decision as QuickLaunchSwitchDecision.InstantGate).fromLauncherOrRecents)
-    }
-
-    @Test
-    fun decideQuickLaunchSwitch_fromAllowlistedUtilityPrevious_startsGrace() {
-        val decision = decideQuickLaunchSwitch(
-            packageName = "com.restricted",
-            previousPackage = "com.android.settings",
-            selfPackageName = "com.mindfulhome",
-            allowedPackages = setOf("com.android.settings", "com.mindfulhome"),
-            utilityReason = null,
-            previousIsUtilityOrSystem = true,
-            awaitHomeSettleAfterGateLeave = false,
             currentExitCandidatePackage = null,
             resume = null,
             nowMs = 1_000L,
@@ -161,36 +51,25 @@ class TimerServiceLogicTest {
     }
 
     @Test
-    fun decideQuickLaunchSwitch_graceUsedUp_instantGateWithResume() {
+    fun decideQuickLaunchSwitch_graceUsedUp_startsBirds() {
         val resume = QuickLaunchExitResumeSnapshot(deadlineMs = 500L, phaseMs = 20_000L, karmaScore = -2)
         val decision = decideQuickLaunchSwitch(
             packageName = "com.restricted",
-            previousPackage = "com.allowed",
-            selfPackageName = "com.mindfulhome",
             allowedPackages = setOf("com.allowed"),
             utilityReason = null,
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = false,
             currentExitCandidatePackage = null,
             resume = resume,
             nowMs = 1_000L,
         )
-        val gate = decision as QuickLaunchSwitchDecision.InstantGate
-        assertTrue(gate.graceAlreadyUsedUp)
-        assertFalse(gate.fromLauncherOrRecents)
-        assertEquals(resume, gate.resume)
+        assertEquals(QuickLaunchSwitchDecision.StartBirds, decision)
     }
 
     @Test
     fun decideQuickLaunchSwitch_newCandidate_startGrace() {
         val decision = decideQuickLaunchSwitch(
             packageName = "com.restricted",
-            previousPackage = "com.allowed",
-            selfPackageName = "com.mindfulhome",
             allowedPackages = setOf("com.allowed"),
             utilityReason = null,
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = false,
             currentExitCandidatePackage = null,
             resume = QuickLaunchExitResumeSnapshot(deadlineMs = 5_000L, phaseMs = 20_000L, karmaScore = 0),
             nowMs = 1_000L,
@@ -202,12 +81,8 @@ class TimerServiceLogicTest {
     fun decideQuickLaunchSwitch_sameCandidate_continueMonitor() {
         val decision = decideQuickLaunchSwitch(
             packageName = "com.restricted",
-            previousPackage = "com.allowed",
-            selfPackageName = "com.mindfulhome",
             allowedPackages = setOf("com.allowed"),
             utilityReason = null,
-            previousIsUtilityOrSystem = false,
-            awaitHomeSettleAfterGateLeave = false,
             currentExitCandidatePackage = "com.restricted",
             resume = null,
             nowMs = 1_000L,
@@ -853,16 +728,9 @@ class TimerServiceLogicTest {
     }
 
     @Test
-    fun quickLaunchIgnoreStatusReason_variants() {
-        assertEquals("system_ui", quickLaunchIgnoreStatusReason("system_ui", awaitingHome = false))
-        assertEquals(
-            "awaiting home after gate leave",
-            quickLaunchIgnoreStatusReason("awaiting_home_settle", awaitingHome = true),
-        )
-        assertEquals(
-            "system_ui, awaiting home",
-            quickLaunchIgnoreStatusReason("system_ui", awaitingHome = true),
-        )
+    fun quickLaunchIgnoreStatusReason_passthrough() {
+        assertEquals("system_ui", quickLaunchIgnoreStatusReason("system_ui"))
+        assertEquals("awaiting_home_settle", quickLaunchIgnoreStatusReason("awaiting_home_settle"))
     }
 
     @Test
@@ -895,27 +763,13 @@ class TimerServiceLogicTest {
     }
 
     @Test
-    fun countdownHelpers_andInstantGateResume() {
+    fun countdownHelpers() {
         assertTrue(countdownShouldAbort(0L))
         assertFalse(countdownShouldAbort(1L))
         assertEquals(1_000L, countdownDelayMs(500L, 5_000L))
         assertEquals(2_000L, countdownDelayMs(5_000L, 2_000L))
         assertTrue(shouldFireCountdownExpiry(10L, 10L))
         assertFalse(shouldFireCountdownExpiry(0L, 10L))
-
-        val withResume = instantGateResumeFields(
-            QuickLaunchExitResumeSnapshot(1_000L, 20_000L, -1),
-            nowMs = 500L,
-        )
-        assertEquals(1_000L, withResume.deadlineMs)
-        assertEquals(20_000L, withResume.phaseMs)
-        assertEquals(-1, withResume.karmaScore)
-        assertEquals(null, withResume.startedAtMs)
-
-        val without = instantGateResumeFields(null, nowMs = 500L)
-        assertEquals(500L, without.deadlineMs)
-        assertEquals(500L, without.startedAtMs)
-        assertEquals(null, without.phaseMs)
     }
 
     @Test
@@ -928,8 +782,6 @@ class TimerServiceLogicTest {
 @RunWith(Parameterized::class)
 class DecideQuickLaunchSwitchParameterizedTest(
     private val name: String,
-    private val previousPackage: String,
-    private val previousIsUtility: Boolean,
     private val candidate: String?,
     private val resumeDeadline: Long?,
     private val nowMs: Long,
@@ -942,12 +794,8 @@ class DecideQuickLaunchSwitchParameterizedTest(
         }
         val decision = decideQuickLaunchSwitch(
             packageName = "com.restricted",
-            previousPackage = previousPackage,
-            selfPackageName = "com.mindfulhome",
             allowedPackages = setOf("com.allowed", "com.mindfulhome"),
             utilityReason = null,
-            previousIsUtilityOrSystem = previousIsUtility,
-            awaitHomeSettleAfterGateLeave = false,
             currentExitCandidatePackage = candidate,
             resume = resume,
             nowMs = nowMs,
@@ -955,7 +803,7 @@ class DecideQuickLaunchSwitchParameterizedTest(
         val kind = when (decision) {
             QuickLaunchSwitchDecision.Allowed -> "allowed"
             is QuickLaunchSwitchDecision.Ignore -> "ignore"
-            is QuickLaunchSwitchDecision.InstantGate -> "instant"
+            QuickLaunchSwitchDecision.StartBirds -> "birds"
             QuickLaunchSwitchDecision.StartGrace -> "grace"
             QuickLaunchSwitchDecision.ContinueMonitor -> "monitor"
         }
@@ -966,14 +814,10 @@ class DecideQuickLaunchSwitchParameterizedTest(
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")
         fun data(): Collection<Array<Any?>> = listOf(
-            arrayOf("from allowed app starts grace", "com.allowed", false, null, null, 1_000L, "grace"),
-            arrayOf("same candidate monitors", "com.allowed", false, "com.restricted", null, 1_000L, "monitor"),
-            arrayOf("expired resume instant", "com.allowed", false, null, 500L, 1_000L, "instant"),
-            arrayOf("active resume starts grace", "com.allowed", false, null, 5_000L, 1_000L, "grace"),
-            arrayOf("blank previous instant", "", false, null, null, 1_000L, "instant"),
-            arrayOf("self previous instant", "com.mindfulhome", false, null, null, 1_000L, "instant"),
-            arrayOf("utility previous instant", "com.sys", true, null, null, 1_000L, "instant"),
-            arrayOf("allowlisted utility previous grace", "com.allowed", true, null, null, 1_000L, "grace"),
+            arrayOf("new candidate starts grace", null, null, 1_000L, "grace"),
+            arrayOf("same candidate monitors", "com.restricted", null, 1_000L, "monitor"),
+            arrayOf("expired resume starts birds", null, 500L, 1_000L, "birds"),
+            arrayOf("active resume starts grace", null, 5_000L, 1_000L, "grace"),
         )
     }
 }
@@ -1020,79 +864,4 @@ class TimerServiceGateLogicTest {
         )
     }
 
-    @Test
-    fun shouldForceShouldYouBeHere_requiresAllGates() {
-        assertTrue(
-            shouldForceShouldYouBeHere(
-                gateActive = true,
-                gateDismissed = false,
-                timerIsExpired = true,
-                packageName = "com.x",
-                ownPackageName = "com.me",
-                isSystemOrUtility = false,
-                isQuickLaunchPackage = false,
-                overtimeForceInFlight = false,
-            ),
-        )
-        assertFalse(
-            shouldForceShouldYouBeHere(
-                gateActive = false,
-                gateDismissed = false,
-                timerIsExpired = true,
-                packageName = "com.x",
-                ownPackageName = "com.me",
-                isSystemOrUtility = false,
-                isQuickLaunchPackage = false,
-                overtimeForceInFlight = false,
-            ),
-        )
-        assertFalse(
-            shouldForceShouldYouBeHere(
-                gateActive = true,
-                gateDismissed = true,
-                timerIsExpired = true,
-                packageName = "com.x",
-                ownPackageName = "com.me",
-                isSystemOrUtility = false,
-                isQuickLaunchPackage = false,
-                overtimeForceInFlight = false,
-            ),
-        )
-        assertFalse(
-            shouldForceShouldYouBeHere(
-                gateActive = true,
-                gateDismissed = false,
-                timerIsExpired = true,
-                packageName = "com.x",
-                ownPackageName = "com.me",
-                isSystemOrUtility = false,
-                isQuickLaunchPackage = true,
-                overtimeForceInFlight = false,
-            ),
-        )
-    }
-
-    @Test
-    fun shouldIgnoreForegroundWhileAwaitingHome_and_debounce() {
-        assertTrue(
-            shouldIgnoreForegroundWhileAwaitingHome(
-                awaitHomeSettle = true,
-                foregroundPackage = "com.x",
-                ownPackageName = "com.me",
-                isSystemOrUtility = false,
-                isQuickLaunchPackage = false,
-            ),
-        )
-        assertFalse(
-            shouldIgnoreForegroundWhileAwaitingHome(
-                awaitHomeSettle = true,
-                foregroundPackage = "com.ql",
-                ownPackageName = "com.me",
-                isSystemOrUtility = false,
-                isQuickLaunchPackage = true,
-            ),
-        )
-        assertTrue(shouldStartTimedQuickLaunchFromTimerState(true))
-        assertFalse(shouldStartTimedQuickLaunchFromTimerState(false))
-    }
 }

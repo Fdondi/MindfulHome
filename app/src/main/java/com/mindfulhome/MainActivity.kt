@@ -46,7 +46,6 @@ import com.mindfulhome.ui.home.HomeScreen
 import com.mindfulhome.ui.logs.LogsScreen
 import com.mindfulhome.ui.negotiation.NegotiationScreen
 import com.mindfulhome.ui.onboarding.OnboardingScreen
-import com.mindfulhome.ui.overtime.ShouldYouBeHereScreen
 import com.mindfulhome.ui.karma.KarmaScreen
 import com.mindfulhome.ui.settings.IntervalSettingsScreen
 import com.mindfulhome.ui.settings.SettingsScreen
@@ -83,7 +82,6 @@ class MainActivity : AppCompatActivity() {
         const val FORCE_TIMER_REASON_EXPIRED = "expired_timer"
         const val FORCE_TIMER_REASON_QUICK_LAUNCH = "quick_launch_exit"
         const val FORCE_TIMER_REASON_AWAY_RETURN = "away_return"
-        const val FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE = "should_you_be_here"
         const val EXTRA_OPEN_TIMER_PREFILL = "todo_open_timer_prefill"
         const val EXTRA_PREFILL_MINUTES = "todo_prefill_minutes"
         const val EXTRA_PREFILL_REASON = "todo_prefill_reason"
@@ -131,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         karmaManager = KarmaManager(this, repository)
         lifecycleScope.launch {
             karmaManager.runDailyRecoveryIfDue()
+            com.mindfulhome.bootstrap.SystemAppsBootstrap.runIfNeeded(this@MainActivity, karmaManager)
         }
         PackageManagerHelper.precomputeInstalledApps(this)
 
@@ -171,7 +170,6 @@ class MainActivity : AppCompatActivity() {
         NavHost(navController = navCtrl, startDestination = startDestination, route = "root") {
             composable("onboarding") { OnboardingRoute(navCtrl, prefs) }
             composable("timer") { TimerRoute(navCtrl) }
-            composable("should_you_be_here") { ShouldYouBeHereRoute(navCtrl) }
             composable("extend/{packageName}") { entry ->
                 ExtendGateRoute(navCtrl, entry.arguments?.getString("packageName").orEmpty())
             }
@@ -206,6 +204,7 @@ class MainActivity : AppCompatActivity() {
     @Composable
     private fun OnboardingRoute(navCtrl: NavHostController, prefs: SharedPreferences) {
         OnboardingScreen(
+            karmaManager = karmaManager,
             onComplete = {
                 prefs.edit {
                     putBoolean("onboarding_done", true)
@@ -294,35 +293,6 @@ class MainActivity : AppCompatActivity() {
         Log.d("MainActivity", "TimerService.start called, navigating to $targetRoute")
         navCtrl.navigate(targetRoute)
         Log.d("MainActivity", "Navigation to $targetRoute completed")
-    }
-
-    @Composable
-    private fun ShouldYouBeHereRoute(navCtrl: NavHostController) {
-        val pkg = TimerService.currentPackage.value
-        val appLabel = remember(pkg) { resolveAppLabelOrNull(pkg) }
-        ShouldYouBeHereScreen(
-            appLabel = appLabel,
-            onLeave = {
-                SessionLogger.getActiveSessionHandle()?.let {
-                    SessionLogger.log(it, "ShouldYouBeHere: left for home")
-                }
-                TimerService.dismissShouldYouBeHere(this@MainActivity)
-                shouldShowTimer = false
-                wentToBackground = false
-                navCtrl.navigate("default") { popUpTo("root") { inclusive = true } }
-            },
-            onNeedMoreTime = {
-                val currentPkg = TimerService.currentPackage.value
-                shouldShowTimer = false
-                if (currentPkg.isNotBlank()) {
-                    navCtrl.navigate("extend/$currentPkg") {
-                        popUpTo("should_you_be_here") { inclusive = true }
-                    }
-                } else {
-                    navCtrl.navigate("default") { popUpTo("root") { inclusive = true } }
-                }
-            },
-        )
     }
 
     private fun resolveAppLabelOrNull(pkg: String): String? {
@@ -555,7 +525,6 @@ class MainActivity : AppCompatActivity() {
 
     private fun applyPostExpireIntentDecision(decision: IncomingIntentDecision) {
         when (decision) {
-            IncomingIntentDecision.NavigateShouldYouBeHere -> applyNavigateShouldYouBeHere()
             is IncomingIntentDecision.NavigateUnlockOrForce -> applyNavigateUnlockOrForce(decision)
             else -> Unit
         }
@@ -581,17 +550,6 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             navController?.navigate("default") {
                 popUpTo("root") { inclusive = true }
-            }
-        }
-    }
-
-    private fun applyNavigateShouldYouBeHere() {
-        wentToBackground = false
-        shouldShowTimer = false
-        lifecycleScope.launch {
-            navController?.navigate("should_you_be_here") {
-                popUpTo("root") { inclusive = true }
-                launchSingleTop = true
             }
         }
     }
@@ -912,7 +870,7 @@ class MainActivity : AppCompatActivity() {
     /**
      * Starts Quick Launch monitoring as soon as the launcher default page is shown, so usage
      * (e.g. recents → another app on unlock) is tracked even before tapping a Quick Launch tile.
-     * Only when idle — never while Counting/Expired (Expired must keep the ShouldYouBeHere path).
+     * Only when idle — never while Counting/Expired (Expired uses birds in-place).
      */
     private fun ensureQuickLaunchMonitoringAtHome() {
         if (TimerService.timerState.value !is TimerState.Idle) return

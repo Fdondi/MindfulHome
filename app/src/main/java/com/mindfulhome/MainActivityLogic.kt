@@ -66,15 +66,9 @@ object MainActivityLogic {
                 return IncomingIntentDecision.IgnoreExpiredForce("expired_timer")
             }
         }
-        if (forceTimer && (
-                forceTimerReason == MainActivity.FORCE_TIMER_REASON_SHOULD_YOU_BE_HERE ||
-                    forceTimerReason == MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH
-                )
-        ) {
-            if (!timerIsExpired) {
-                return IncomingIntentDecision.IgnoreExpiredForce(forceTimerReason)
-            }
-            return IncomingIntentDecision.NavigateShouldYouBeHere
+        if (forceTimer && forceTimerReason == MainActivity.FORCE_TIMER_REASON_QUICK_LAUNCH) {
+            // QL exit no longer forces UI — birds stay in the foreground app.
+            return IncomingIntentDecision.IgnoreExpiredForce(forceTimerReason)
         }
         if (fromUnlock || forceTimer) {
             return IncomingIntentDecision.NavigateUnlockOrForce(
@@ -236,7 +230,6 @@ sealed class IncomingIntentDecision {
 
     data class IgnoreExpiredForce(val reason: String) : IncomingIntentDecision()
 
-    data object NavigateShouldYouBeHere : IncomingIntentDecision()
 
     data class NavigateUnlockOrForce(
         val fromUnlock: Boolean,

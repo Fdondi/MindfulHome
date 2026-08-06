@@ -1,6 +1,6 @@
 # AI gates
 
-MindfulHome uses two short AI conversations before phone time is allowed, plus a separate expired-session confrontation. The AI gates **nag, never block**: you can always keep chatting, and access is only offered via an explicit **Proceed** button once the gate allows it.
+MindfulHome uses short AI conversations before phone time is allowed. The AI gates **nag, never block**: you can always keep chatting, and access is only offered via an explicit **Proceed** button once the gate allows it. Quick Launch grace expiry and timer expiry use **bird overlays** in place — MindfulHome never force-closes your foreground app or redirects you home.
 
 ## Goals
 
@@ -8,7 +8,7 @@ MindfulHome uses two short AI conversations before phone time is allowed, plus a
 |------|------|---------|
 | **Focus time gate** | Timer starts during a focus-time window | Check that spending phone time now matches your declared intent (not which app you'll use). |
 | **App gatekeeper** | Opening a hidden (karma-hidden) app | Ask why you need it, surface your per-app note and recent usage, push for intentional use. |
-| **Should you be here?** | Recents (or similar) returns to a non–Quick Launch app while monitoring treats the session as expired | Instant confrontation screen. Green → leave. Red → in-app chat using the **timer-expired nudge script** (same prompts/tools as the notification, gate chat UI). |
+| **Bird nudges** | Timer expired, or Quick Launch grace (`baseGrace / \|karma\|`) used up | Overlay birds nag in place. Predatory birds ignored after a real timer (or QL bird path) cost karma −1. Returning to a suspended timed session **resumes invisibly** with no confrontation UI. |
 
 Both AI gates share the same UX pattern:
 
@@ -120,6 +120,8 @@ Without backend AI or on-device model, scripted replies in `PromptTemplates.fall
 | UI (chat + Proceed) | `ui/negotiation/NegotiationScreen.kt` |
 | Prompt editors | `ui/settings/SettingsScreen.kt` → Gate prompts |
 | Navigation entry | `MainActivity` routes `assistant`, `negotiate/{packageName}` |
+| QL grace → birds | `TimerService.triggerQuickLaunchExit` → `promoteToExpiredBirds` |
+| Invisible resume | `shouldAutoResumeSuspendedSession` |
 
 ## Navigation
 
