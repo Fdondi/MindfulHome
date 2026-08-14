@@ -20,12 +20,14 @@ BULLET_ARRAYS = (
     "onboarding_philosophy_bullets",
     "onboarding_app_tiers_bullets",
     "onboarding_layout_bullets",
+    "onboarding_todo_bullets",
 )
 
 JSON_BULLET_KEYS = {
     "onboarding_philosophy_bullets": "bullets",
     "onboarding_app_tiers_bullets": "app_tiers_bullets",
     "onboarding_layout_bullets": "layout_bullets",
+    "onboarding_todo_bullets": "todo_bullets",
 }
 
 

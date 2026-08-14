@@ -1,9 +1,10 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.101.2"
+    const val versionName = "0.102.0"
 }
 
+// 0.102.0 - Rebase onto LM Playground: keep Google Sign-In host, overlay permission, AI Google/on-device/none
 // 0.101.2 - Use a preloaded LM Playground model even without tool calling; surface real API errors
 // 0.101.1 - Split on-device start helpers; cover local tool invoke
 // 0.101.0 - On-device AI via LM Playground AIDL; warn if the app is not installed

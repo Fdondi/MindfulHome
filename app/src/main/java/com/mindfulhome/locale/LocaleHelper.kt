@@ -3,37 +3,49 @@ package com.mindfulhome.locale
 import android.content.Context
 import android.content.res.Configuration
 import android.os.LocaleList
+import android.util.Log
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import com.mindfulhome.settings.SettingsManager
 
 object LocaleHelper {
+    private const val TAG = "LocaleHelper"
 
     /** Apply the stored app language (or system default) via per-app locales. */
     fun applyStoredLocale(context: Context) {
         apply(SettingsManager.getAppLanguage(context))
     }
 
-    fun apply(language: AppLanguage) {
+    /**
+     * @return true when AppCompat will recreate activities for the new locale list.
+     * System default is an empty list — already the first-launch state — so this
+     * returns false and callers must advance UI themselves.
+     */
+    fun apply(language: AppLanguage): Boolean {
         val locales = if (language == AppLanguage.SYSTEM) {
             LocaleListCompat.getEmptyLocaleList()
         } else {
             LocaleListCompat.forLanguageTags(language.tag)
         }
         val currentTags = AppCompatDelegate.getApplicationLocales().toLanguageTags()
-        if (currentTags != locales.toLanguageTags()) {
-            // Recreates activities so Compose stringResource picks up the new configuration.
+        val newTags = locales.toLanguageTags()
+        val recreate = LocaleHelperLogic.shouldRecreateActivity(currentTags, newTags)
+        Log.d(TAG, "apply language=${language.tag} current=$currentTags new=$newTags recreate=$recreate")
+        if (recreate) {
             AppCompatDelegate.setApplicationLocales(locales)
         }
+        return recreate
     }
 
     /**
      * Persist [language], mark as chosen, and apply. [AppCompatDelegate.setApplicationLocales]
      * recreates activities; callers should not flip UI to localized screens before that completes.
+     *
+     * @return true when AppCompat will recreate; false if the locale list is already in place.
      */
-    fun setLanguage(context: Context, language: AppLanguage) {
+    fun setLanguage(context: Context, language: AppLanguage): Boolean {
         SettingsManager.setAppLanguage(context, language)
-        apply(language)
+        return apply(language)
     }
 
     /**

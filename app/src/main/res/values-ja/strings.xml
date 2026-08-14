@@ -37,7 +37,7 @@
     <string name="nudge_extension_declined">了解 – 延長なし。遅いなら今すぐアプリを閉じてください。</string>
     <string name="nudge_conversation_grace_expired">会話の猶予が切れました！</string>
     <string name="back">戻る</string>
-    <string name="backend_sign_in_description">リモートの Gemini モデルを使うには Google アカウントでサインインしてください。サインインしない場合は端末上の応答にフォールバックします。</string>
+    <string name="backend_sign_in_description">リモートの Gemini モデルを使うには Google アカウントでサインインしてください。</string>
     <string name="behavior">動作</string>
     <string name="cancel">キャンセル</string>
     <string name="copy_adb_command">adb コマンドをコピー</string>
@@ -59,12 +59,23 @@
     <string name="min_rounds_label">最小 %1$d</string>
     <string name="no_deadline">期限なし</string>
     <string name="ok">OK</string>
-    <string name="onboarding_ai_model_body">Gemma3-1B（557 MB）などのローカルモデルで、非公開・無料・オフライン利用が可能です。HuggingFace からダウンロードし、アプリの models フォルダに配置してください。
-ただし小さなモデルは期待ほど賢くないことがあります。
-
-より強力で容量・計算負荷が少ない方法として、Gemini の AI サービスへのサインインをおすすめします。
-
-どちらも未設定の場合はスクリプトのフォールバックが使われます。</string>
+    <string name="onboarding_ai_model_body">MindfulHome の話し方を選んでください。\n\nGoogle（推奨）— サインインして Gemini を使います。より賢く、端末への負荷も小さいです。\nこの端末 — 空き容量があれば Gemma 3 1B のローカルモデル（約 557 MB）をダウンロードします。小さいモデルは Gemini ほど賢くありません。\nなし — サインインもダウンロードもせず、スクリプトの返信を使います。\n\nスクリプト返信はこの画面での明示的な選択です。後で選んだ方法が使えない場合にも使われます。</string>
+    <string name="onboarding_ai_google_title">Google (Gemini) — サインイン</string>
+    <string name="onboarding_ai_google_body">推奨。より賢く、端末への負荷も小さいです。</string>
+    <string name="onboarding_ai_local_title">この端末</string>
+    <string name="onboarding_ai_local_body">非公開でオフライン。Gemma 3 1B モデル（約 557 MB）をダウンロードします。</string>
+    <string name="onboarding_ai_local_insufficient_space">容量不足（空き %1$s が必要）</string>
+    <string name="onboarding_ai_none_title">なし（スクリプト）</string>
+    <string name="onboarding_ai_none_body">サインインもダウンロードも不要。会話はスクリプト返信です。</string>
+    <string name="onboarding_ai_download">ローカルモデルをダウンロード</string>
+    <string name="onboarding_ai_downloading">モデルをダウンロード中… %1$d%%</string>
+    <string name="onboarding_ai_download_failed">ローカルモデルをダウンロードできませんでした。接続を確認して再試行してください。</string>
+    <string name="onboarding_ai_open_huggingface">HuggingFace を開いて Gemma ライセンスに同意</string>
+    <string name="ai_mode_google">Google (Gemini)</string>
+    <string name="ai_mode_none">なし（スクリプト）</string>
+    <string name="ai_mode_none_description">会話はスクリプト返信です。Google サインインも端末上モデルも使いません。</string>
+    <string name="local_model_download">モデルをダウンロード（557 MB）</string>
+    <string name="local_model_insufficient_space">容量不足のためローカルモデルをダウンロードできません。</string>
     <string name="onboarding_continue_if_stuck">続行（固まった場合）</string>
     <string name="onboarding_default_launcher_instructions">動作には MindfulHome をデフォルトのホームアプリにする必要があります。下のボタンを押し、MindfulHome を選んでください。</string>
     <string name="onboarding_default_launcher_is_default">MindfulHome がデフォルトのランチャーです。</string>
@@ -80,7 +91,7 @@
     <string name="onboarding_accessibility_rationale">任意ですが推奨。オフだとタイマーで前面アプリを確認し、電池を多く使います。オンにすると切替をすぐ検知 — 反応が速く電池も節約。前面アプリ名のみ読み取り、画面内容は読みません。\n\n下をタップし、インストール済みアプリで MindfulHome を見つけてオンにしてください。</string>
     <string name="onboarding_skip_for_now">今はスキップ</string>
     <string name="onboarding_usage_granted">使用状況アクセスを許可済み。カルマ追跡が動きます。</string>
-    <string name="onboarding_usage_rationale">タイマー終了時に前面のアプリを知るため、使用状況アクセスが必要です。これがカルマ追跡の仕組みです。</string>
+    <string name="onboarding_usage_rationale">アプリ切替検出がない場合、前面アプリを知るために使用状況アクセスが必要です。これがカルマ追跡の仕組みです。</string>
     <string name="open_accessibility_settings">ユーザー補助を開く</string>
     <string name="open_settings">設定を開く</string>
     <string name="perm_accessibility_off_description">オフ。MindfulHome はタイマーで前面アプリを確認しており、電池を多く使います。オンにするとアプリ切替をすぐ検知でき、反応が速く電池も節約できます。前面アプリ名のみ読み取り、画面内容は読みません。
@@ -95,7 +106,8 @@
     <string name="perm_overlay_required">未許可。ナッジは通知のみになり、Android が黙らせることがあります。タップして許可。</string>
     <string name="perm_skipped">未設定。権限リマインダーをスキップしました。ここからいつでも許可できます。</string>
     <string name="perm_usage_granted">許可済み。前面アプリを追跡できます。</string>
-    <string name="perm_usage_required">カルマ追跡に必要です。タップして許可。</string>
+    <string name="perm_usage_required">アプリ切替検出がオフのとき、カルマ追跡に必要です。タップして許可。</string>
+    <string name="perm_usage_optional_a11y">任意。アプリ切替検出が前面アプリの追跡をすでに担当します。使用状況アクセスはよく使うアプリの一覧と離席の検出に役立ちます。</string>
     <string name="permissions">権限</string>
     <string name="priority_selected">P%1$d*</string>
     <string name="priority_unselected">P%1$d</string>
@@ -106,10 +118,19 @@
     <string name="refresh_app_list">アプリ一覧を更新</string>
     <string name="search_apps_2">アプリを検索</string>
     <string name="settings">設定</string>
+    <string name="tutorial">チュートリアル</string>
+    <string name="tutorial_title">チュートリアル</string>
+    <string name="tutorial_subtitle">使い方を忘れたら、セットアップガイドの各項目をここから見直せます。</string>
+    <string name="tutorial_previous">前へ</string>
+    <string name="tutorial_next">次へ</string>
+    <string name="tutorial_page_of">%1$d / %2$d</string>
     <string name="settings_language">言語</string>
     <string name="settings_language_description">インターフェースと AI 返信に使うアプリの言語。</string>
     <string name="show_hard_deadline">厳しい締切を表示</string>
     <string name="sign_in_with_google">Google でサインイン</string>
+    <string name="google_sign_in_did_not_complete">Google ログインが完了しませんでした。ご自身で閉じていない場合は、このビルドがまだ Google ログインに対応していない可能性があります。</string>
+    <string name="google_sign_in_no_account">この端末に Google アカウントが見つかりません。Android の設定で追加してから、もう一度お試しください。</string>
+    <string name="google_play_services_required">Google でサインインするには Google Play 開発者サービスが必要です。インストールまたは更新してください。</string>
     <string name="signed_in_with_google">Google でサインイン済み</string>
     <string name="signing_in">サインイン中…</string>
     <string name="strikes_before_hiding_description">ホーム画面から隠されるまでにアプリが溜められる悪いカルマ点数。</string>
@@ -137,6 +158,8 @@
     <string name="onboarding_system_apps_empty">この端末にプリインストール候補はありません。</string>
     <string name="onboarding_system_apps_continue">続ける</string>
     <string name="onboarding_layout_title">ホーム画面の仕組み</string>
+    <string name="onboarding_todo_title">Todoリストの役割</string>
+    <string name="todo_empty_hint">現実のタスクをここに置きます。意図（任意で所要時間や期限）を追加し、Startでタイマーを開きます。</string>
     <string-array name="onboarding_app_tiers_bullets">
         <item>信頼できる — 役に立ち、時間を無駄にしないと分かるアプリ：クイック起動に入れ、タイマーなし</item>
         <item>すばやく不信頼 — 役立つが時間を浪費しうるアプリ：クイック起動に入れ、デフォルトのタイマー付き</item>
@@ -150,5 +173,12 @@
         <item>アプリを1つまたは複数のフォルダに入れたり、合わなくなったら外せます</item>
         <item>必要に応じてアプリのタイマーを厳しく／ゆるく変更できます</item>
         <item>「他のこと？」タイルでそれ以外 — 不信頼なアプリ — にアクセスします</item>
+    </string-array>
+    <string-array name="onboarding_todo_bullets">
+        <item>やりたい現実のタスク用です — スマホアプリだけではありません</item>
+        <item>各項目は意図：何をするか。任意で所要時間・期限・優先度</item>
+        <item>Startをタップすると、その意図と時間でタイマーが開きます</item>
+        <item>期限と優先度で並び替え、急ぎのものが上に来ます</item>
+        <item>終わったらチェック — 未完了リストから消えます</item>
     </string-array>
 </resources>

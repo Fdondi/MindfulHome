@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- AppCompatActivity is required for AppCompatDelegate.setApplicationLocales to refresh UI. -->
-    <style name="Theme.MindfulHome" parent="Theme.AppCompat.Light.NoActionBar">
+    <!-- AppCompatActivity is required for AppCompatDelegate.setApplicationLocales to refresh UI.
+         DayNight + forceDarkAllowed=false: Compose owns dark colors. Light + OEM force-dark
+         inverted the window but left default Text (onSurface/black) unreadable. -->
+    <style name="Theme.MindfulHome" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+
+    <style name="Theme.MindfulHome.SignIn" parent="Theme.MindfulHome">
+        <item name="android:windowBackground">#CC000000</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>

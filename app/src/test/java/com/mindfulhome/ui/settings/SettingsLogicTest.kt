@@ -3,7 +3,9 @@ package com.mindfulhome.ui.settings
 import com.mindfulhome.R
 import com.mindfulhome.settings.SettingsManager
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SettingsLogicTest {
@@ -15,7 +17,8 @@ class SettingsLogicTest {
         R.string.open_accessibility_settings to "Open Accessibility settings",
         R.string.perm_skipped to "Missing. You chose to skip permission reminders. Grant anytime from here.",
         R.string.perm_usage_granted to "Granted. MindfulHome can track which app is in the foreground.",
-        R.string.perm_usage_required to "Required for karma tracking. Tap to grant.",
+        R.string.perm_usage_required to "Required for karma tracking when app-switch detection is off. Tap to grant.",
+        R.string.perm_usage_optional_a11y to "Optional. App-switch detection already covers foreground tracking.",
         R.string.perm_notification_granted to "Granted. MindfulHome can show timer and nudge notifications.",
         R.string.perm_notification_required to "Required for timer countdown and nudge notifications.",
         R.string.perm_overlay_granted to "Granted. Nudge reminders will appear over any app.",
@@ -31,12 +34,14 @@ class SettingsLogicTest {
         granted: Boolean,
         skippedPrompt: Boolean = false,
         permissionTitle: String? = null,
+        accessibilityEnabled: Boolean = false,
     ) = permissionCardCopy(
         getString = { id -> enStrings.getValue(id) },
         kind = kind,
         granted = granted,
         skippedPrompt = skippedPrompt,
         permissionTitle = permissionTitle,
+        accessibilityEnabled = accessibilityEnabled,
     )
 
     @Test
@@ -104,6 +109,15 @@ class SettingsLogicTest {
         )
         assertEquals("Grant", missing.actionLabel)
         assertTrueContains(missing.description, "karma")
+
+        val coveredByA11y = copy(
+            SettingsPermissionKind.UsageAccess,
+            granted = false,
+            permissionTitle = "Usage Access",
+            accessibilityEnabled = true,
+        )
+        assertEquals("Grant", coveredByA11y.actionLabel)
+        assertTrueContains(coveredByA11y.description, "Optional")
     }
 
     @Test
@@ -155,5 +169,13 @@ class SettingsLogicTest {
         assertEquals("Your account access has been refused.", backendSignInErrorMessage(403, "ACCESS_REFUSED"))
         assertTrueContains(backendSignInErrorMessage(429, null), "Too many")
         assertTrueContains(backendSignInErrorMessage(500, null), "HTTP 500")
+    }
+
+    @Test
+    fun shouldOpenAddGoogleAccountAfterNoCredential_onlyWhenCountIsZero() {
+        assertFalse(shouldOpenAddGoogleAccountAfterNoCredential(null))
+        assertTrue(shouldOpenAddGoogleAccountAfterNoCredential(0))
+        assertFalse(shouldOpenAddGoogleAccountAfterNoCredential(1))
+        assertFalse(shouldOpenAddGoogleAccountAfterNoCredential(2))
     }
 }

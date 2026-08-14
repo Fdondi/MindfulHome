@@ -26,6 +26,7 @@ import android.content.SharedPreferences
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
+import com.mindfulhome.ai.AiSetupLogic
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendAuthHelper
@@ -38,6 +39,7 @@ import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
+import com.mindfulhome.service.ForegroundAppAccessibilityService
 import com.mindfulhome.service.TimerService
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.settings.SettingsManager
@@ -51,6 +53,9 @@ import com.mindfulhome.ui.settings.IntervalSettingsScreen
 import com.mindfulhome.ui.settings.SettingsScreen
 import com.mindfulhome.ui.theme.MindfulHomeTheme
 import com.mindfulhome.ui.timer.TimerScreen
+import com.mindfulhome.ui.tutorial.TutorialIndexScreen
+import com.mindfulhome.ui.tutorial.TutorialTopic
+import com.mindfulhome.ui.tutorial.TutorialTopicScreen
 import com.mindfulhome.util.PackageManagerHelper
 import com.mindfulhome.util.QuickLaunchAppRef
 import kotlinx.coroutines.flow.first
@@ -197,6 +202,31 @@ class MainActivity : AppCompatActivity() {
             }
             composable("logs") {
                 LogsScreen(onBack = { navCtrl.popBackStack() })
+            }
+            composable("help") {
+                TutorialIndexScreen(
+                    onBack = { navCtrl.popBackStack() },
+                    onOpenTopic = { topic -> navCtrl.navigate("help/${topic.id}") },
+                )
+            }
+            composable("help/{topicId}") { entry ->
+                val topic = TutorialTopic.fromId(
+                    entry.arguments?.getString("topicId").orEmpty(),
+                )
+                if (topic == null) {
+                    LaunchedEffect(Unit) { navCtrl.popBackStack() }
+                } else {
+                    TutorialTopicScreen(
+                        topic = topic,
+                        onBack = { navCtrl.popBackStack() },
+                        onOpenTopic = { nextTopic ->
+                            navCtrl.navigate("help/${nextTopic.id}") {
+                                popUpTo("help") { inclusive = false }
+                                launchSingleTop = true
+                            }
+                        },
+                    )
+                }
             }
         }
     }
@@ -350,6 +380,7 @@ class MainActivity : AppCompatActivity() {
             },
             onOpenLogs = { navCtrl.navigate("logs") },
             onOpenKarma = { navCtrl.navigate("karma") },
+            onOpenTutorial = { navCtrl.navigate("help") },
             onOpenSettings = { navCtrl.navigate("settings") },
             onStartTodo = { minutes, intentText ->
                 pendingPrefillMinutes = minutes
@@ -400,6 +431,7 @@ class MainActivity : AppCompatActivity() {
             },
             onOpenDefault = { navigateToDefaultFromRoot(navCtrl) },
             onOpenSettings = { navCtrl.navigate("settings") },
+            onOpenTutorial = { navCtrl.navigate("help") },
             onOpenLogs = { navCtrl.navigate("logs") },
             onOpenKarma = { navCtrl.navigate("karma") },
         )
@@ -678,11 +710,13 @@ class MainActivity : AppCompatActivity() {
         val hasNotifications = hasNotificationPermission()
         val hasUsageAccess = UsageTracker.hasUsageStatsPermission(this)
         val hasOverlay = Settings.canDrawOverlays(this)
+        val hasAccessibility = ForegroundAppAccessibilityService.isEnabled(this)
         clearGrantedPermissionSuppressions(hasNotifications, hasUsageAccess, hasOverlay)
         val missingPermission = MainActivityLogic.nextMissingPermission(
             hasNotifications = hasNotifications,
             hasUsageAccess = hasUsageAccess,
             hasOverlay = hasOverlay,
+            hasAccessibility = hasAccessibility,
             notificationsSuppressed = SettingsManager.isPermissionPromptSuppressed(
                 this, SettingsManager.PermissionPrompt.NOTIFICATIONS
             ),
@@ -890,7 +924,7 @@ class MainActivity : AppCompatActivity() {
     private fun maybePreflightBackendAuth() {
         val gate = MainActivityLogic.authPreflightGate(
             inProgress = backendAuthPreflightInProgress,
-            isBackendMode = SettingsManager.getAIMode(this) == SettingsManager.AI_MODE_BACKEND,
+            isBackendMode = AiSetupLogic.shouldUseBackend(SettingsManager.getAIMode(this)),
             nowMs = System.currentTimeMillis(),
             lastAttemptMs = backendAuthPreflightLastAttemptMs,
         )
@@ -941,7 +975,6 @@ class MainActivity : AppCompatActivity() {
     private fun buildBackendAuthHelper(): BackendAuthHelper = BackendAuthHelper(
         signInForExchange = {
             AuthManager.signInSilent(this@MainActivity)?.idToken
-                ?: AuthManager.signIn(this@MainActivity)?.idToken
         },
         getSessionToken = { ApiKeyManager.getSessionToken(this@MainActivity) },
         saveSessionToken = { token, exp ->

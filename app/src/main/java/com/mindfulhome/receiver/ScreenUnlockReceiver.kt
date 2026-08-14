@@ -13,33 +13,77 @@ class ScreenUnlockReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         Log.d(TAG, "onReceive: action=${intent.action}")
-        if (intent.action != Intent.ACTION_USER_PRESENT) return
-        if (handleQuickLaunchUnlock(context)) return
-        if (shouldSkipTimerForQuickReturn(context)) return
-        launchTimerFromUnlock(context)
+        applyUnlockDecision(context, decideUnlockAction(context, intent))
     }
 
-    private fun handleQuickLaunchUnlock(context: Context): Boolean {
-        if (!SettingsManager.isQuickLaunchSessionActive(context)) return false
-        Log.d(TAG, "Quick Launch session active on unlock — skipping timer")
-        TimerService.resumeQuickLaunchMonitoring(context, SessionLogger.getActiveSessionHandle())
-        return true
-    }
-
-    private fun shouldSkipTimerForQuickReturn(context: Context): Boolean {
+    private fun decideUnlockAction(
+        context: Context,
+        intent: Intent,
+    ): ScreenUnlockReceiverLogic.UnlockAction {
         val screenOffTimestamp = SettingsManager.getScreenOffTimestamp(context)
-        val awayMs = if (screenOffTimestamp > 0)
-            System.currentTimeMillis() - screenOffTimestamp
-        else
-            Long.MAX_VALUE
+        val nowMs = System.currentTimeMillis()
+        val awayMs = ScreenUnlockReceiverLogic.awayMs(screenOffTimestamp, nowMs)
         val thresholdMs = SettingsManager.getQuickReturnMinutes(context) * 60_000L
         val savedSession = SettingsManager.getLastSession(context)
-        Log.d(TAG, "awayMs=$awayMs thresholdMs=$thresholdMs savedSession=$savedSession")
-        if (awayMs < thresholdMs && savedSession != null) {
-            Log.d(TAG, "Quick return with saved session — skipping timer")
-            return true
+        val isUserPresent = intent.action == Intent.ACTION_USER_PRESENT
+        if (isUserPresent) {
+            Log.d(TAG, "awayMs=$awayMs thresholdMs=$thresholdMs savedSession=$savedSession")
         }
-        return false
+        return ScreenUnlockReceiverLogic.decideUnlockAction(
+            isScreenOff = intent.action == Intent.ACTION_SCREEN_OFF,
+            isUserPresent = isUserPresent,
+            onboardingDone = context.getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+                .getBoolean("onboarding_done", false),
+            hasRecordedAbsence = ScreenUnlockReceiverLogic.hasRecordedAbsence(screenOffTimestamp),
+            quickLaunchSessionActive = SettingsManager.isQuickLaunchSessionActive(context),
+            awayMs = awayMs,
+            thresholdMs = thresholdMs,
+            hasSavedSession = savedSession != null,
+        )
+    }
+
+    private fun applyUnlockDecision(
+        context: Context,
+        decision: ScreenUnlockReceiverLogic.UnlockAction,
+    ) {
+        persistAbsenceState(context, decision)
+        dispatchUnlockAction(context, decision)
+    }
+
+    private fun persistAbsenceState(
+        context: Context,
+        decision: ScreenUnlockReceiverLogic.UnlockAction,
+    ) {
+        when {
+            decision == ScreenUnlockReceiverLogic.UnlockAction.RecordAbsence ->
+                SettingsManager.saveScreenOffTimestamp(context)
+            ScreenUnlockReceiverLogic.shouldConsumeAbsence(decision) ->
+                SettingsManager.clearScreenOffTimestamp(context)
+        }
+    }
+
+    private fun dispatchUnlockAction(
+        context: Context,
+        decision: ScreenUnlockReceiverLogic.UnlockAction,
+    ) {
+        when (decision) {
+            ScreenUnlockReceiverLogic.UnlockAction.Ignore,
+            ScreenUnlockReceiverLogic.UnlockAction.RecordAbsence,
+            -> Unit
+            ScreenUnlockReceiverLogic.UnlockAction.SkipNoAbsence ->
+                Log.d(TAG, "USER_PRESENT with no recorded screen-off — ignoring")
+            ScreenUnlockReceiverLogic.UnlockAction.SkipOnboarding ->
+                Log.d(TAG, "Onboarding in progress — skipping unlock launch")
+            ScreenUnlockReceiverLogic.UnlockAction.ResumeQuickLaunch -> resumeQuickLaunch(context)
+            ScreenUnlockReceiverLogic.UnlockAction.SkipQuickReturn ->
+                Log.d(TAG, "Quick return with saved session — skipping timer")
+            ScreenUnlockReceiverLogic.UnlockAction.LaunchTimer -> launchTimerFromUnlock(context)
+        }
+    }
+
+    private fun resumeQuickLaunch(context: Context) {
+        Log.d(TAG, "Quick Launch session active on unlock — skipping timer")
+        TimerService.resumeQuickLaunchMonitoring(context, SessionLogger.getActiveSessionHandle())
     }
 
     private fun launchTimerFromUnlock(context: Context) {

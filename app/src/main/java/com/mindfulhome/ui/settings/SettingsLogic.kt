@@ -1,6 +1,9 @@
 package com.mindfulhome.ui.settings
 
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import com.mindfulhome.R
 import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.settings.SettingsManager
@@ -24,12 +27,14 @@ fun permissionCardCopy(
     granted: Boolean,
     skippedPrompt: Boolean = false,
     permissionTitle: String? = null,
+    accessibilityEnabled: Boolean = false,
 ): PermissionCardCopy = permissionCardCopy(
     getString = context::getString,
     kind = kind,
     granted = granted,
     skippedPrompt = skippedPrompt,
     permissionTitle = permissionTitle,
+    accessibilityEnabled = accessibilityEnabled,
 )
 
 internal fun permissionCardCopy(
@@ -38,10 +43,17 @@ internal fun permissionCardCopy(
     granted: Boolean,
     skippedPrompt: Boolean = false,
     permissionTitle: String? = null,
+    accessibilityEnabled: Boolean = false,
 ): PermissionCardCopy = when (kind) {
     SettingsPermissionKind.UsageAccess -> {
         require(permissionTitle != null)
-        usageAccessCardCopy(getString, granted, skippedPrompt, permissionTitle)
+        usageAccessCardCopy(
+            getString,
+            granted,
+            skippedPrompt,
+            permissionTitle,
+            accessibilityEnabled,
+        )
     }
     SettingsPermissionKind.Notification -> {
         require(permissionTitle != null)
@@ -59,15 +71,29 @@ private fun usageAccessCardCopy(
     granted: Boolean,
     skippedPrompt: Boolean,
     title: String,
+    accessibilityEnabled: Boolean,
 ) = PermissionCardCopy(
     title = title,
-    description = when {
-        granted -> getString(R.string.perm_usage_granted)
-        skippedPrompt -> getString(R.string.perm_skipped)
-        else -> getString(R.string.perm_usage_required)
-    },
+    description = usageAccessDescription(
+        getString,
+        granted,
+        skippedPrompt,
+        accessibilityEnabled,
+    ),
     actionLabel = if (granted) null else getString(R.string.grant),
 )
+
+private fun usageAccessDescription(
+    getString: (Int) -> String,
+    granted: Boolean,
+    skippedPrompt: Boolean,
+    accessibilityEnabled: Boolean,
+): String = when {
+    granted -> getString(R.string.perm_usage_granted)
+    accessibilityEnabled -> getString(R.string.perm_usage_optional_a11y)
+    skippedPrompt -> getString(R.string.perm_skipped)
+    else -> getString(R.string.perm_usage_required)
+}
 
 private fun notificationCardCopy(
     getString: (Int) -> String,
@@ -161,6 +187,19 @@ fun lmPlaygroundInstallUris(): List<String> = listOf(
     LmPlaygroundManager.SOURCE_URL,
 )
 
+fun openLmPlaygroundInstall(context: Context) {
+    lmPlaygroundInstallUris().forEach { uri ->
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            return
+        } catch (_: ActivityNotFoundException) {
+            // Try the next URI (Play Store app → Play web → GitHub).
+        }
+    }
+}
+
 fun coerceDailySummaryRegenerateN(
     raw: String,
     min: Int,
@@ -190,13 +229,20 @@ fun dailySummaryRegenerateToastSuffix(
     }
 }
 
-fun backendSignInErrorMessage(statusCode: Int, code: String?): String = when {
-    statusCode == 401 -> "Sign-in rejected. Please try again."
-    statusCode == 403 && code == "PENDING_APPROVAL" -> "Your account is pending approval."
-    statusCode == 403 && code == "ACCESS_REFUSED" -> "Your account access has been refused."
-    statusCode == 429 -> "Too many sign-in attempts. Please try again later."
-    else -> "Backend sign-in failed: HTTP $statusCode"
-}
+fun backendSignInErrorMessage(statusCode: Int, code: String?): String =
+    com.mindfulhome.ai.backend.backendSignInErrorMessage(statusCode, code)
+
+/**
+ * Credential Manager throws `NoCredentialException` when One Tap has no saved
+ * credential, even if a Google account is already on the device. Opening
+ * [android.provider.Settings.ACTION_ADD_ACCOUNT] then fails because that
+ * account already exists.
+ *
+ * Only launch add-account when we positively know there are zero Google
+ * accounts. `null` (unknown) must not launch it.
+ */
+fun shouldOpenAddGoogleAccountAfterNoCredential(knownGoogleAccountCount: Int?): Boolean =
+    knownGoogleAccountCount == 0
 
 fun backendSignInErrorMessage(e: com.mindfulhome.ai.backend.BackendHttpException): String =
     backendSignInErrorMessage(e.statusCode, e.code)

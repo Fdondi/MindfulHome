@@ -54,12 +54,11 @@ object MainActivityLogic {
                 reason = prefillReason.orEmpty(),
             )
         }
+        if (!onboardingDone) {
+            return IncomingIntentDecision.NoOp
+        }
         if (isLauncherHome) {
-            return if (onboardingDone) {
-                IncomingIntentDecision.NavigateDefaultFromLauncherHome
-            } else {
-                IncomingIntentDecision.NoOp
-            }
+            return IncomingIntentDecision.NavigateDefaultFromLauncherHome
         }
         if (forceTimer && forceTimerReason == MainActivity.FORCE_TIMER_REASON_EXPIRED) {
             if (!timerIsExpired) {
@@ -80,6 +79,9 @@ object MainActivityLogic {
         return IncomingIntentDecision.NoOp
     }
 
+    fun usageAccessCovered(hasUsageAccess: Boolean, hasAccessibility: Boolean): Boolean =
+        hasUsageAccess || hasAccessibility
+
     fun nextMissingPermission(
         hasNotifications: Boolean,
         hasUsageAccess: Boolean,
@@ -87,9 +89,11 @@ object MainActivityLogic {
         notificationsSuppressed: Boolean,
         usageSuppressed: Boolean,
         overlaySuppressed: Boolean,
+        hasAccessibility: Boolean = false,
     ): MissingPermissionKind? = when {
         !hasNotifications && !notificationsSuppressed -> MissingPermissionKind.Notifications
-        !hasUsageAccess && !usageSuppressed -> MissingPermissionKind.UsageAccess
+        !usageAccessCovered(hasUsageAccess, hasAccessibility) && !usageSuppressed ->
+            MissingPermissionKind.UsageAccess
         !hasOverlay && !overlaySuppressed -> MissingPermissionKind.Overlay
         else -> null
     }
@@ -124,7 +128,7 @@ object MainActivityLogic {
         )
         MissingPermissionKind.UsageAccess -> PermissionDialogCopy(
             title = "Grant Usage Access",
-            message = "MindfulHome needs Usage Access to detect your foreground app for timer and karma tracking.",
+            message = "Without app-switch detection, MindfulHome needs Usage Access to detect your foreground app for timer and karma tracking.",
         )
         MissingPermissionKind.Overlay -> PermissionDialogCopy(
             title = "Allow overlay permission",

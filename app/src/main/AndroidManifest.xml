@@ -1,21 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Required for querying installed packages -->
+    <!-- Launcher must see every installed app (Play-restricted; justified as default Home). -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
 
-    <!-- Required for usage stats (detecting foreground app) -->
+    <!-- Fallback foreground poll, most-used apps, and away detection. Not implied by
+         Accessibility; prompting is skipped when app-switch detection is on. -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
 
-    <!-- Foreground service for timer -->
+    <!-- Both required: generic FGS (API 28+) plus type-specific (API 34+).
+         FOREGROUND_SERVICE_SPECIAL_USE does not replace FOREGROUND_SERVICE. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Detect screen unlock -->
+    <!-- Start the process after reboot so USER_PRESENT can be registered in Application.onCreate. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Required for overlay nudges on top of other apps -->
+    <!-- Required for Gemini backend -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Nudge birds / chat overlay on top of other apps. Without this declaration,
+         Settings greys out the "Display over other apps" toggle. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- Discover LM Playground's exported AIDL even without QUERY_ALL_PACKAGES. -->
@@ -44,6 +50,18 @@
                 android:value="true" />
         </service>
 
+        <!-- Credential Manager Play Services provider (pre-Android 14). Declared
+             here so it cannot be dropped from the merged manifest. -->
+        <service
+            android:name="androidx.credentials.playservices.CredentialProviderMetadataHolder"
+            android:enabled="true"
+            android:exported="false">
+            <meta-data
+                android:name="androidx.credentials.CREDENTIAL_PROVIDER_KEY"
+                android:value="androidx.credentials.playservices.CredentialProviderPlayServicesImpl" />
+        </service>
+
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -56,6 +74,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".GoogleSignInActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}.signin"
+            android:alwaysRetainTaskState="true"
+            android:autoRemoveFromRecents="true"
+            android:theme="@style/Theme.MindfulHome.SignIn"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|keyboard|locale|layoutDirection|density|uiMode|smallestScreenSize" />
 
         <activity
             android:name=".PinShortcutActivity"
@@ -90,8 +119,8 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- USER_PRESENT is registered dynamically in MindfulHomeApp.onCreate()
-             because Android 8+ doesn't deliver it to manifest receivers.
+        <!-- USER_PRESENT and SCREEN_OFF are registered dynamically in MindfulHomeApp.onCreate()
+             because Android 8+ doesn't deliver them to manifest receivers.
              BOOT_COMPLETED is exempted and works from the manifest. -->
         <receiver
             android:name=".receiver.ScreenUnlockReceiver"

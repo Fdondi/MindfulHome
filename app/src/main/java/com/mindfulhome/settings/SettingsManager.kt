@@ -3,6 +3,7 @@ package com.mindfulhome.settings
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.mindfulhome.ai.AiSetupLogic
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.locale.AppLanguage
 import com.mindfulhome.service.UsageTracker
@@ -15,7 +16,7 @@ import java.util.Locale
  * Persists user preferences using SharedPreferences.
  *
  * Modelled after the distraction-linter SettingsManager with the same
- * AI-mode pattern (on-device vs backend).
+ * AI-mode pattern (Google backend, on-device, or explicit none/scripted).
  */
 object SettingsManager {
 
@@ -25,6 +26,7 @@ object SettingsManager {
     private const val AI_MODE_KEY = "ai_mode"
     const val AI_MODE_ON_DEVICE = "on_device"
     const val AI_MODE_BACKEND = "backend"
+    const val AI_MODE_NONE = "none"
 
     // Backend model selection
     private const val BACKEND_MODEL_KEY = "backend_model"
@@ -220,7 +222,7 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
     fun getAIMode(context: Context): String =
-        prefs(context).getString(AI_MODE_KEY, AI_MODE_ON_DEVICE) ?: AI_MODE_ON_DEVICE
+        AiSetupLogic.normalizeAiMode(prefs(context).getString(AI_MODE_KEY, null))
 
     fun setAIMode(context: Context, mode: String) {
         prefs(context).edit { putString(AI_MODE_KEY, mode) }
@@ -928,6 +930,10 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
 
     fun getScreenOffTimestamp(context: Context): Long =
         prefs(context).getLong(LAST_SCREEN_OFF_KEY, 0L)
+
+    fun clearScreenOffTimestamp(context: Context) {
+        prefs(context).edit { putLong(LAST_SCREEN_OFF_KEY, 0L) }
+    }
 
     // ── Timer-running flag (for ScreenUnlockReceiver) ───────────────
 

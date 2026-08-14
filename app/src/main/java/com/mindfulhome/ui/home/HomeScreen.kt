@@ -46,6 +46,7 @@ fun HomeScreen(
     onTimerClick: () -> Unit = {},
     onOpenDefault: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenTutorial: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     onOpenKarma: () -> Unit = {},
 ) {
@@ -120,6 +121,7 @@ fun HomeScreen(
         onTimerClick = onTimerClick,
         onOpenDefault = onOpenDefault,
         onOpenSettings = onOpenSettings,
+        onOpenTutorial = onOpenTutorial,
         onOpenLogs = onOpenLogs,
         onOpenKarma = onOpenKarma,
         onRequestAi = onRequestAi,
@@ -225,6 +227,7 @@ private fun HomeScreenScaffold(
     onTimerClick: () -> Unit,
     onOpenDefault: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenTutorial: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenKarma: () -> Unit,
     onRequestAi: (String) -> Unit,
@@ -251,6 +254,7 @@ private fun HomeScreenScaffold(
                 onSearchClick = { onShowSearchChange(true) },
                 onLogsClick = onOpenLogs,
                 onKarmaClick = onOpenKarma,
+                onTutorialClick = onOpenTutorial,
                 onSettingsClick = onOpenSettings,
                 onAiClick = { onRequestAi("") },
             )

@@ -46,7 +46,7 @@
     <string name="settings_language">Language</string>
     <string name="settings_language_description">App language for the interface and AI replies.</string>
     <string name="focus_time_description">During active intervals, launcher stays hidden after timer. Use AI to open non-Quick Launch apps.</string>
-    <string name="backend_sign_in_description">Sign in with your Google account to use the remote Gemini model. Without signing in, the app will fall back to on-device responses.</string>
+    <string name="backend_sign_in_description">Sign in with your Google account to use the remote Gemini model.</string>
     <string name="signing_in">Signing in…</string>
     <string name="sign_in_with_google">Sign in with Google</string>
     <string name="signed_in_with_google">Signed in with Google</string>
@@ -63,7 +63,8 @@
     <string name="open_accessibility_settings">Open Accessibility settings</string>
     <string name="perm_skipped">Missing. You chose to skip permission reminders. Grant anytime from here.</string>
     <string name="perm_usage_granted">Granted. MindfulHome can track which app is in the foreground.</string>
-    <string name="perm_usage_required">Required for karma tracking. Tap to grant.</string>
+    <string name="perm_usage_required">Required for karma tracking when app-switch detection is off. Tap to grant.</string>
+    <string name="perm_usage_optional_a11y">Optional. App-switch detection already covers foreground tracking. Usage Access still helps list most-used apps and notice when you step away.</string>
     <string name="perm_notification_granted">Granted. MindfulHome can show timer and nudge notifications.</string>
     <string name="perm_notification_required">Required for timer countdown and nudge notifications.</string>
     <string name="perm_overlay_granted">Granted. Nudge reminders will appear over any app.</string>
@@ -111,7 +112,9 @@ your phone and use apps.</string>
     <string name="how_often_full_width_banners_are_spawned">How often full-width banners are spawned.</string>
     <string name="shortcut_is_missing_required_information">Shortcut is missing required information.</string>
     <string name="a_home_launcher_that_nags_never_blocks">A home launcher that nags, never blocks.</string>
-    <string name="google_sign_in_was_cancelled_or_failed">Google Sign-In was cancelled or failed</string>
+    <string name="google_sign_in_did_not_complete">Google sign-in did not finish. If you did not close it yourself, this build may not be set up for Google sign-in yet.</string>
+    <string name="google_sign_in_no_account">No Google account found on this device. Add one in Android settings, then try again.</string>
+    <string name="google_play_services_required">Google Play services is missing or needs an update for Google Sign-In.</string>
     <string name="widget_pinning_is_not_supported_yet">Widget pinning is not supported yet.</string>
     <string name="focus_gate_prompts_reset_to_default">Focus gate prompts reset to default</string>
     <string name="gatekeeper_prompts_reset_to_default">Gatekeeper prompts reset to default</string>
@@ -183,6 +186,7 @@ your phone and use apps.</string>
     <string name="hide_hard_deadline">Hide hard deadline</string>
     <string name="new_intent_folder">New intent folder…</string>
     <string name="no_open_items_yet">No open items yet.</string>
+    <string name="todo_empty_hint">Park a real-world task here. Add an intent (and optional duration or deadline), then Start to open a timer for it.</string>
     <string name="overlay_permission">Overlay Permission</string>
     <string name="session_log_copied">Session log copied</string>
     <string name="timing_intervals">Timing &amp; intervals</string>
@@ -261,6 +265,12 @@ your phone and use apps.</string>
     <string name="pick_app">Pick app</string>
     <string name="positive">Positive</string>
     <string name="settings">Settings</string>
+    <string name="tutorial">Tutorial</string>
+    <string name="tutorial_title">Tutorial</string>
+    <string name="tutorial_subtitle">Revisit any part of the setup guide if you forgot how something works.</string>
+    <string name="tutorial_previous">Previous</string>
+    <string name="tutorial_next">Next</string>
+    <string name="tutorial_page_of">%1$d / %2$d</string>
     <string name="sign_out">Sign out</string>
     <string name="e_g_10">e.g. -10</string>
     <string name="forgive">Forgive</string>
@@ -294,7 +304,7 @@ your phone and use apps.</string>
     <string name="onboarding_notifications_granted">Notifications enabled. You\'ll see your timer countdown and gentle nudges.</string>
     <string name="onboarding_notifications_rationale">MindfulHome uses notifications to show your timer countdown and send gentle nudges when time is up. No spam, promise.</string>
     <string name="onboarding_usage_granted">Usage access granted. Karma tracking will work.</string>
-    <string name="onboarding_usage_rationale">MindfulHome needs Usage Access to know which app is in the foreground when your timer expires. This is how karma tracking works.</string>
+    <string name="onboarding_usage_rationale">Without app-switch detection, MindfulHome needs Usage Access to know which app is in the foreground. This is how karma tracking works.</string>
     <string name="onboarding_grant_usage_access">Grant Usage Access</string>
     <string name="onboarding_overlay_granted">Overlay permission granted. Nudge reminders will appear over any app.</string>
     <string name="onboarding_overlay_rationale">MindfulHome can show a gentle reminder overlay when your session timer expires, even while you\'re inside another app. Without this, reminders will only appear as notifications (which Android may silence over time).</string>
@@ -303,13 +313,30 @@ your phone and use apps.</string>
     <string name="onboarding_accessibility_granted">App-switch detection is on. MindfulHome reacts instantly when you leave an app — better for battery.</string>
     <string name="onboarding_accessibility_rationale">Optional but recommended. Without this, MindfulHome checks the foreground app on a timer (more battery). Turn it on so MindfulHome is notified the instant you switch apps — faster reactions, less battery. It only reads which app is in front, never your screen content.\n\nTap below, find MindfulHome under Installed/Downloaded apps, and switch it on.</string>
     <string name="onboarding_grant_accessibility">Enable app-switch detection</string>
-    <string name="onboarding_ai_model_body">Private, free, offline use is possible with a local model, such as a Gemma3-1B model (557 MB). Download it from HuggingFace and place it in the app\'s models folder.\nBe warned however that small models won\'t be as smart as you might expect.\n\nFor a solution more powerful and less taxing on your space and compute we recommend signing in to use our AI service, powered by Gemini.\n\nIf neither is configured, a scripted fallback will be used.</string>
+    <string name="onboarding_ai_model_body">Choose how MindfulHome talks with you.\n\nGoogle (recommended) — sign in to use Gemini, which is more capable and lighter on your phone.\nOn this device — download a local Gemma 3 1B model (~557 MB) if you have enough storage. Small models are less capable than Gemini.\nNone — use scripted replies, with no sign-in or download.\n\nScripted replies are an explicit choice here. They are also used later if the option you picked is unavailable.</string>
+    <string name="onboarding_ai_google_title">Google (Gemini) — sign in</string>
+    <string name="onboarding_ai_google_body">Recommended. More capable, and lighter on your phone.</string>
+    <string name="onboarding_ai_local_title">On this device</string>
+    <string name="onboarding_ai_local_body">Private and offline. Downloads a Gemma 3 1B model (~557 MB).</string>
+    <string name="onboarding_ai_local_insufficient_space">Not enough storage (need %1$s free)</string>
+    <string name="onboarding_ai_none_title">None (scripted)</string>
+    <string name="onboarding_ai_none_body">No sign-in or download. Conversations use scripted replies.</string>
+    <string name="onboarding_ai_download">Download local model</string>
+    <string name="onboarding_ai_downloading">Downloading model… %1$d%%</string>
+    <string name="onboarding_ai_download_failed">Could not download the local model. Check your connection and try again.</string>
+    <string name="onboarding_ai_open_huggingface">Open HuggingFace to accept the Gemma license</string>
+    <string name="ai_mode_google">Google (Gemini)</string>
+    <string name="ai_mode_none">None (scripted)</string>
+    <string name="ai_mode_none_description">Conversations use scripted replies. No Google sign-in or on-device model.</string>
+    <string name="local_model_download">Download model (557 MB)</string>
+    <string name="local_model_insufficient_space">Not enough storage to download the local model.</string>
     <string name="onboarding_app_tiers_title">Three kinds of apps</string>
     <string name="onboarding_system_apps_title">Pre-installed apps</string>
     <string name="onboarding_system_apps_body">These look like system apps. We will leave them unrestricted so Phone and similar stay usable. Uncheck any you want MindfulHome to monitor.</string>
     <string name="onboarding_system_apps_empty">No pre-installed candidates found on this device.</string>
     <string name="onboarding_system_apps_continue">Continue</string>
     <string name="onboarding_layout_title">How the home screen works</string>
+    <string name="onboarding_todo_title">What the Todo list is for</string>
     <string-array name="onboarding_philosophy_bullets">
         <item>Set a timer each time you unlock your phone</item>
         <item>Apps earn karma based on whether you stick to your timer</item>
@@ -330,5 +357,12 @@ your phone and use apps.</string>
         <item>Add an app to one or several folders, or remove it when it no longer fits</item>
         <item>Change an app\'s timer whenever you need a tighter or looser limit</item>
         <item>The \"something else?\" tile opens everything else — your untrusted apps</item>
+    </string-array>
+    <string-array name="onboarding_todo_bullets">
+        <item>It\'s for real-world tasks you want to get done — not only phone apps</item>
+        <item>Each item is an intent: what you plan to do, with optional duration, deadline, and priority</item>
+        <item>Tap Start to open a timer already filled with that intent and duration</item>
+        <item>Deadlines and priority sort the list so urgent work floats up</item>
+        <item>Check an item off when you\'re done — it leaves the open list</item>
     </string-array>
 </resources>

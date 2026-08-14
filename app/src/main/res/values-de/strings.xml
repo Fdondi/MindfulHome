@@ -46,7 +46,7 @@
     <string name="settings_language">Sprache</string>
     <string name="settings_language_description">App-Sprache für die Benutzeroberfläche und KI-Antworten.</string>
     <string name="focus_time_description">Während aktiver Intervalle bleibt der Launcher nach Ablauf des Timers verborgen. Verwenden Sie KI, um Nicht-Schnellstart-Apps zu öffnen.</string>
-    <string name="backend_sign_in_description">Melden Sie sich mit Ihrem Google-Konto an, um das Remote-Gemini-Modell zu verwenden. Ohne Anmeldung greift die App auf Antworten auf dem Gerät zurück.</string>
+    <string name="backend_sign_in_description">Melden Sie sich mit Ihrem Google-Konto an, um das Remote-Gemini-Modell zu verwenden.</string>
     <string name="signing_in">Anmelden…</string>
     <string name="sign_in_with_google">Melden Sie sich mit Google an</string>
     <string name="signed_in_with_google">Mit Google angemeldet</string>
@@ -63,7 +63,8 @@
     <string name="open_accessibility_settings">Öffnen Sie die Barrierefreiheitseinstellungen</string>
     <string name="perm_skipped">Fehlen. Sie haben sich dafür entschieden, Berechtigungserinnerungen zu überspringen. Gewähren Sie jederzeit von hier aus.</string>
     <string name="perm_usage_granted">Gewährt. MindfulHome kann verfolgen, welche App im Vordergrund ist.</string>
-    <string name="perm_usage_required">Erforderlich für die Karma-Verfolgung. Zum Gewähren antippen.</string>
+    <string name="perm_usage_required">Erforderlich für die Karma-Verfolgung, wenn die App-Wechsel-Erkennung aus ist. Zum Gewähren antippen.</string>
+    <string name="perm_usage_optional_a11y">Optional. Die App-Wechsel-Erkennung übernimmt bereits die Vordergrund-Erkennung. Nutzungszugriff hilft weiterhin bei den meistgenutzten Apps und wenn Sie wegtreten.</string>
     <string name="perm_notification_granted">Gewährt. MindfulHome kann Timer- und Nudge-Benachrichtigungen anzeigen.</string>
     <string name="perm_notification_required">Erforderlich für Timer-Countdown und Nudge-Benachrichtigungen.</string>
     <string name="perm_overlay_granted">Gewährt. Nudge-Erinnerungen werden in jeder App angezeigt.</string>
@@ -111,7 +112,9 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="how_often_full_width_banners_are_spawned">Wie oft werden Banner in voller Breite gespawnt?</string>
     <string name="shortcut_is_missing_required_information">In der Verknüpfung fehlen erforderliche Informationen.</string>
     <string name="a_home_launcher_that_nags_never_blocks">Ein Home-Launcher, der nervt, aber nie blockiert.</string>
-    <string name="google_sign_in_was_cancelled_or_failed">Die Google-Anmeldung wurde abgebrochen oder ist fehlgeschlagen</string>
+    <string name="google_sign_in_did_not_complete">Die Google-Anmeldung wurde nicht abgeschlossen. Falls du sie nicht selbst geschlossen hast, ist diese Version noch nicht für die Google-Anmeldung eingerichtet.</string>
+    <string name="google_sign_in_no_account">Auf diesem Gerät wurde kein Google-Konto gefunden. Füge in den Android-Einstellungen eines hinzu und versuche es erneut.</string>
+    <string name="google_play_services_required">Google Play-Dienste fehlen oder müssen für die Google-Anmeldung aktualisiert werden.</string>
     <string name="widget_pinning_is_not_supported_yet">Das Anheften von Widgets wird noch nicht unterstützt.</string>
     <string name="focus_gate_prompts_reset_to_default">Die Focus-Gate-Eingabeaufforderungen wurden auf die Standardeinstellungen zurückgesetzt</string>
     <string name="gatekeeper_prompts_reset_to_default">Gatekeeper-Eingabeaufforderungen werden auf die Standardeinstellungen zurückgesetzt</string>
@@ -183,6 +186,7 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="hide_hard_deadline">Verstecken Sie harte Fristen</string>
     <string name="new_intent_folder">Neuer Intent-Ordner…</string>
     <string name="no_open_items_yet">Noch keine offenen Posten.</string>
+    <string name="todo_empty_hint">Lege hier eine reale Aufgabe ab. Füge eine Absicht hinzu (optional Dauer oder Frist), dann Start, um einen Timer dafür zu öffnen.</string>
     <string name="overlay_permission">Overlay-Berechtigung</string>
     <string name="session_log_copied">Sitzungsprotokoll kopiert</string>
     <string name="timing_intervals">Timing &amp;amp; Intervalle</string>
@@ -261,6 +265,12 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="pick_app">App auswählen</string>
     <string name="positive">Positiv</string>
     <string name="settings">Einstellungen</string>
+    <string name="tutorial">Anleitung</string>
+    <string name="tutorial_title">Anleitung</string>
+    <string name="tutorial_subtitle">Sieh dir Teile der Einrichtung erneut an, falls du vergessen hast, wie etwas funktioniert.</string>
+    <string name="tutorial_previous">Zurück</string>
+    <string name="tutorial_next">Weiter</string>
+    <string name="tutorial_page_of">%1$d / %2$d</string>
     <string name="sign_out">Abmelden</string>
     <string name="e_g_10">z.B. -10</string>
     <string name="forgive">Verzeihen</string>
@@ -294,7 +304,7 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="onboarding_notifications_granted">Benachrichtigungen aktiviert. Sie sehen den Countdown Ihres Timers und sanfte Anstöße.</string>
     <string name="onboarding_notifications_rationale">MindfulHome verwendet Benachrichtigungen, um den Countdown Ihres Timers anzuzeigen und sanfte Anstöße zu senden, wenn die Zeit abgelaufen ist. Kein Spam, versprochen.</string>
     <string name="onboarding_usage_granted">Nutzungszugriff gewährt. Karma-Tracking wird funktionieren.</string>
-    <string name="onboarding_usage_rationale">MindfulHome benötigt Nutzungszugriff, um zu wissen, welche App im Vordergrund ist, wenn Ihr Timer abläuft. So funktioniert Karma-Tracking.</string>
+    <string name="onboarding_usage_rationale">Ohne App-Wechsel-Erkennung benötigt MindfulHome Nutzungszugriff, um zu wissen, welche App im Vordergrund ist. So funktioniert Karma-Tracking.</string>
     <string name="onboarding_grant_usage_access">Nutzungszugriff gewähren</string>
     <string name="onboarding_overlay_granted">Overlay-Berechtigung erteilt. Nudge-Erinnerungen werden in jeder App angezeigt.</string>
     <string name="onboarding_overlay_rationale">MindfulHome kann ein sanftes Erinnerungs-Overlay anzeigen, wenn Ihr Sitzungs-Timer abläuft, selbst wenn Sie sich in einer anderen App befinden. Ohne diese Option werden Erinnerungen nur als Benachrichtigungen angezeigt (die von Android mit der Zeit möglicherweise stummgeschaltet werden).</string>
@@ -303,18 +313,30 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="onboarding_accessibility_granted">App-Wechsel-Erkennung ist an. MindfulHome reagiert sofort, wenn du eine App verlässt — besser für den Akku.</string>
     <string name="onboarding_accessibility_rationale">Optional, aber empfohlen. Ohne dies prüft MindfulHome die Vordergrund-App per Timer — mehr Akku. Schalte es ein, damit MindfulHome sofort bei App-Wechsel benachrichtigt wird — schnellere Reaktion, weniger Akku. Es liest nur, welche App vorne ist, nie den Bildschirminhalt.\n\nTippe unten, finde MindfulHome unter Installierte Apps und schalte es ein.</string>
     <string name="onboarding_grant_accessibility">App-Wechsel-Erkennung aktivieren</string>
-    <string name="onboarding_ai_model_body">Eine private, kostenlose Offline-Nutzung ist mit einem lokalen Modell möglich, beispielsweise einem Gemma3-1B-Modell (557 MB). Laden Sie es von HuggingFace herunter und legen Sie es im Modellordner der App ab.
-Seien Sie jedoch gewarnt, dass kleine Modelle nicht so intelligent sind, wie Sie vielleicht erwarten.
-
-Für eine leistungsfähigere Lösung, die Ihren Speicherplatz und Ihre Rechenleistung weniger beansprucht, empfehlen wir Ihnen, sich anzumelden, um unseren KI-Service von Gemini zu nutzen.
-
-Wenn keines von beiden konfiguriert ist, wird ein skriptgesteuerter Fallback verwendet.</string>
+    <string name="onboarding_ai_model_body">Wählen Sie, wie MindfulHome mit Ihnen spricht.\n\nGoogle (empfohlen) — melden Sie sich an, um Gemini zu nutzen, das leistungsfähiger und schonender für Ihr Telefon ist.\nAuf diesem Gerät — laden Sie ein lokales Gemma-3-1B-Modell (~557 MB) herunter, wenn genug Speicher frei ist. Kleine Modelle sind weniger leistungsfähig als Gemini.\nKeine — skriptgesteuerte Antworten, ohne Anmeldung oder Download.\n\nSkriptgesteuerte Antworten sind hier eine bewusste Wahl. Sie werden später auch verwendet, wenn die gewählte Option nicht verfügbar ist.</string>
+    <string name="onboarding_ai_google_title">Google (Gemini) — anmelden</string>
+    <string name="onboarding_ai_google_body">Empfohlen. Leistungsfähiger und schonender für Ihr Telefon.</string>
+    <string name="onboarding_ai_local_title">Auf diesem Gerät</string>
+    <string name="onboarding_ai_local_body">Privat und offline. Lädt ein Gemma-3-1B-Modell (~557 MB) herunter.</string>
+    <string name="onboarding_ai_local_insufficient_space">Nicht genug Speicher (benötigt %1$s frei)</string>
+    <string name="onboarding_ai_none_title">Keine (skriptgesteuert)</string>
+    <string name="onboarding_ai_none_body">Keine Anmeldung und kein Download. Unterhaltungen nutzen skriptgesteuerte Antworten.</string>
+    <string name="onboarding_ai_download">Lokales Modell herunterladen</string>
+    <string name="onboarding_ai_downloading">Modell wird heruntergeladen… %1$d%%</string>
+    <string name="onboarding_ai_download_failed">Das lokale Modell konnte nicht heruntergeladen werden. Prüfen Sie die Verbindung und versuchen Sie es erneut.</string>
+    <string name="onboarding_ai_open_huggingface">HuggingFace öffnen, um die Gemma-Lizenz zu akzeptieren</string>
+    <string name="ai_mode_google">Google (Gemini)</string>
+    <string name="ai_mode_none">Keine (skriptgesteuert)</string>
+    <string name="ai_mode_none_description">Unterhaltungen nutzen skriptgesteuerte Antworten. Keine Google-Anmeldung und kein Modell auf dem Gerät.</string>
+    <string name="local_model_download">Modell herunterladen (557 MB)</string>
+    <string name="local_model_insufficient_space">Nicht genug Speicher, um das lokale Modell herunterzuladen.</string>
     <string name="onboarding_app_tiers_title">Drei Arten von Apps</string>
     <string name="onboarding_system_apps_title">Vorinstallierte Apps</string>
     <string name="onboarding_system_apps_body">Diese sehen wie System-Apps aus. Wir lassen sie uneingeschränkt, damit Telefon und Ähnliches nutzbar bleiben. Entfernen Sie das Häkchen bei Apps, die MindfulHome überwachen soll.</string>
     <string name="onboarding_system_apps_empty">Keine vorinstallierten Kandidaten auf diesem Gerät gefunden.</string>
     <string name="onboarding_system_apps_continue">Weiter</string>
     <string name="onboarding_layout_title">So funktioniert der Startbildschirm</string>
+    <string name="onboarding_todo_title">Wofür die Todo-Liste da ist</string>
     <string-array name="onboarding_philosophy_bullets">
         <item>Stellen Sie jedes Mal, wenn Sie Ihr Telefon entsperren, einen Timer ein</item>
         <item>Apps verdienen Karma, je nachdem, ob Sie Ihren Timer einhalten</item>
@@ -335,5 +357,12 @@ Wenn keines von beiden konfiguriert ist, wird ein skriptgesteuerter Fallback ver
         <item>Apps in einen oder mehrere Ordner legen — oder entfernen, wenn sie nicht mehr passen</item>
         <item>Den Timer einer App jederzeit strenger oder großzügiger einstellen</item>
         <item>Die Kachel „etwas anderes?“ öffnet alles andere — deine unvertrauenswürdigen Apps</item>
+    </string-array>
+    <string-array name="onboarding_todo_bullets">
+        <item>Sie ist für reale Aufgaben, die du erledigen willst — nicht nur für Telefon-Apps</item>
+        <item>Jeder Eintrag ist eine Absicht: was du vorhast, optional mit Dauer, Frist und Priorität</item>
+        <item>Tippe auf Start, um einen Timer mit Absicht und Dauer vorausgefüllt zu öffnen</item>
+        <item>Fristen und Priorität sortieren die Liste, damit Dringendes oben steht</item>
+        <item>Hake einen Eintrag ab, wenn du fertig bist — er verschwindet aus der offenen Liste</item>
     </string-array>
 </resources>

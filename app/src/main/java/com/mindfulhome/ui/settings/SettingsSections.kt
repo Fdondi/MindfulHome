@@ -4,7 +4,6 @@ import androidx.compose.ui.res.stringResource
 import com.mindfulhome.R
 
 import android.app.TimePickerDialog
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -40,12 +39,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.credentials.exceptions.NoCredentialException
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.ai.backend.ApiKeyManager
-import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendClient
-import com.mindfulhome.ai.backend.BackendHttpException
+import com.mindfulhome.ai.backend.BackendSignInOutcome
+import com.mindfulhome.ai.backend.backendSignInOutcomeMessage
+import com.mindfulhome.ai.backend.performBackendSignIn
 import com.mindfulhome.locale.LocaleHelper
 import com.mindfulhome.logging.DailyLogSummaryGenerator
 import com.mindfulhome.service.ForegroundAppAccessibilityService
@@ -105,6 +104,7 @@ internal fun PermissionsSection(
         granted = hasUsageStats,
         skippedPrompt = skippedUsagePrompt,
         permissionTitle = stringResource(R.string.usage_access),
+        accessibilityEnabled = accessibilityEnabled,
     )
     SettingsCard(
         title = usage.title,
@@ -622,69 +622,44 @@ internal fun AiModelSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
             )
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                RadioButton(
-                    selected = aiMode == SettingsManager.AI_MODE_ON_DEVICE,
-                    onClick = {
-                        onAiModeChange(SettingsManager.AI_MODE_ON_DEVICE)
-                        SettingsManager.setAIMode(context, SettingsManager.AI_MODE_ON_DEVICE)
-                    },
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.on_device_litert_lm),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = stringResource(R.string.private_works_offline_requires_downloading_a_mod),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-            ) {
-                RadioButton(
-                    selected = aiMode == SettingsManager.AI_MODE_BACKEND,
-                    onClick = {
-                        onAiModeChange(SettingsManager.AI_MODE_BACKEND)
-                        SettingsManager.setAIMode(context, SettingsManager.AI_MODE_BACKEND)
-                    },
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Column {
-                    Text(
-                        text = stringResource(R.string.remote_gemini),
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    Text(
-                        text = stringResource(R.string.more_capable_requires_google_sign_in_and_interne),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            AiModeOptionRow(
+                selected = aiMode == SettingsManager.AI_MODE_BACKEND,
+                enabled = true,
+                title = stringResource(R.string.ai_mode_google),
+                description = stringResource(R.string.more_capable_requires_google_sign_in_and_interne),
+                onClick = {
+                    onAiModeChange(SettingsManager.AI_MODE_BACKEND)
+                    SettingsManager.setAIMode(context, SettingsManager.AI_MODE_BACKEND)
+                },
+            )
+            AiModeOptionRow(
+                selected = aiMode == SettingsManager.AI_MODE_ON_DEVICE,
+                enabled = true,
+                title = stringResource(R.string.on_device_litert_lm),
+                description = stringResource(R.string.private_works_offline_requires_downloading_a_mod),
+                onClick = {
+                    onAiModeChange(SettingsManager.AI_MODE_ON_DEVICE)
+                    SettingsManager.setAIMode(context, SettingsManager.AI_MODE_ON_DEVICE)
+                },
+            )
+            AiModeOptionRow(
+                selected = aiMode == SettingsManager.AI_MODE_NONE,
+                enabled = true,
+                title = stringResource(R.string.ai_mode_none),
+                description = stringResource(R.string.ai_mode_none_description),
+                onClick = {
+                    onAiModeChange(SettingsManager.AI_MODE_NONE)
+                    SettingsManager.setAIMode(context, SettingsManager.AI_MODE_NONE)
+                },
+            )
         }
     }
 
     Spacer(modifier = Modifier.height(12.dp))
 
-    if (aiMode == SettingsManager.AI_MODE_ON_DEVICE) {
-        OnDeviceModelCard(installed = playgroundInstalled)
-    } else {
-        BackendAccountCard(
+    when (aiMode) {
+        SettingsManager.AI_MODE_ON_DEVICE -> OnDeviceModelCard(installed = playgroundInstalled)
+        SettingsManager.AI_MODE_BACKEND -> BackendAccountCard(
             isSignedIn = isSignedIn,
             signedInEmail = signedInEmail,
             onSignedInChange = onSignedInChange,
@@ -694,6 +669,42 @@ internal fun AiModelSection(
             signInInProgress = signInInProgress,
             onSignInInProgressChange = { signInInProgress = it },
         )
+        else -> { }
+    }
+}
+
+@Composable
+private fun AiModeOptionRow(
+    selected: Boolean,
+    enabled: Boolean,
+    title: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp),
+    ) {
+        RadioButton(selected = selected, enabled = enabled, onClick = onClick)
+        Spacer(modifier = Modifier.width(4.dp))
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.error
+                },
+            )
+        }
     }
 }
 
@@ -726,19 +737,6 @@ private fun OnDeviceModelCard(installed: Boolean) {
                     Text(stringResource(R.string.install_lm_playground))
                 }
             }
-        }
-    }
-}
-
-private fun openLmPlaygroundInstall(context: Context) {
-    lmPlaygroundInstallUris().forEach { uri ->
-        try {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-            )
-            return
-        } catch (_: ActivityNotFoundException) {
-            // Try the next URI (Play Store app → Play web → GitHub).
         }
     }
 }
@@ -927,44 +925,15 @@ private suspend fun runBackendSignIn(
     onSignedInChange: (Boolean, String?) -> Unit,
     onDone: () -> Unit,
 ) {
-    try {
-        val result = AuthManager.signIn(context)
-        if (result == null) {
-            Toast.makeText(context, context.getString(R.string.google_sign_in_was_cancelled_or_failed), Toast.LENGTH_LONG).show()
-            onDone()
-            return
+    val outcome = performBackendSignIn(context)
+    if (outcome is BackendSignInOutcome.Success) {
+        onSignedInChange(true, outcome.email)
+    } else {
+        backendSignInOutcomeMessage(context, outcome)?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
         }
-        completeBackendSignInExchange(context, result, onSignedInChange)
-    } catch (_: NoCredentialException) {
-        Toast.makeText(context, context.getString(R.string.no_google_account_found_opening_account_setup_u2), Toast.LENGTH_LONG).show()
-        context.startActivity(
-            Intent(Settings.ACTION_ADD_ACCOUNT).apply {
-                putExtra(Settings.EXTRA_ACCOUNT_TYPES, arrayOf("com.google"))
-            },
-        )
     }
     onDone()
-}
-
-private suspend fun completeBackendSignInExchange(
-    context: Context,
-    result: AuthManager.SignInResult,
-    onSignedInChange: (Boolean, String?) -> Unit,
-) {
-    if (result.email != null) {
-        ApiKeyManager.saveSignedInEmail(context, result.email)
-    }
-    try {
-        val session = withContext(Dispatchers.IO) {
-            BackendClient.exchange(result.idToken)
-        }
-        ApiKeyManager.saveSessionToken(context, session.session_token, session.expires_at)
-        onSignedInChange(true, result.email)
-    } catch (e: BackendHttpException) {
-        Toast.makeText(context, backendSignInErrorMessage(e), Toast.LENGTH_LONG).show()
-    } catch (e: Exception) {
-        Toast.makeText(context, "Backend sign-in failed: ${e.message}", Toast.LENGTH_LONG).show()
-    }
 }
 
 @Composable
@@ -1220,6 +1189,7 @@ internal fun SettingsCard(
     description: String,
     actionLabel: String?,
     onAction: () -> Unit,
+    actionEnabled: Boolean = true,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1237,6 +1207,7 @@ internal fun SettingsCard(
             if (actionLabel != null) {
                 TextButton(
                     onClick = onAction,
+                    enabled = actionEnabled,
                     modifier = Modifier.padding(top = 4.dp),
                 ) {
                     Text(actionLabel)

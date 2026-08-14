@@ -67,11 +67,15 @@ See [docs/crap.md](docs/crap.md) for the formula, report paths, and optional thr
 - Navigation map: see `docs/navigation-map.md` for route/state transitions and unlock flow behavior.
 - AI gates (focus time + hidden apps): see `docs/gates.md` for conversation rules, round limits, and prompt customization.
 
-### AI Model (Optional)
+### AI Model
 
-On-device conversations use [LM Playground](https://github.com/Fdondi/LMPlayground-server) over its exported AIDL API. Install that app, download a GGUF model in it, and enable the inference API (Settings → Advanced). MindfulHome warns in Settings if LM Playground is not installed.
+During onboarding (and later in Settings) you choose one of:
 
-Without LM Playground (or a remote Gemini session), MindfulHome uses scripted fallback responses that still create the same reflective friction.
+- **Google (Gemini)** — default. Sign in with Google to use the remote AI service.
+- **On this device** — conversations use [LM Playground](https://github.com/Fdondi/LMPlayground-server) over its exported AIDL API. Install that app, download a GGUF model in it, and enable the inference API (Settings → Advanced). MindfulHome warns in Settings if LM Playground is not installed.
+- **None (scripted)** — no sign-in or extra app; conversations use scripted replies.
+
+If you pick Google or on-device and that option later fails, scripted replies are used until you change the setting.
 
 ## Architecture
 

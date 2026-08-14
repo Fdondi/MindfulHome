@@ -236,6 +236,46 @@ class MainActivityLogicTest {
     }
 
     @Test
+    fun decideIncomingIntent_unlockDuringOnboardingIsNoOp() {
+        assertEquals(
+            IncomingIntentDecision.NoOp,
+            MainActivityLogic.decideIncomingIntent(
+                openPrefill = false,
+                prefillMinutes = -1,
+                prefillReason = null,
+                isLauncherHome = false,
+                onboardingDone = false,
+                fromUnlock = true,
+                forceTimer = false,
+                forceTimerReason = null,
+                timerIsExpired = false,
+            ),
+        )
+        assertEquals(
+            IncomingIntentDecision.NoOp,
+            MainActivityLogic.decideIncomingIntent(
+                openPrefill = false,
+                prefillMinutes = -1,
+                prefillReason = null,
+                isLauncherHome = false,
+                onboardingDone = false,
+                fromUnlock = false,
+                forceTimer = true,
+                forceTimerReason = MainActivity.FORCE_TIMER_REASON_EXPIRED,
+                timerIsExpired = true,
+            ),
+        )
+    }
+
+    @Test
+    fun usageAccessCovered_byUsageOrAccessibility() {
+        assertFalse(MainActivityLogic.usageAccessCovered(false, false))
+        assertTrue(MainActivityLogic.usageAccessCovered(true, false))
+        assertTrue(MainActivityLogic.usageAccessCovered(false, true))
+        assertTrue(MainActivityLogic.usageAccessCovered(true, true))
+    }
+
+    @Test
     fun nextMissingPermission_priorityAndSuppression() {
         assertEquals(
             MissingPermissionKind.Notifications,
@@ -288,6 +328,29 @@ class MainActivityLogicTest {
                 notificationsSuppressed = true,
                 usageSuppressed = true,
                 overlaySuppressed = true,
+            ),
+        )
+        assertNull(
+            MainActivityLogic.nextMissingPermission(
+                hasNotifications = true,
+                hasUsageAccess = false,
+                hasOverlay = true,
+                notificationsSuppressed = false,
+                usageSuppressed = false,
+                overlaySuppressed = false,
+                hasAccessibility = true,
+            ),
+        )
+        assertEquals(
+            MissingPermissionKind.UsageAccess,
+            MainActivityLogic.nextMissingPermission(
+                hasNotifications = true,
+                hasUsageAccess = false,
+                hasOverlay = true,
+                notificationsSuppressed = false,
+                usageSuppressed = false,
+                overlaySuppressed = false,
+                hasAccessibility = false,
             ),
         )
     }

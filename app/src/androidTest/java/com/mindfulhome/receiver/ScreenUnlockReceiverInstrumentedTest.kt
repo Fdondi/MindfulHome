@@ -34,12 +34,16 @@ class ScreenUnlockReceiverInstrumentedTest {
         receiver = ScreenUnlockReceiver()
         MainActivity.shouldShowTimer = false
         SettingsManager.clearQuickLaunchSession(appContext)
+        SettingsManager.clearScreenOffTimestamp(appContext)
+        setOnboardingDone(true)
     }
 
     @After
     fun tearDown() {
         SettingsManager.clearQuickLaunchSession(appContext)
+        SettingsManager.clearScreenOffTimestamp(appContext)
         MainActivity.shouldShowTimer = false
+        setOnboardingDone(false)
     }
 
     @Test
@@ -57,9 +61,31 @@ class ScreenUnlockReceiverInstrumentedTest {
     }
 
     @Test
-    fun unlock_withoutQuickLaunchSession_launchesMainActivityWithUnlockExtra() {
+    fun unlock_duringOnboarding_doesNotRelaunchMainActivity() {
+        setOnboardingDone(false)
         val capturingContext = CapturingContext(appContext)
 
+        receiver.onReceive(capturingContext, Intent(Intent.ACTION_USER_PRESENT))
+
+        assertFalse(MainActivity.shouldShowTimer)
+        assertNull(capturingContext.startedIntent)
+    }
+
+    @Test
+    fun userPresent_withoutRecordedScreenOff_doesNotLaunchMainActivity() {
+        val capturingContext = CapturingContext(appContext)
+
+        receiver.onReceive(capturingContext, Intent(Intent.ACTION_USER_PRESENT))
+
+        assertFalse(MainActivity.shouldShowTimer)
+        assertNull(capturingContext.startedIntent)
+    }
+
+    @Test
+    fun screenOff_thenUserPresent_launchesMainActivityWithUnlockExtra() {
+        val capturingContext = CapturingContext(appContext)
+
+        receiver.onReceive(capturingContext, Intent(Intent.ACTION_SCREEN_OFF))
         receiver.onReceive(capturingContext, Intent(Intent.ACTION_USER_PRESENT))
 
         val started = capturingContext.startedIntent
@@ -106,6 +132,13 @@ class ScreenUnlockReceiverInstrumentedTest {
         assertQuickLaunchSessionEventually(expected = true)
         assertForegroundEventually(targetPackage)
         assertNotEquals("com.mindfulhome", currentForegroundPackage())
+    }
+
+    private fun setOnboardingDone(done: Boolean) {
+        appContext.getSharedPreferences("mindfulhome", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("onboarding_done", done)
+            .commit()
     }
 
     private class CapturingContext(base: Context) : ContextWrapper(base) {

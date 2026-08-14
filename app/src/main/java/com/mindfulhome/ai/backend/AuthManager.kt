@@ -1,14 +1,23 @@
 package com.mindfulhome.ai.backend
 
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.os.Build
 import android.util.Log
 import androidx.credentials.CredentialManager
+import androidx.credentials.CredentialOption
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.GetCredentialResponse
+import androidx.credentials.exceptions.GetCredentialProviderConfigurationException
 import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.mindfulhome.GoogleSignInActivity
+import com.mindfulhome.ai.AuthManagerLogic
+import com.mindfulhome.ai.AuthManagerLogic.InteractiveGoogleSignInStep
 
 /**
  * Handles Google Sign-In via the Credential Manager API.
@@ -33,18 +42,15 @@ object AuthManager {
      * Returns null without showing any UI if no authorized account is available.
      */
     suspend fun signInSilent(context: Context): SignInResult? {
+        if (AuthManagerLogic.shouldSkipSilentCredentialManager(Build.VERSION.SDK_INT)) {
+            Log.d(TAG, "Skipping silent Credential Manager on API ${Build.VERSION.SDK_INT}")
+            return null
+        }
         return try {
-            val credentialManager = CredentialManager.create(context)
-            val googleIdOption = GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(true)
-                .setServerClientId(WEB_CLIENT_ID)
-                .setAutoSelectEnabled(true)
-                .build()
-            val request = GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
-                .build()
-            val result = credentialManager.getCredential(context, request)
-            handleSignIn(result)
+            requestSignIn(
+                context,
+                googleIdOption(filterByAuthorizedAccounts = true, autoSelect = true),
+            )
         } catch (e: NoCredentialException) {
             Log.d(TAG, "No pre-authorized account for silent sign-in")
             null
@@ -56,35 +62,111 @@ object AuthManager {
 
     /**
      * Triggers an interactive Google Sign-In and returns a [SignInResult], or null on failure.
-     * Throws [NoCredentialException] when no Google account is available on the device.
-     * Use [signInSilent] first for background token refresh.
+     * Throws [NoCredentialException] only after One Tap and Sign in with Google have both
+     * found no usable credential. Use [signInSilent] first for background token refresh.
      */
     suspend fun signIn(
         context: Context,
         forceAccountPicker: Boolean = false,
     ): SignInResult? {
+        if (context is GoogleSignInActivity) {
+            return signInWithCredentialManager(context, forceAccountPicker)
+        }
+        return GoogleSignInActivity.awaitSignIn(context, forceAccountPicker)
+    }
+
+    suspend fun signInWithCredentialManager(
+        context: Context,
+        forceAccountPicker: Boolean = false,
+    ): SignInResult? {
+        val first = AuthManagerLogic.initialInteractiveStep(forceAccountPicker)
         return try {
-            val credentialManager = CredentialManager.create(context)
+            requestSignIn(context, optionFor(first, forceAccountPicker))
+        } catch (e: NoCredentialException) {
+            retryInteractiveAfterNoCredential(context, first, forceAccountPicker, e)
+        } catch (e: GetCredentialProviderConfigurationException) {
+            throw e
+        } catch (e: Exception) {
+            if (AuthManagerLogic.isProviderConfigurationFailure(e)) throw e
+            logInteractiveFailure(e)
+            null
+        }
+    }
 
-            val googleIdOption = GetGoogleIdOption.Builder()
-                .setFilterByAuthorizedAccounts(false)
-                .setServerClientId(WEB_CLIENT_ID)
-                .setAutoSelectEnabled(!forceAccountPicker)
-                .build()
-
-            val request = GetCredentialRequest.Builder()
-                .addCredentialOption(googleIdOption)
-                .build()
-
-            val result = credentialManager.getCredential(context, request)
-            handleSignIn(result)
+    private suspend fun retryInteractiveAfterNoCredential(
+        context: Context,
+        failedStep: InteractiveGoogleSignInStep,
+        forceAccountPicker: Boolean,
+        original: NoCredentialException,
+    ): SignInResult? {
+        val fallback = AuthManagerLogic.fallbackInteractiveStep(failedStep)
+        if (fallback == null) {
+            Log.w(TAG, "No usable Google account for this app")
+            throw original
+        }
+        Log.d(TAG, "No credential for $failedStep; trying $fallback")
+        return try {
+            requestSignIn(context, optionFor(fallback, forceAccountPicker))
         } catch (e: NoCredentialException) {
             Log.w(TAG, "No usable Google account for this app")
             throw e
+        } catch (e: GetCredentialProviderConfigurationException) {
+            throw e
         } catch (e: Exception) {
-            Log.e(TAG, "Google Sign-In failed", e)
+            if (AuthManagerLogic.isProviderConfigurationFailure(e)) throw e
+            logInteractiveFailure(e)
             null
         }
+    }
+
+    /**
+     * Credential Manager turns every non-OK result from the Play Services sign-in activity into
+     * `GetCredentialCancellationException("activity is cancelled by the user")`, so a genuine
+     * dismissal and a setup failure are indistinguishable here. Only the GMS log tells them apart
+     * — `adb logcat -s Auth Auth.Api.Credentials` while reproducing. An unregistered package name
+     * or signing SHA-1 shows up there as `UNREGISTERED_ON_API_CONSOLE`.
+     */
+    private fun logInteractiveFailure(e: Exception) {
+        if (AuthManagerLogic.isGetCredentialCancellation(e)) {
+            Log.w(TAG, "Sign-In ended without a credential; may be dismissal or setup failure", e)
+            return
+        }
+        Log.e(TAG, "Google Sign-In failed", e)
+    }
+
+    private fun optionFor(
+        step: InteractiveGoogleSignInStep,
+        forceAccountPicker: Boolean,
+    ): CredentialOption = when (step) {
+        InteractiveGoogleSignInStep.OneTapAnyAccount ->
+            googleIdOption(
+                filterByAuthorizedAccounts = false,
+                autoSelect = !forceAccountPicker,
+            )
+        InteractiveGoogleSignInStep.SignInWithGoogleButton ->
+            GetSignInWithGoogleOption.Builder(WEB_CLIENT_ID).build()
+    }
+
+    private fun googleIdOption(
+        filterByAuthorizedAccounts: Boolean,
+        autoSelect: Boolean,
+    ): GetGoogleIdOption = GetGoogleIdOption.Builder()
+        .setFilterByAuthorizedAccounts(filterByAuthorizedAccounts)
+        .setServerClientId(WEB_CLIENT_ID)
+        .setAutoSelectEnabled(autoSelect)
+        .build()
+
+    private suspend fun requestSignIn(
+        context: Context,
+        option: CredentialOption,
+    ): SignInResult? {
+        val activity = context.findActivity()
+            ?: throw IllegalStateException("Google Sign-In needs an Activity")
+        val credentialManager = CredentialManager.create(activity)
+        val request = GetCredentialRequest.Builder()
+            .addCredentialOption(option)
+            .build()
+        return handleSignIn(credentialManager.getCredential(activity, request))
     }
 
     private fun handleSignIn(result: GetCredentialResponse): SignInResult? {
@@ -104,4 +186,13 @@ object AuthManager {
         Log.w(TAG, "Unexpected credential type: ${credential.type}")
         return null
     }
+}
+
+internal fun Context.findActivity(): Activity? {
+    var current: Context? = this
+    while (current is ContextWrapper) {
+        if (current is Activity) return current
+        current = current.baseContext
+    }
+    return null
 }

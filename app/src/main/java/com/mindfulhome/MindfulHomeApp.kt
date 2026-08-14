@@ -47,11 +47,12 @@ class MindfulHomeApp : Application() {
     private fun registerUnlockReceiver() {
         val receiver = ScreenUnlockReceiver()
         val filter = IntentFilter().apply {
+            addAction(android.content.Intent.ACTION_SCREEN_OFF)
             addAction(android.content.Intent.ACTION_USER_PRESENT)
         }
         registerReceiver(receiver, filter)
         unlockReceiver = receiver
-        Log.d("MindfulHomeApp", "Dynamically registered ScreenUnlockReceiver for USER_PRESENT")
+        Log.d("MindfulHomeApp", "Dynamically registered ScreenUnlockReceiver for SCREEN_OFF and USER_PRESENT")
     }
 
     private fun createNotificationChannels() {

@@ -23,6 +23,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.credentials.exceptions.NoCredentialException
+import com.mindfulhome.ai.AiSetupLogic
 import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.ai.GatekeeperUsageConfrontation
 import com.mindfulhome.ai.LmPlaygroundManager
@@ -368,7 +369,9 @@ private fun rememberNegotiationSession(
     unlockReason: String,
 ): NegotiationSession {
     val lmManager = remember { LmPlaygroundManager(context) }
-    val useBackend = remember { SettingsManager.getAIMode(context) == SettingsManager.AI_MODE_BACKEND }
+    val aiMode = remember { SettingsManager.getAIMode(context) }
+    val useBackend = remember { AiSetupLogic.shouldUseBackend(aiMode) }
+    val useOnDevice = remember { AiSetupLogic.shouldUseOnDevice(aiMode) }
     val selectedModel = remember { SettingsManager.getBackendModel(context) }
     val backendAuth = remember {
         BackendAuthHelper(
@@ -393,12 +396,13 @@ private fun rememberNegotiationSession(
         )
     }
     val developerLogsEnabled = SettingsManager.isDeveloperLogsEnabled(context)
-    return remember(lmManager, backendAuth, useBackend, selectedModel) {
+    return remember(lmManager, backendAuth, useBackend, useOnDevice, selectedModel) {
         NegotiationSession(
             lmManager = lmManager,
             backendAuth = backendAuth,
             developerLogsEnabled = developerLogsEnabled,
             initialUseBackend = useBackend,
+            initialUseOnDevice = useOnDevice,
             initialSelectedModel = selectedModel,
             initialUnlockReason = unlockReason,
             repository = repository,
@@ -457,6 +461,7 @@ private class NegotiationSession(
     val backendAuth: BackendAuthHelper,
     val developerLogsEnabled: Boolean,
     initialUseBackend: Boolean,
+    initialUseOnDevice: Boolean,
     initialSelectedModel: String,
     initialUnlockReason: String,
     repository: AppRepository,
@@ -477,15 +482,17 @@ private class NegotiationSession(
     var lastLaunchRequestText by mutableStateOf(initialUnlockReason)
     var conversationNonce by mutableStateOf(0)
     var sessionUseBackend by mutableStateOf(initialUseBackend)
+    var sessionUseOnDevice by mutableStateOf(initialUseOnDevice)
     var sessionSelectedModel by mutableStateOf(initialSelectedModel)
     var showModelPicker by mutableStateOf(false)
     var pickerUseBackend by mutableStateOf(initialUseBackend)
     var pickerSelectedModel by mutableStateOf(initialSelectedModel)
     var modelLabel by mutableStateOf(
-        if (initialUseBackend) {
-            "$initialSelectedModel (checking auth...)"
-        } else {
-            onDeviceModelLabel(LmPlaygroundManager.isInstalled(context))
+        when {
+            initialUseBackend -> "$initialSelectedModel (checking auth...)"
+            initialUseOnDevice -> onDeviceModelLabel(LmPlaygroundManager.isInstalled(context))
+            else -> "Scripted"
+
         },
     )
     var negotiationManager by mutableStateOf(
@@ -925,7 +932,7 @@ private suspend fun runConversationStart(
     resetConversationUi(session, unlockReason)
     if (!ensureBackendAuthForSession(session, context, sessionHandle)) return
     updateModelLabelForSession(session, context)
-    if (!(session.sessionUseBackend && session.backendAuth.hasToken())) {
+    if (session.sessionUseOnDevice) {
         session.lmManager.initialize()
     }
     startConversationByMode(
@@ -1016,7 +1023,7 @@ private suspend fun tryCompleteBackendSignIn(
         addChatMessage(
             session,
             sessionHandle,
-            "Sign-in failed: no Google account is available on this device.",
+            "Sign-in was cancelled or failed. You can retry from Settings.",
             isFromUser = false,
         )
         return false
@@ -1244,6 +1251,7 @@ private fun applySessionModelPicker(
 
     session.negotiationManager.endConversation()
     session.sessionUseBackend = session.pickerUseBackend
+    session.sessionUseOnDevice = !session.pickerUseBackend
     session.sessionSelectedModel = session.pickerSelectedModel
     session.modelLabel = if (session.sessionUseBackend) {
         "${session.sessionSelectedModel} (checking auth...)"

@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -66,7 +67,8 @@ import kotlinx.coroutines.launch
 
 private const val PREF_NAME = "mindfulhome"
 private const val ONBOARDING_STEP_KEY = "onboarding_step"
-private const val ONBOARDING_LAST_STEP = 10
+private const val ONBOARDING_LAST_STEP = 11
+private const val TAG = "Onboarding"
 
 @Composable
 fun OnboardingScreen(
@@ -113,9 +115,16 @@ fun OnboardingScreen(
                 selected = selectedLanguage,
                 onSelect = { selectedLanguage = it },
                 onContinue = {
-                    // Persist + apply only. Do not set languageChosen=true here — that would
-                    // show Welcome with the old locale before AppCompat recreates the activity.
-                    LocaleHelper.setLanguage(context, selectedLanguage)
+                    val willRecreate = LocaleHelper.setLanguage(context, selectedLanguage)
+                    Log.d(
+                        TAG,
+                        "language continue selected=${selectedLanguage.tag} recreate=$willRecreate",
+                    )
+                    // Recreate would flash Welcome in the old locale if we advanced here.
+                    // System default is already the empty locale list, so nothing recreates.
+                    if (OnboardingLogic.shouldAdvanceLanguagePickerInPlace(willRecreate)) {
+                        languageChosen = true
+                    }
                 },
             )
         } else {
@@ -163,17 +172,23 @@ private fun OnboardingPermissionSteps(
     onGrantUsageAccess: () -> Unit,
 ) {
     when (step) {
-        3 -> NotificationPermissionStep(onNext = { onGoToStep(4) })
-        4 -> UsageAccessStep(onGrantUsageAccess = onGrantUsageAccess, onNext = { onGoToStep(5) })
+        3 -> NotificationPermissionStep(
+            onNext = { onGoToStep(OnboardingLogic.STEP_AFTER_NOTIFICATIONS) },
+        )
+        4 -> SkipOnboardingStep(onSkip = { onGoToStep(OnboardingLogic.STEP_AFTER_LEGACY_USAGE) })
         5 -> OverlayPermissionStep(onNext = { onGoToStep(6) })
-        6 -> AccessibilityPermissionStep(onNext = { onGoToStep(7) })
+        6 -> AccessibilityPermissionStep(
+            onGrantUsageAccess = onGrantUsageAccess,
+            onNext = { onGoToStep(7) },
+        )
         7 -> ModelStep(onNext = { onGoToStep(8) })
         8 -> SystemAppsReviewStep(
             karmaManager = karmaManager,
             onNext = { onGoToStep(9) },
         )
         9 -> AppTiersStep(onNext = { onGoToStep(10) })
-        else -> LayoutStep(onNext = onComplete)
+        10 -> LayoutStep(onNext = { onGoToStep(11) })
+        else -> TodoStep(onNext = onComplete)
     }
 }
 
@@ -257,6 +272,7 @@ private fun SystemAppsReviewStep(
         style = MaterialTheme.typography.headlineSmall,
         fontWeight = FontWeight.Bold,
         textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onBackground,
     )
     Spacer(modifier = Modifier.height(12.dp))
     Text(
@@ -298,6 +314,7 @@ private fun SystemAppsReviewStep(
                             Text(
                                 text = app.label,
                                 style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onBackground,
                                 modifier = Modifier.weight(1f),
                             )
                         }
@@ -330,11 +347,21 @@ private fun SystemAppsReviewStep(
 }
 
 @Composable
+private fun TodoStep(onNext: () -> Unit) {
+    OnboardingBulletStep(
+        title = stringResource(R.string.onboarding_todo_title),
+        bulletArrayRes = R.array.onboarding_todo_bullets,
+        buttonLabel = stringResource(R.string.start_using_mindfulhome),
+        onNext = onNext,
+    )
+}
+
+@Composable
 private fun LayoutStep(onNext: () -> Unit) {
     OnboardingBulletStep(
         title = stringResource(R.string.onboarding_layout_title),
         bulletArrayRes = R.array.onboarding_layout_bullets,
-        buttonLabel = stringResource(R.string.start_using_mindfulhome),
+        buttonLabel = stringResource(R.string.makes_sense),
         onNext = onNext,
     )
 }
@@ -556,6 +583,11 @@ private fun NotificationPermissionStepBody(
 }
 
 @Composable
+private fun SkipOnboardingStep(onSkip: () -> Unit) {
+    LaunchedEffect(Unit) { onSkip() }
+}
+
+@Composable
 private fun UsageAccessStep(
     onGrantUsageAccess: () -> Unit,
     onNext: () -> Unit
@@ -646,6 +678,11 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
     val context = LocalContext.current
     var hasPermission by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     var showGrantedFallbackButton by remember { mutableStateOf(false) }
+    val overlayPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult(),
+    ) {
+        hasPermission = Settings.canDrawOverlays(context)
+    }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         hasPermission = Settings.canDrawOverlays(context)
@@ -689,11 +726,12 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
         showGrantedFallbackButton = showGrantedFallbackButton,
         grantLabel = stringResource(R.string.onboarding_grant_overlay_permission),
         onGrant = {
-            val intent = Intent(
-                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                Uri.parse("package:${context.packageName}")
+            overlayPermissionLauncher.launch(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}"),
+                ),
             )
-            context.startActivity(intent)
         },
         onSkipOrContinue = {
             SettingsManager.setPermissionPromptSuppressed(
@@ -707,7 +745,26 @@ private fun OverlayPermissionStep(onNext: () -> Unit) {
 }
 
 @Composable
-private fun AccessibilityPermissionStep(onNext: () -> Unit) {
+private fun AccessibilityPermissionStep(
+    onGrantUsageAccess: () -> Unit,
+    onNext: () -> Unit,
+) {
+    var showUsageFallback by remember { mutableStateOf(false) }
+    if (showUsageFallback) {
+        UsageAccessStep(onGrantUsageAccess = onGrantUsageAccess, onNext = onNext)
+        return
+    }
+    AccessibilityPermissionStepBody(
+        onGrantedOrStuck = onNext,
+        onSkipped = { showUsageFallback = true },
+    )
+}
+
+@Composable
+private fun AccessibilityPermissionStepBody(
+    onGrantedOrStuck: () -> Unit,
+    onSkipped: () -> Unit,
+) {
     val context = LocalContext.current
     var hasPermission by remember {
         mutableStateOf(ForegroundAppAccessibilityService.isEnabled(context))
@@ -721,7 +778,7 @@ private fun AccessibilityPermissionStep(onNext: () -> Unit) {
         if (hasPermission) {
             showGrantedFallbackButton = false
             delay(300)
-            onNext()
+            onGrantedOrStuck()
             delay(700)
             showGrantedFallbackButton = true
         } else {
@@ -766,36 +823,14 @@ private fun AccessibilityPermissionStep(onNext: () -> Unit) {
                 ).show()
             }
         },
-        onSkipOrContinue = onNext,
+        onSkipOrContinue = {
+            if (OnboardingLogic.shouldSkipUsageAccess(hasPermission)) {
+                onGrantedOrStuck()
+            } else {
+                onSkipped()
+            }
+        },
     )
-}
-
-@Composable
-private fun ModelStep(onNext: () -> Unit) {
-    Text(
-        text = stringResource(R.string.ai_model_options),
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center
-    )
-
-    Spacer(modifier = Modifier.height(16.dp))
-
-    Text(
-        text = stringResource(R.string.onboarding_ai_model_body),
-        style = MaterialTheme.typography.bodyMedium,
-        textAlign = TextAlign.Center,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-
-    Spacer(modifier = Modifier.height(48.dp))
-
-    Button(
-        onClick = onNext,
-        modifier = Modifier.fillMaxWidth(0.6f)
-    ) {
-        Text(stringResource(R.string.language_picker_continue))
-    }
 }
 
 private fun isDefaultHome(context: android.content.Context): Boolean {

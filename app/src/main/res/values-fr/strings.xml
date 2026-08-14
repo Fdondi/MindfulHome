@@ -46,7 +46,7 @@
     <string name="settings_language">Langue</string>
     <string name="settings_language_description">Langage de l\'application pour l\'interface et les réponses de l\'IA.</string>
     <string name="focus_time_description">Pendant les intervalles actifs, le lanceur reste caché après la minuterie. Utilisez l\'IA pour ouvrir des applications non-Quick Launch.</string>
-    <string name="backend_sign_in_description">Connectez-vous avec votre compte Google pour utiliser le modèle Gemini distant. Sans vous connecter, l\'application reviendra aux réponses sur l\'appareil.</string>
+    <string name="backend_sign_in_description">Connectez-vous avec votre compte Google pour utiliser le modèle Gemini distant.</string>
     <string name="signing_in">Connexion…</string>
     <string name="sign_in_with_google">Connectez-vous avec Google</string>
     <string name="signed_in_with_google">Connecté avec Google</string>
@@ -63,7 +63,8 @@
     <string name="open_accessibility_settings">Ouvrir les paramètres d\'accessibilité</string>
     <string name="perm_skipped">Manquant. Vous avez choisi d\'ignorer les rappels d\'autorisation. Accordez à tout moment à partir d\'ici.</string>
     <string name="perm_usage_granted">Accordé. MindfulHome peut suivre quelle application est au premier plan.</string>
-    <string name="perm_usage_required">Requis pour le suivi du karma. Appuyez pour accorder.</string>
+    <string name="perm_usage_required">Requis pour le suivi du karma lorsque la détection de changement d\'appli est désactivée. Appuyez pour accorder.</string>
+    <string name="perm_usage_optional_a11y">Facultatif. La détection de changement d\'appli couvre déjà le suivi au premier plan. L\'accès à l\'utilisation aide encore à lister les applis les plus utilisées et à détecter quand vous vous éloignez.</string>
     <string name="perm_notification_granted">Accordé. MindfulHome peut afficher des notifications de minuterie et de coup de pouce.</string>
     <string name="perm_notification_required">Requis pour le compte à rebours et les notifications de coup de pouce.</string>
     <string name="perm_overlay_granted">Accordé. Les rappels Nudge apparaîtront sur n’importe quelle application.</string>
@@ -111,7 +112,9 @@ votre téléphone et utiliser des applications.</string>
     <string name="how_often_full_width_banners_are_spawned">À quelle fréquence les bannières pleine largeur apparaissent.</string>
     <string name="shortcut_is_missing_required_information">Le raccourci ne contient pas les informations requises.</string>
     <string name="a_home_launcher_that_nags_never_blocks">Un lanceur domestique qui harcèle, ne bloque jamais.</string>
-    <string name="google_sign_in_was_cancelled_or_failed">La connexion à Google a été annulée ou a échoué</string>
+    <string name="google_sign_in_did_not_complete">La connexion Google ne s\'est pas terminée. Si vous ne l\'avez pas fermée vous-même, cette version n\'est peut-être pas encore configurée pour la connexion Google.</string>
+    <string name="google_sign_in_no_account">Aucun compte Google n\'a été trouvé sur cet appareil. Ajoutez-en un dans les paramètres Android, puis réessayez.</string>
+    <string name="google_play_services_required">Google Play services est absent ou doit être mis à jour pour la connexion Google.</string>
     <string name="widget_pinning_is_not_supported_yet">L’épinglage de widgets n’est pas encore pris en charge.</string>
     <string name="focus_gate_prompts_reset_to_default">Les invites de la porte de mise au point sont réinitialisées aux valeurs par défaut</string>
     <string name="gatekeeper_prompts_reset_to_default">Les invites du Gatekeeper sont réinitialisées aux valeurs par défaut</string>
@@ -183,6 +186,7 @@ votre téléphone et utiliser des applications.</string>
     <string name="hide_hard_deadline">Masquer les délais fermes</string>
     <string name="new_intent_folder">Nouveau dossier d’intention…</string>
     <string name="no_open_items_yet">Aucun élément ouvert pour l\'instant.</string>
+    <string name="todo_empty_hint">Posez ici une tâche réelle. Ajoutez une intention (et éventuellement une durée ou une échéance), puis Start pour ouvrir un minuteur.</string>
     <string name="overlay_permission">Autorisation de superposition</string>
     <string name="session_log_copied">Journal de session copié</string>
     <string name="timing_intervals">Chronométrage et intervalles</string>
@@ -261,6 +265,12 @@ votre téléphone et utiliser des applications.</string>
     <string name="pick_app">Choisir une application</string>
     <string name="positive">Positif</string>
     <string name="settings">Paramètres</string>
+    <string name="tutorial">Tutoriel</string>
+    <string name="tutorial_title">Tutoriel</string>
+    <string name="tutorial_subtitle">Revenez sur n\'importe quelle partie du guide si vous avez oublié comment quelque chose fonctionne.</string>
+    <string name="tutorial_previous">Précédent</string>
+    <string name="tutorial_next">Suivant</string>
+    <string name="tutorial_page_of">%1$d / %2$d</string>
     <string name="sign_out">se déconnecter</string>
     <string name="e_g_10">par ex. -10</string>
     <string name="forgive">Pardonner</string>
@@ -294,7 +304,7 @@ votre téléphone et utiliser des applications.</string>
     <string name="onboarding_notifications_granted">Notifications activées. Vous verrez le compte à rebours de votre minuterie et de légers coups de coude.</string>
     <string name="onboarding_notifications_rationale">MindfulHome utilise des notifications pour afficher le compte à rebours de votre minuterie et envoyer de légers coups de coude lorsque le temps est écoulé. Pas de spam, promis.</string>
     <string name="onboarding_usage_granted">Accès à l\'utilisation accordé. Le suivi du karma fonctionnera.</string>
-    <string name="onboarding_usage_rationale">MindfulHome a besoin de Usage Access pour savoir quelle application est au premier plan lorsque votre minuterie expire. C’est ainsi que fonctionne le suivi du karma.</string>
+    <string name="onboarding_usage_rationale">Sans détection de changement d\'appli, MindfulHome a besoin de l\'accès à l\'utilisation pour savoir quelle application est au premier plan. C’est ainsi que fonctionne le suivi du karma.</string>
     <string name="onboarding_grant_usage_access">Accorder l\'accès à l\'utilisation</string>
     <string name="onboarding_overlay_granted">Autorisation de superposition accordée. Les rappels Nudge apparaîtront sur n’importe quelle application.</string>
     <string name="onboarding_overlay_rationale">MindfulHome peut afficher une légère superposition de rappel lorsque le minuteur de votre session expire, même lorsque vous êtes dans une autre application. Sans cela, les rappels n\'apparaîtront que sous forme de notifications (qu\'Android peut faire taire au fil du temps).</string>
@@ -303,13 +313,30 @@ votre téléphone et utiliser des applications.</string>
     <string name="onboarding_accessibility_granted">Détection de changement d\'appli activée. MindfulHome réagit aussitôt quand vous quittez une appli — mieux pour la batterie.</string>
     <string name="onboarding_accessibility_rationale">Optionnel mais recommandé. Sans cela, MindfulHome vérifie l\'appli au premier plan sur un timer — plus de batterie. Activez-le pour être notifié à chaque changement d\'appli — plus rapide, moins de batterie. Lecture seule de l\'appli au premier plan, jamais le contenu.\n\nAppuyez ci-dessous, trouvez MindfulHome sous les applis installées et activez.</string>
     <string name="onboarding_grant_accessibility">Activer la détection de changement d\'appli</string>
-    <string name="onboarding_ai_model_body">Une utilisation privée, gratuite et hors ligne est possible avec un modèle local, comme un modèle Gemma3-1B (557 Mo). Téléchargez-le depuis HuggingFace et placez-le dans le dossier des modèles de l\'application.\nSoyez toutefois averti que les petits modèles ne seront pas aussi intelligents que vous pourriez l\'espérer.\n\nPour une solution plus puissante et moins gourmande en espace et en calcul, nous vous recommandons de vous connecter pour utiliser notre service d\'IA, alimenté par Gemini.\n\nSi aucun des deux n\'est configuré, une solution de secours scriptée sera utilisée.</string>
+    <string name="onboarding_ai_model_body">Choisissez comment MindfulHome vous parle.\n\nGoogle (recommandé) — connectez-vous pour utiliser Gemini, plus capable et plus léger pour votre téléphone.\nSur cet appareil — téléchargez un modèle Gemma 3 1B local (~557 Mo) si vous avez assez d\'espace. Les petits modèles sont moins capables que Gemini.\nAucun — réponses scriptées, sans connexion ni téléchargement.\n\nLes réponses scriptées sont un choix explicite ici. Elles sont aussi utilisées plus tard si l\'option choisie n\'est pas disponible.</string>
+    <string name="onboarding_ai_google_title">Google (Gemini) — se connecter</string>
+    <string name="onboarding_ai_google_body">Recommandé. Plus capable, et plus léger pour votre téléphone.</string>
+    <string name="onboarding_ai_local_title">Sur cet appareil</string>
+    <string name="onboarding_ai_local_body">Privé et hors ligne. Télécharge un modèle Gemma 3 1B (~557 Mo).</string>
+    <string name="onboarding_ai_local_insufficient_space">Pas assez d\'espace (besoin de %1$s libres)</string>
+    <string name="onboarding_ai_none_title">Aucun (scripté)</string>
+    <string name="onboarding_ai_none_body">Ni connexion ni téléchargement. Les conversations utilisent des réponses scriptées.</string>
+    <string name="onboarding_ai_download">Télécharger le modèle local</string>
+    <string name="onboarding_ai_downloading">Téléchargement du modèle… %1$d%%</string>
+    <string name="onboarding_ai_download_failed">Impossible de télécharger le modèle local. Vérifiez la connexion et réessayez.</string>
+    <string name="onboarding_ai_open_huggingface">Ouvrir HuggingFace pour accepter la licence Gemma</string>
+    <string name="ai_mode_google">Google (Gemini)</string>
+    <string name="ai_mode_none">Aucun (scripté)</string>
+    <string name="ai_mode_none_description">Les conversations utilisent des réponses scriptées. Pas de connexion Google ni de modèle sur l\'appareil.</string>
+    <string name="local_model_download">Télécharger le modèle (557 Mo)</string>
+    <string name="local_model_insufficient_space">Pas assez d\'espace pour télécharger le modèle local.</string>
     <string name="onboarding_app_tiers_title">Trois types d\'apps</string>
     <string name="onboarding_system_apps_title">Apps préinstallées</string>
     <string name="onboarding_system_apps_body">Ces apps semblent système. Nous les laissons sans restriction pour que Téléphone et similaires restent utilisables. Décochez celles que MindfulHome doit surveiller.</string>
     <string name="onboarding_system_apps_empty">Aucun candidat préinstallé trouvé sur cet appareil.</string>
     <string name="onboarding_system_apps_continue">Continuer</string>
     <string name="onboarding_layout_title">Comment fonctionne l\'écran d\'accueil</string>
+    <string name="onboarding_todo_title">À quoi sert la liste Todo</string>
     <string-array name="onboarding_philosophy_bullets">
         <item>Réglez une minuterie à chaque fois que vous déverrouillez votre téléphone</item>
         <item>Les applications gagnent du karma selon que vous respectez ou non votre minuterie</item>
@@ -330,5 +357,12 @@ votre téléphone et utiliser des applications.</string>
         <item>Ajoutez une app à un ou plusieurs dossiers, ou retirez-la si elle ne convient plus</item>
         <item>Modifiez le minuteur d\'une app pour une limite plus stricte ou plus souple</item>
         <item>La tuile « autre chose ? » ouvre tout le reste — vos apps non fiables</item>
+    </string-array>
+    <string-array name="onboarding_todo_bullets">
+        <item>Elle sert aux tâches réelles que vous voulez accomplir — pas seulement aux apps du téléphone</item>
+        <item>Chaque élément est une intention : ce que vous prévoyez de faire, avec durée, échéance et priorité optionnelles</item>
+        <item>Appuyez sur Start pour ouvrir un minuteur déjà rempli avec cette intention et cette durée</item>
+        <item>Les échéances et la priorité trient la liste pour faire remonter l\'urgent</item>
+        <item>Cochez un élément quand c\'est fait — il quitte la liste ouverte</item>
     </string-array>
 </resources>

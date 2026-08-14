@@ -46,7 +46,7 @@
     <string name="settings_language">语言</string>
     <string name="settings_language_description">界面和人工智能回复的应用程序语言。</string>
     <string name="focus_time_description">在活动间隔期间，启动器在计时器之后保持隐藏状态。使用 AI 打开非快速启动应用程序。</string>
-    <string name="backend_sign_in_description">使用您的 Google 帐户登录以使用远程 Gemini 模型。如果不登录，应用程序将回退到设备上响应。</string>
+    <string name="backend_sign_in_description">使用您的 Google 帐户登录以使用远程 Gemini 模型。</string>
     <string name="signing_in">正在登录...</string>
     <string name="sign_in_with_google">使用 Google 登录</string>
     <string name="signed_in_with_google">已使用 Google 登录</string>
@@ -63,7 +63,8 @@
     <string name="open_accessibility_settings">打开辅助功能设置</string>
     <string name="perm_skipped">丢失的。您选择跳过权限提醒。随时从这里授予。</string>
     <string name="perm_usage_granted">的确。 MindfulHome 可以跟踪哪个应用程序位于前台。</string>
-    <string name="perm_usage_required">业力追踪所需。点击以授予。</string>
+    <string name="perm_usage_required">应用切换检测关闭时，业力追踪需要此权限。点击以授予。</string>
+    <string name="perm_usage_optional_a11y">可选。应用切换检测已覆盖前台跟踪。使用情况访问仍有助于列出常用应用并察觉你何时离开。</string>
     <string name="perm_notification_granted">的确。 MindfulHome 可以显示计时器和微移通知。</string>
     <string name="perm_notification_required">计时器倒计时和微移通知所需。</string>
     <string name="perm_overlay_granted">的确。微移提醒将出现在任何应用程序上。</string>
@@ -111,7 +112,9 @@
     <string name="how_often_full_width_banners_are_spawned">全角横幅的生成频率。</string>
     <string name="shortcut_is_missing_required_information">快捷方式缺少所需信息。</string>
     <string name="a_home_launcher_that_nags_never_blocks">一款永不阻塞、烦人的家用发射器。</string>
-    <string name="google_sign_in_was_cancelled_or_failed">Google 登录已取消或失败</string>
+    <string name="google_sign_in_did_not_complete">Google 登录未完成。如果不是你自己关闭的，可能是此版本尚未配置 Google 登录。</string>
+    <string name="google_sign_in_no_account">在此设备上未找到 Google 账号。请在 Android 设置中添加后重试。</string>
+    <string name="google_play_services_required">Google Play 服务缺失或需要更新才能使用 Google 登录。</string>
     <string name="widget_pinning_is_not_supported_yet">尚不支持小部件固定。</string>
     <string name="focus_gate_prompts_reset_to_default">焦点门提示重置为默认值</string>
     <string name="gatekeeper_prompts_reset_to_default">Gatekeeper 提示重置为默认值</string>
@@ -183,6 +186,7 @@
     <string name="hide_hard_deadline">隐藏硬性截止日期</string>
     <string name="new_intent_folder">新意图文件夹...</string>
     <string name="no_open_items_yet">还没有未清项目。</string>
+    <string name="todo_empty_hint">在这里放下现实世界的任务。添加意图（可选时长或截止日期），然后点 Start 打开对应计时器。</string>
     <string name="overlay_permission">叠加权限</string>
     <string name="session_log_copied">会话日志已复制</string>
     <string name="timing_intervals">时间和间隔</string>
@@ -261,6 +265,12 @@
     <string name="pick_app">选择应用程序</string>
     <string name="positive">积极的</string>
     <string name="settings">设置</string>
+    <string name="tutorial">教程</string>
+    <string name="tutorial_title">教程</string>
+    <string name="tutorial_subtitle">如果忘记了某部分的用法，可在此重新查看设置指南。</string>
+    <string name="tutorial_previous">上一页</string>
+    <string name="tutorial_next">下一页</string>
+    <string name="tutorial_page_of">%1$d / %2$d</string>
     <string name="sign_out">登出</string>
     <string name="e_g_10">例如-10</string>
     <string name="forgive">原谅</string>
@@ -294,7 +304,7 @@
     <string name="onboarding_notifications_granted">通知已启用。您会看到计时器倒计时和轻柔的推动。</string>
     <string name="onboarding_notifications_rationale">MindfulHome 使用通知来显示计时器倒计时，并在时间到时发送轻柔的提示。没有垃圾邮件，保证。</string>
     <string name="onboarding_usage_granted">已授予使用权限。业力追踪将会发挥作用。</string>
-    <string name="onboarding_usage_rationale">MindfulHome 需要使用访问权限才能了解计时器到期时哪个应用程序位于前台。这就是业力追踪的工作原理。</string>
+    <string name="onboarding_usage_rationale">若未开启应用切换检测，MindfulHome 需要使用访问权限才能知道哪个应用在前台。这就是业力追踪的工作原理。</string>
     <string name="onboarding_grant_usage_access">授予使用权限</string>
     <string name="onboarding_overlay_granted">已授予叠加许可。微移提醒将出现在任何应用程序上。</string>
     <string name="onboarding_overlay_rationale">当您的会话计时器到期时，MindfulHome 可以显示温和的提醒叠加层，即使您在另一个应用程序中也是如此。如果没有这个，提醒将仅显示为通知（Android 可能会随着时间的推移而静音）。</string>
@@ -303,13 +313,30 @@
     <string name="onboarding_accessibility_granted">应用切换检测已开启。离开应用时 MindfulHome 会立即响应 — 更省电。</string>
     <string name="onboarding_accessibility_rationale">可选但建议开启。关闭时 MindfulHome 用定时器检查前台应用（更耗电）。开启后会在切换应用时立刻通知 — 反应更快、更省电。只读取前台应用，从不读取屏幕内容。\n\n点下方，在已安装应用中找到 MindfulHome 并打开。</string>
     <string name="onboarding_grant_accessibility">启用应用切换检测</string>
-    <string name="onboarding_ai_model_body">本地模型可以私人、免费、离线使用，例如 Gemma3-1B 模型 (557 MB)。从 HuggingFace 下载并将其放入应用的模型文件夹中。\n但请注意，小型模型不会像您预期的那样智能。\n\n为了获得更强大且对空间和计算负担更小的解决方案，我们建议登录以使用由 Gemini 提供支持的 AI 服务。\n\n如果两者均未配置，则将使用脚本回退。</string>
+    <string name="onboarding_ai_model_body">选择 MindfulHome 如何与你对话。\n\nGoogle（推荐）— 登录以使用 Gemini，能力更强且更省手机资源。\n本机 — 若有足够空间，下载本地 Gemma 3 1B 模型（约 557 MB）。小模型不如 Gemini 聪明。\n无 — 使用脚本回复，无需登录或下载。\n\n脚本回复是这里的明确选项。若之后所选方式不可用，也会使用脚本回复。</string>
+    <string name="onboarding_ai_google_title">Google (Gemini) — 登录</string>
+    <string name="onboarding_ai_google_body">推荐。更强，也更省手机资源。</string>
+    <string name="onboarding_ai_local_title">本机</string>
+    <string name="onboarding_ai_local_body">私密且可离线。将下载 Gemma 3 1B 模型（约 557 MB）。</string>
+    <string name="onboarding_ai_local_insufficient_space">存储空间不足（需要空闲 %1$s）</string>
+    <string name="onboarding_ai_none_title">无（脚本）</string>
+    <string name="onboarding_ai_none_body">无需登录或下载。对话使用脚本回复。</string>
+    <string name="onboarding_ai_download">下载本地模型</string>
+    <string name="onboarding_ai_downloading">正在下载模型… %1$d%%</string>
+    <string name="onboarding_ai_download_failed">无法下载本地模型。请检查网络后重试。</string>
+    <string name="onboarding_ai_open_huggingface">打开 HuggingFace 以接受 Gemma 许可</string>
+    <string name="ai_mode_google">Google (Gemini)</string>
+    <string name="ai_mode_none">无（脚本）</string>
+    <string name="ai_mode_none_description">对话使用脚本回复。无需 Google 登录或本机模型。</string>
+    <string name="local_model_download">下载模型（557 MB）</string>
+    <string name="local_model_insufficient_space">存储空间不足，无法下载本地模型。</string>
     <string name="onboarding_app_tiers_title">三类应用</string>
     <string name="onboarding_system_apps_title">预装应用</string>
     <string name="onboarding_system_apps_body">这些看起来像系统应用。我们默认不限制它们，以便电话等保持可用。取消勾选你希望 MindfulHome 监控的应用。</string>
     <string name="onboarding_system_apps_empty">此设备上未找到预装候选应用。</string>
     <string name="onboarding_system_apps_continue">继续</string>
     <string name="onboarding_layout_title">主屏幕如何支持这一切</string>
+    <string name="onboarding_todo_title">待办列表是做什么的</string>
     <string-array name="onboarding_philosophy_bullets">
         <item>每次解锁手机时设置计时器</item>
         <item>应用程序根据您是否遵守计时器来赚取业力</item>
@@ -330,5 +357,12 @@
         <item>可将应用加入一个或多个文件夹，不再适合时再移除</item>
         <item>随时收紧或放宽应用的定时器</item>
         <item>「做点别的？」磁贴打开其余一切 — 你的不可信应用</item>
+    </string-array>
+    <string-array name="onboarding_todo_bullets">
+        <item>用来记下你想完成的现实任务 — 不只是手机应用</item>
+        <item>每项是一个意图：你打算做什么，可选时长、截止日期和优先级</item>
+        <item>点 Start 会打开已填好该意图和时长的计时器</item>
+        <item>截止日期和优先级会排序列表，让紧急事项浮到上面</item>
+        <item>完成后勾掉一项 — 它会离开未完成列表</item>
     </string-array>
 </resources>

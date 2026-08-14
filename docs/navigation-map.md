@@ -4,7 +4,7 @@ This document maps how the app moves between launcher states and pages.
 
 ## Routes
 
-- `onboarding` - first-run setup.
+- `onboarding` - first-run setup (language, permissions, AI provider choice: Google sign-in / local download / scripted none, then app tiers, home-layout explanation, Todo intro).
 - `default` - default landing page with Todo widget, resume action, QuickLaunch, and plain timer entry.
 - `timer` - timer setup page.
 - `home` - app selection page after timer starts.
@@ -12,6 +12,8 @@ This document maps how the app moves between launcher states and pages.
 - `negotiate/{packageName}` - app gatekeeper ([gates.md](gates.md)); `NegotiationScreen` for a hidden app.
 - `extend/{packageName}` - expire→extend gate; same chat UI as other gates, nudge/extend script.
 - `karma`, `settings`, `logs` - auxiliary pages.
+- `help` - tutorial index (revisit onboarding explanations).
+- `help/{topicId}` - individual tutorial topic page (Previous/Next between topics).
 
 ## Startup and unlock entry
 
@@ -25,12 +27,14 @@ Start destination (in `MainActivity`) is chosen with this priority:
 
 Unlock trigger behavior:
 
-- `ScreenUnlockReceiver` listens for `ACTION_USER_PRESENT`.
+- `ScreenUnlockReceiver` listens for `ACTION_SCREEN_OFF` and `ACTION_USER_PRESENT`.
+- Screen-off records that the user was absent. `USER_PRESENT` is ignored unless that marker exists (overlay / other system UI can fire `USER_PRESENT` while the user was never away). Handling a real return consumes the marker.
+- If onboarding is not complete, unlock flow is skipped (stay on onboarding).
 - If QuickLaunch session is active, unlock flow is skipped (stay on app).
 - If quick-return threshold is met and a resumable saved session exists, unlock timer launch is skipped.
 - Otherwise it launches `MainActivity` with `EXTRA_FROM_UNLOCK=true`.
 
-When `MainActivity` handles `EXTRA_FROM_UNLOCK`, it navigates to `default` (not `timer`, `home`, or `assistant`).
+When `MainActivity` handles `EXTRA_FROM_UNLOCK`, it navigates to `default` (not `timer`, `home`, or `assistant`) only after onboarding is complete.
 
 ## In-app transitions
 
@@ -38,6 +42,7 @@ When `MainActivity` handles `EXTRA_FROM_UNLOCK`, it navigates to `default` (not 
 
 - **Todo row "Start"** -> `timer` with prefill minutes/reason.
 - **"something else?" button** -> `timer` without prefill.
+- **Info (i) button** -> `help` tutorial index.
 - **Resume previous session button** -> starts timer from saved remaining time and directly launches the previously used app intent.
 - **QuickLaunch tile tap** -> starts QuickLaunch session and directly launches the selected app intent.
 
@@ -54,6 +59,7 @@ When `MainActivity` handles `EXTRA_FROM_UNLOCK`, it navigates to `default` (not 
 - `home` -> `timer` via timer button.
 - `assistant` / `negotiate/{packageName}` -> `timer` via timer button.
 - `home`, `assistant`, `negotiate/*` can open `karma`, `settings`, and `logs`.
+- `home` can also open `help` (tutorial index).
 
 ## AI gates
 

@@ -29,6 +29,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stars
@@ -71,6 +72,7 @@ internal fun HomeTopBar(
     onSearchClick: () -> Unit,
     onLogsClick: () -> Unit,
     onKarmaClick: () -> Unit,
+    onTutorialClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onAiClick: () -> Unit,
 ) {
@@ -115,6 +117,9 @@ internal fun HomeTopBar(
         }
         IconButton(onClick = onKarmaClick) {
             Icon(Icons.Default.Stars, contentDescription = stringResource(R.string.karma), tint = MaterialTheme.colorScheme.onBackground)
+        }
+        IconButton(onClick = onTutorialClick) {
+            Icon(Icons.Default.Info, contentDescription = stringResource(R.string.tutorial), tint = MaterialTheme.colorScheme.onBackground)
         }
         IconButton(onClick = onSettingsClick) {
             Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings), tint = MaterialTheme.colorScheme.onBackground)

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stars
@@ -81,6 +82,7 @@ fun DefaultPageScreen(
     onOpenTimerPlain: () -> Unit,
     onOpenLogs: () -> Unit = {},
     onOpenKarma: () -> Unit = {},
+    onOpenTutorial: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     onStartTodo: (minutes: Int?, intent: String) -> Unit,
     onScreenShown: () -> Unit = {},
@@ -118,6 +120,13 @@ fun DefaultPageScreen(
                 Icon(
                     Icons.Default.Stars,
                     contentDescription = stringResource(R.string.karma),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(onClick = onOpenTutorial) {
+                Icon(
+                    Icons.Default.Info,
+                    contentDescription = stringResource(R.string.tutorial),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -165,7 +174,8 @@ fun DefaultPageScreen(
                 }
                 if (todoItems.isEmpty()) {
                     Text(
-                        stringResource(R.string.no_open_items_yet),
+                        stringResource(R.string.todo_empty_hint),
+                        style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
