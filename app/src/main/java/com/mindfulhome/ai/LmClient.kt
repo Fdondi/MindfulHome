@@ -1,13 +1,10 @@
 package com.mindfulhome.ai
 
-import com.google.ai.edge.litertlm.Conversation
-import com.google.ai.edge.litertlm.ToolSet
-
 /**
  * Narrow LLM surface used by [NegotiationManager].
  *
  * Conversation handles are opaque ([Any]) so unit tests can fake the client
- * without depending on LiteRT types.
+ * without depending on LM Playground types.
  */
 interface LmClient {
     val modelReady: Boolean
@@ -23,9 +20,9 @@ interface LmClient {
     fun closeConversation(conversation: Any)
 }
 
-/** Adapts [LiteRtLmManager] to [LmClient]. */
-class LiteRtLmClient(
-    private val manager: LiteRtLmManager,
+/** Adapts [LmPlaygroundManager] to [LmClient]. */
+class LmPlaygroundLmClient(
+    private val manager: LmPlaygroundManager,
 ) : LmClient {
     override val modelReady: Boolean
         get() = manager.modelReady
@@ -34,14 +31,14 @@ class LiteRtLmClient(
         systemInstruction: String,
         toolSets: List<*>,
     ): Any? {
-        val typed = toolSets.filterIsInstance<ToolSet>()
+        val typed = toolSets.filterIsInstance<LocalLmToolSet>()
         return manager.createConversation(systemInstruction, toolSets = typed)
     }
 
     override suspend fun sendMessage(conversation: Any, message: String): String =
-        manager.sendMessage(conversation as Conversation, message)
+        manager.sendMessage(conversation as LmPlaygroundSession, message)
 
     override fun closeConversation(conversation: Any) {
-        (conversation as Conversation).close()
+        // History lives in [LmPlaygroundSession]; dropping the handle is enough.
     }
 }

@@ -97,7 +97,7 @@
 tu teléfono y usar aplicaciones.</string>
     <string name="during_active_intervals_launcher_stays_hidden_af">Durante los intervalos activos, el iniciador permanece oculto después del cronómetro.</string>
     <string name="after_this_many_bubbles_switch_to_full_width_ban">Después de tantas burbujas, cambie a banners de ancho completo.</string>
-    <string name="private_works_offline_requires_downloading_a_mod">Privado, funciona sin conexión. Requiere descargar un modelo.</string>
+    <string name="private_works_offline_requires_downloading_a_mod">Privado, funciona sin conexión. Usa LM Playground en este dispositivo.</string>
     <string name="couldn_t_open_accessibility_settings_on_this_dev">No se pudo abrir la configuración de accesibilidad en este dispositivo.</string>
     <string name="enable_usage_access_to_read_digital_wellbeing_st">Habilite el acceso de uso para leer las estadísticas de bienestar digital.</string>
     <string name="no_google_account_found_opening_account_setup_u2">No se encontró ninguna cuenta de Google. Abriendo configuración de cuenta…</string>
@@ -161,7 +161,7 @@ tu teléfono y usar aplicaciones.</string>
     <string name="welcome_to_mindfulhome">Bienvenido a MindfulHome</string>
     <string name="when_must_you_be_done">¿Cuándo DEBES terminar?</string>
     <string name="focus_time_ai_first">Tiempo de concentración (IA-primero)</string>
-    <string name="on_device_litert_lm">En el dispositivo (LiteRT-LM)</string>
+    <string name="on_device_litert_lm">En el dispositivo (LM Playground)</string>
     <string name="strikes_before_hiding">Golpea antes de esconderse</string>
     <string name="type_your_response">Escribe tu respuesta...</string>
     <string name="what_is_your_mission">¿Cuál es tu misión?</string>
@@ -198,7 +198,9 @@ tu teléfono y usar aplicaciones.</string>
     <string name="banner_interval">Intervalo de banner</string>
     <string name="bubble_interval">Intervalo de burbuja</string>
     <string name="focus_time_gate">Puerta del tiempo de enfoque</string>
-    <string name="litert_lm_model">Modelo LiteRT-LM</string>
+    <string name="litert_lm_model">LM Playground</string>
+    <string name="lm_playground_server">LM Playground</string>
+    <string name="install_lm_playground">Instalar LM Playground</string>
     <string name="nudge_loop_tick">Empujar tic de bucle</string>
     <string name="remote_gemini">Remoto (Géminis)</string>
     <string name="app_gatekeeper">Guardián de la aplicación</string>

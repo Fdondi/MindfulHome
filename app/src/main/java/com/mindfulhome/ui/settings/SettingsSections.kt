@@ -4,8 +4,7 @@ import androidx.compose.ui.res.stringResource
 import com.mindfulhome.R
 
 import android.app.TimePickerDialog
-import android.content.ClipData
-import android.content.ClipboardManager
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -42,7 +41,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.credentials.exceptions.NoCredentialException
-import com.mindfulhome.ai.LiteRtLmManager
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
@@ -598,7 +596,7 @@ internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
 internal fun AiModelSection(
     aiMode: String,
     onAiModeChange: (String) -> Unit,
-    hasModel: Boolean,
+    playgroundInstalled: Boolean,
     isSignedIn: Boolean,
     signedInEmail: String?,
     onSignedInChange: (Boolean, String?) -> Unit,
@@ -684,7 +682,7 @@ internal fun AiModelSection(
     Spacer(modifier = Modifier.height(12.dp))
 
     if (aiMode == SettingsManager.AI_MODE_ON_DEVICE) {
-        OnDeviceModelCard(hasModel = hasModel)
+        OnDeviceModelCard(installed = playgroundInstalled)
     } else {
         BackendAccountCard(
             isSignedIn = isSignedIn,
@@ -700,20 +698,49 @@ internal fun AiModelSection(
 }
 
 @Composable
-private fun OnDeviceModelCard(hasModel: Boolean) {
+private fun OnDeviceModelCard(installed: Boolean) {
     val context = LocalContext.current
-    val sharedDir = LiteRtLmManager.SHARED_MODEL_DIR
-    SettingsCard(
-        title = stringResource(R.string.litert_lm_model),
-        description = onDeviceModelDescription(hasModel, sharedDir.absolutePath),
-        actionLabel = if (hasModel) null else stringResource(R.string.copy_adb_command),
-        onAction = {
-            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val cmd = "adb push model.litertlm ${sharedDir.absolutePath}/"
-            clipboard.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.adb_push_command), cmd))
-            Toast.makeText(context, context.getString(R.string.adb_command_copied_to_clipboard), Toast.LENGTH_SHORT).show()
-        },
-    )
+    val descriptionColor = if (installed) {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    } else {
+        MaterialTheme.colorScheme.error
+    }
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.lm_playground_server),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Medium,
+            )
+            Text(
+                text = onDeviceModelDescription(installed),
+                style = MaterialTheme.typography.bodySmall,
+                color = descriptionColor,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            if (!installed) {
+                TextButton(
+                    onClick = { openLmPlaygroundInstall(context) },
+                    modifier = Modifier.padding(top = 4.dp),
+                ) {
+                    Text(stringResource(R.string.install_lm_playground))
+                }
+            }
+        }
+    }
+}
+
+private fun openLmPlaygroundInstall(context: Context) {
+    lmPlaygroundInstallUris().forEach { uri ->
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+            return
+        } catch (_: ActivityNotFoundException) {
+            // Try the next URI (Play Store app → Play web → GitHub).
+        }
+    }
 }
 
 @Composable

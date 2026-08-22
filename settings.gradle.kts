@@ -25,3 +25,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MindfulHome"
 include(":app")
+include(":playground-api")

@@ -15,8 +15,15 @@
     <!-- Detect screen unlock -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- Draw overlay nudges on top of other apps -->
+    <!-- Required for overlay nudges on top of other apps -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Discover LM Playground's exported AIDL even without QUERY_ALL_PACKAGES. -->
+    <queries>
+        <intent>
+            <action android:name="com.druk.lmplayground.api.BIND_CHAT_SERVICE" />
+        </intent>
+    </queries>
 
     <application
         android:name=".MindfulHomeApp"
@@ -36,10 +43,6 @@
                 android:name="autoStoreLocales"
                 android:value="true" />
         </service>
-
-        <!-- Required for LiteRT-LM GPU backend -->
-        <uses-native-library android:name="libvndksupport.so" android:required="false"/>
-        <uses-native-library android:name="libOpenCL.so" android:required="false"/>
 
         <activity
             android:name=".MainActivity"

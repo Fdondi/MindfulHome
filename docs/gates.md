@@ -108,7 +108,7 @@ Keyword list: `PromptTemplates.requiresExtraConfirmation`.
 
 ## Offline fallback
 
-Without backend AI or on-device model, scripted replies in `PromptTemplates.fallback*` run the same round policy. Proceed still requires `fallbackShouldGrantAccess` (≥ 2 user rounds) before access is granted in fallback mode.
+Without backend AI or LM Playground, scripted replies in `PromptTemplates.fallback*` run the same round policy. Proceed still requires `fallbackShouldGrantAccess` (≥ 2 user rounds) before access is granted in fallback mode.
 
 ## Code map
 

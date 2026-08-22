@@ -97,7 +97,7 @@
 il telefono e utilizzare le app.</string>
     <string name="during_active_intervals_launcher_stays_hidden_af">Durante gli intervalli attivi, il launcher rimane nascosto dopo il timer.</string>
     <string name="after_this_many_bubbles_switch_to_full_width_ban">Dopo tutte queste bolle, passa ai banner a larghezza intera.</string>
-    <string name="private_works_offline_requires_downloading_a_mod">Privato, funziona offline. Richiede il download di un modello.</string>
+    <string name="private_works_offline_requires_downloading_a_mod">Privato, funziona offline. Usa LM Playground su questo dispositivo.</string>
     <string name="couldn_t_open_accessibility_settings_on_this_dev">Impossibile aprire le impostazioni di accessibilità su questo dispositivo.</string>
     <string name="enable_usage_access_to_read_digital_wellbeing_st">Abilita l\'accesso all\'utilizzo per leggere le statistiche del benessere digitale.</string>
     <string name="no_google_account_found_opening_account_setup_u2">Nessun account Google trovato. Apertura della configurazione dell\'account...</string>
@@ -161,7 +161,7 @@ il telefono e utilizzare le app.</string>
     <string name="welcome_to_mindfulhome">Benvenuti in MindfulHome</string>
     <string name="when_must_you_be_done">Quando DEVI finire?</string>
     <string name="focus_time_ai_first">Tempo di concentrazione (controllo AI)</string>
-    <string name="on_device_litert_lm">Sul dispositivo (LiteRT-LM)</string>
+    <string name="on_device_litert_lm">Sul dispositivo (LM Playground)</string>
     <string name="strikes_before_hiding">Colpisce prima di nascondersi</string>
     <string name="type_your_response">Scrivi la tua risposta...</string>
     <string name="what_is_your_mission">Qual è la tua missione?</string>
@@ -198,7 +198,9 @@ il telefono e utilizzare le app.</string>
     <string name="banner_interval">Intervallo di banner</string>
     <string name="bubble_interval">Intervallo di bolla</string>
     <string name="focus_time_gate">Porta temporale della messa a fuoco</string>
-    <string name="litert_lm_model">Modello LiteRT-LM</string>
+    <string name="litert_lm_model">LM Playground</string>
+    <string name="lm_playground_server">LM Playground</string>
+    <string name="install_lm_playground">Installa LM Playground</string>
     <string name="nudge_loop_tick">Tick ​​del ciclo di spinta</string>
     <string name="remote_gemini">Remoto (Gemelli)</string>
     <string name="app_gatekeeper">Guardiano dell\'app</string>

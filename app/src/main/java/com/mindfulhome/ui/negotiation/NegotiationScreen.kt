@@ -25,8 +25,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.credentials.exceptions.NoCredentialException
 import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.ai.GatekeeperUsageConfrontation
-import com.mindfulhome.ai.LiteRtLmManager
+import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.ai.NegotiationManager
+import com.mindfulhome.ui.settings.onDeviceModelLabel
 import com.mindfulhome.ai.NegotiationResult
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.ai.backend.ApiKeyManager
@@ -366,7 +367,7 @@ private fun rememberNegotiationSession(
     karmaManager: KarmaManager,
     unlockReason: String,
 ): NegotiationSession {
-    val lmManager = remember { LiteRtLmManager(context) }
+    val lmManager = remember { LmPlaygroundManager(context) }
     val useBackend = remember { SettingsManager.getAIMode(context) == SettingsManager.AI_MODE_BACKEND }
     val selectedModel = remember { SettingsManager.getBackendModel(context) }
     val backendAuth = remember {
@@ -452,7 +453,7 @@ private fun NegotiationScreenEffects(host: NegotiationHost) {
 }
 
 private class NegotiationSession(
-    val lmManager: LiteRtLmManager,
+    val lmManager: LmPlaygroundManager,
     val backendAuth: BackendAuthHelper,
     val developerLogsEnabled: Boolean,
     initialUseBackend: Boolean,
@@ -481,7 +482,11 @@ private class NegotiationSession(
     var pickerUseBackend by mutableStateOf(initialUseBackend)
     var pickerSelectedModel by mutableStateOf(initialSelectedModel)
     var modelLabel by mutableStateOf(
-        if (initialUseBackend) "$initialSelectedModel (checking auth...)" else "On-device (LiteRT-LM)",
+        if (initialUseBackend) {
+            "$initialSelectedModel (checking auth...)"
+        } else {
+            onDeviceModelLabel(LmPlaygroundManager.isInstalled(context))
+        },
     )
     var negotiationManager by mutableStateOf(
         NegotiationManager(
@@ -1025,7 +1030,7 @@ private suspend fun updateModelLabelForSession(session: NegotiationSession, cont
         val emailSuffix = if (signedInEmail != null) " · $signedInEmail" else ""
         "${session.sessionSelectedModel}$emailSuffix"
     } else {
-        "On-device (LiteRT-LM)"
+        onDeviceModelLabel(LmPlaygroundManager.isInstalled(context))
     }
 }
 
@@ -1243,7 +1248,7 @@ private fun applySessionModelPicker(
     session.modelLabel = if (session.sessionUseBackend) {
         "${session.sessionSelectedModel} (checking auth...)"
     } else {
-        "On-device (LiteRT-LM)"
+        onDeviceModelLabel(LmPlaygroundManager.isInstalled(context))
     }
     session.negotiationManager = NegotiationManager(
         context = context,

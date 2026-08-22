@@ -3,5 +3,5 @@
 # Keep Room entities
 -keep class com.mindfulhome.data.** { *; }
 
-# Keep LiteRT-LM classes
--keep class com.google.ai.edge.litertlm.** { *; }
+# Keep LM Playground AIDL stubs and client SDK
+-keep class com.druk.lmplayground.api.** { *; }

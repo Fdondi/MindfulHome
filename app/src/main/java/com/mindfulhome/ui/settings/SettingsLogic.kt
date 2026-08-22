@@ -2,6 +2,7 @@ package com.mindfulhome.ui.settings
 
 import android.content.Context
 import com.mindfulhome.R
+import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.settings.SettingsManager
 
 data class PermissionCardCopy(
@@ -139,16 +140,26 @@ fun suggestedNewInterval(
 fun parseNonNegativeIntOrEmpty(raw: String): String? =
     if (raw.isEmpty() || raw.all { it.isDigit() }) raw else null
 
-fun onDeviceModelDescription(hasModel: Boolean, sharedDirPath: String): String =
-    if (hasModel) {
-        "Model installed. AI features are active."
+fun onDeviceModelDescription(installed: Boolean): String =
+    if (installed) {
+        "LM Playground is installed. On-device conversations use its local models."
     } else {
-        "No model found. Download Gemma3-1B-IT (.litertlm) from " +
-            "HuggingFace (557 MB) and push it via adb:\n\n" +
-            "adb push model.litertlm $sharedDirPath/\n\n" +
-            "The app checks both $sharedDirPath/ and the app-private models dir. " +
-            "Without a model, fallback scripted responses will be used."
+        "LM Playground is not installed. Install it to run on-device AI. " +
+            "Without it, conversations use scripted fallbacks."
     }
+
+fun onDeviceModelLabel(installed: Boolean): String =
+    if (installed) {
+        "On-device (LM Playground)"
+    } else {
+        "On-device (LM Playground not installed)"
+    }
+
+fun lmPlaygroundInstallUris(): List<String> = listOf(
+    LmPlaygroundManager.PLAY_STORE_MARKET_URI,
+    LmPlaygroundManager.PLAY_STORE_WEB_URI,
+    LmPlaygroundManager.SOURCE_URL,
+)
 
 fun coerceDailySummaryRegenerateN(
     raw: String,

@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
-import com.mindfulhome.ai.LiteRtLmManager
+import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.service.ForegroundAppAccessibilityService
@@ -114,7 +114,7 @@ fun SettingsScreen(
         mutableStateOf(SettingsManager.hasCustomFocusGatePrompts(context))
     }
 
-    val hasModel = remember { LiteRtLmManager.hasModel(context) }
+    var playgroundInstalled by remember { mutableStateOf(LmPlaygroundManager.isInstalled(context)) }
 
     var aiMode by remember { mutableStateOf(SettingsManager.getAIMode(context)) }
     var backendModel by remember { mutableStateOf(SettingsManager.getBackendModel(context)) }
@@ -132,6 +132,7 @@ fun SettingsScreen(
                 ) == PackageManager.PERMISSION_GRANTED
         hasOverlayPermission = Settings.canDrawOverlays(context)
         accessibilityEnabled = ForegroundAppAccessibilityService.isEnabled(context)
+        playgroundInstalled = LmPlaygroundManager.isInstalled(context)
 
         skippedUsagePrompt = SettingsManager.isPermissionPromptSuppressed(
             context, SettingsManager.PermissionPrompt.USAGE_ACCESS
@@ -219,7 +220,7 @@ fun SettingsScreen(
             AiModelSection(
                 aiMode = aiMode,
                 onAiModeChange = { aiMode = it },
-                hasModel = hasModel,
+                playgroundInstalled = playgroundInstalled,
                 isSignedIn = isSignedIn,
                 signedInEmail = signedInEmail,
                 onSignedInChange = { signedIn, email ->

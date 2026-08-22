@@ -53,7 +53,7 @@ class LmClientFakeTest {
         // createConversation itself does not gate on modelReady in the interface
         assertNull(
             FakeLmClient(modelReady = false).let { fake ->
-                // Override to return null when not ready — simulate LiteRT behavior via subclass
+                // Override to return null when not ready — simulate manager gating via subclass
                 object : LmClient by fake {
                     override fun createConversation(systemInstruction: String, toolSets: List<*>): Any? =
                         if (modelReady) fake.createConversation(systemInstruction, toolSets) else null

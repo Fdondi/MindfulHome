@@ -33,6 +33,7 @@ Open the project in Android Studio. It will sync Gradle automatically. Use Run/D
 ### Modules
 
 - `:app` - MindfulHome launcher
+- `:playground-api` - vendored [LM Playground](https://github.com/Fdondi/LMPlayground-server) AIDL client
 
 ### CRAP metric (coverage × complexity)
 
@@ -68,14 +69,14 @@ See [docs/crap.md](docs/crap.md) for the formula, report paths, and optional thr
 
 ### AI Model (Optional)
 
-For on-device AI features, download a [Gemma3-1B-IT .litertlm model](https://huggingface.co/litert-community/Gemma3-1B-IT) (557 MB) and place it in the app's internal `files/models/` directory on the device.
+On-device conversations use [LM Playground](https://github.com/Fdondi/LMPlayground-server) over its exported AIDL API. Install that app, download a GGUF model in it, and enable the inference API (Settings → Advanced). MindfulHome warns in Settings if LM Playground is not installed.
 
-Without a model, MindfulHome uses scripted fallback responses that still create the same reflective friction.
+Without LM Playground (or a remote Gemini session), MindfulHome uses scripted fallback responses that still create the same reflective friction.
 
 ## Architecture
 
 - **Kotlin** + **Jetpack Compose** (Material 3)
-- **LiteRT-LM** for on-device LLM inference
+- **LM Playground** for on-device LLM inference (AIDL, OpenAI-shaped)
 - **Room** database for karma scores and usage history
 - **Foreground Service** for timer countdown and nudge notifications
 

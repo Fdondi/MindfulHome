@@ -56,17 +56,17 @@ class NegotiationManager(
     private val backendAuth: BackendAuthHelper? = null,
     private val backendModel: String = "gemini-2.5-flash",
 ) {
-    /** Convenience for existing call sites that hold a [LiteRtLmManager]. */
+    /** Convenience for existing call sites that hold a [LmPlaygroundManager]. */
     constructor(
         context: Context,
-        lmManager: LiteRtLmManager,
+        lmManager: LmPlaygroundManager,
         repository: AppRepository,
         karmaManager: KarmaManager,
         backendAuth: BackendAuthHelper? = null,
         backendModel: String = "gemini-2.5-flash",
     ) : this(
         context = context,
-        lmClient = LiteRtLmClient(lmManager),
+        lmClient = LmPlaygroundLmClient(lmManager),
         repository = repository,
         karmaManager = karmaManager,
         backendAuth = backendAuth,
@@ -148,6 +148,13 @@ class NegotiationManager(
             logFailPrefix = "backend gatekeeper",
         )?.let { return@withContext applyGatekeeperRoundPolicy(it) }
 
+        tryOnDeviceStart(
+            systemPrompt = systemPrompt,
+            userContext = userContext,
+            tools = makeGatekeeperTools(),
+            logSuccess = "on-device gatekeeper start succeeded",
+        )?.let { return@withContext applyGatekeeperRoundPolicy(it) }
+
         scriptedGatekeeperFallback(appName, confrontationBrief)
     }
 
@@ -189,6 +196,67 @@ class NegotiationManager(
         if (!NegotiationManagerLogic.isModelNotFoundCode((e as? BackendHttpException)?.code)) return null
         logDeveloper("block triggered: backend model not found ($backendModel)")
         return NegotiationResult(responseText = NegotiationManagerLogic.modelNotFoundMessage(backendModel))
+    }
+
+    private suspend fun tryOnDeviceStart(
+        systemPrompt: String,
+        userContext: String,
+        tools: LocalLmToolSet,
+        logSuccess: String,
+    ): NegotiationResult? {
+        if (!lmClient.modelReady) {
+            logDeveloper("fallback reason: LM Playground not ready for on-device start")
+            return null
+        }
+        return completeOnDeviceStart(systemPrompt, userContext, tools, logSuccess)
+    }
+
+    private suspend fun completeOnDeviceStart(
+        systemPrompt: String,
+        userContext: String,
+        tools: LocalLmToolSet,
+        logSuccess: String,
+    ): NegotiationResult? {
+        return try {
+            sendOnDeviceStart(systemPrompt, userContext, tools, logSuccess)
+        } catch (e: Exception) {
+            logOnDeviceStartFailure(e)
+            null
+        }
+    }
+
+    private suspend fun sendOnDeviceStart(
+        systemPrompt: String,
+        userContext: String,
+        tools: LocalLmToolSet,
+        logSuccess: String,
+    ): NegotiationResult? {
+        usingBackend = false
+        currentConversation = lmClient.createConversation(systemPrompt, toolSets = listOf(tools))
+        val conversation = currentConversation ?: return null
+        val response = lmClient.sendMessage(conversation, userContext)
+        if (currentType == NegotiationType.NUDGE) {
+            exchangeCount++
+        }
+        logDeveloper("$logSuccess (text=${quote(response)})")
+        return parseOnDeviceResult(response)
+    }
+
+    private fun logOnDeviceStartFailure(e: Exception) {
+        Log.w(TAG, "on-device start failed, falling back", e)
+        logDeveloper(
+            "fallback triggered: on-device start failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})",
+        )
+        currentConversation = null
+    }
+
+    private fun makeGatekeeperTools(): GatekeeperTools {
+        val tools = GatekeeperTools()
+        tools.setUsageHistoryResolver { limit ->
+            fetchUsageHistorySummary(currentAppPackage, limit)
+        }
+        gatekeeperTools = tools
+        return tools
     }
 
     private fun scriptedGatekeeperFallback(
@@ -247,6 +315,15 @@ class NegotiationManager(
             logFailPrefix = "Backend focus gate",
         )?.let { return@withContext applyGatekeeperRoundPolicy(it) }
 
+        val focusTools = FocusGateTools()
+        focusGateTools = focusTools
+        tryOnDeviceStart(
+            systemPrompt = systemPrompt,
+            userContext = userContext,
+            tools = focusTools,
+            logSuccess = "on-device focus gate start succeeded",
+        )?.let { return@withContext applyGatekeeperRoundPolicy(it) }
+
         val text = PromptTemplates.fallbackFocusGateResponse(
             durationMinutes = durationMinutes,
             declaredIntent = declaredIntent,
@@ -288,6 +365,15 @@ class NegotiationManager(
             tools = BackendToolDeclarations.NUDGE_TOOLS,
             logSuccess = "backend nudge start succeeded",
             logFailPrefix = "Backend nudge",
+        )?.let { return@withContext it }
+
+        val nudge = NudgeTools()
+        nudgeTools = nudge
+        tryOnDeviceStart(
+            systemPrompt = systemPrompt,
+            userContext = userContext,
+            tools = nudge,
+            logSuccess = "on-device nudge start succeeded",
         )?.let { return@withContext it }
 
         exchangeCount++
@@ -406,7 +492,9 @@ class NegotiationManager(
 
     private fun initGeneralChatOnDevice(systemPrompt: String) {
         if (!lmClient.modelReady) {
-            logDeveloper("fallback reason: on-device model not ready; general chat may use scripted responses")
+            logDeveloper(
+                "fallback reason: LM Playground not ready; general chat may use scripted responses",
+            )
             return
         }
         try {

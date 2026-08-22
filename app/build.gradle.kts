@@ -88,8 +88,8 @@ dependencies {
     // Drawable painter for Compose (render Android Drawables)
     implementation(libs.accompanist.drawablepainter)
 
-    // LiteRT-LM (on-device LLM inference)
-    implementation(libs.litertlm.android)
+    // LM Playground on-device inference (AIDL client)
+    implementation(project(":playground-api"))
 
     // Backend AI (OkHttp + JSON serialization)
     implementation(libs.okhttp)

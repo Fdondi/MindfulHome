@@ -97,7 +97,7 @@
 您的手机并使用应用程序。</string>
     <string name="during_active_intervals_launcher_stays_hidden_af">在活动间隔期间，启动器在计时器之后保持隐藏状态。</string>
     <string name="after_this_many_bubbles_switch_to_full_width_ban">经过这么多气泡后，切换到全角横幅。</string>
-    <string name="private_works_offline_requires_downloading_a_mod">私有，离线工作。需要下载模型。</string>
+    <string name="private_works_offline_requires_downloading_a_mod">私有，离线工作。使用本机上的 LM Playground。</string>
     <string name="couldn_t_open_accessibility_settings_on_this_dev">无法打开此设备上的辅助功能设置。</string>
     <string name="enable_usage_access_to_read_digital_wellbeing_st">启用使用访问权限以读取数字健康统计数据。</string>
     <string name="no_google_account_found_opening_account_setup_u2">未找到 Google 帐户。开设账户设置...</string>
@@ -161,7 +161,7 @@
     <string name="welcome_to_mindfulhome">欢迎来到正念之家</string>
     <string name="when_must_you_be_done">你什么时候必须完成？</string>
     <string name="focus_time_ai_first">专注时间（人工智能优先）</string>
-    <string name="on_device_litert_lm">设备上 (LiteRT-LM)</string>
+    <string name="on_device_litert_lm">设备上 (LM Playground)</string>
     <string name="strikes_before_hiding">隐藏之前先攻击</string>
     <string name="type_your_response">输入您的回复...</string>
     <string name="what_is_your_mission">你的使命是什么？</string>
@@ -198,7 +198,9 @@
     <string name="banner_interval">横幅间隔</string>
     <string name="bubble_interval">气泡间隔</string>
     <string name="focus_time_gate">聚焦时间门</string>
-    <string name="litert_lm_model">LiteRT-LM模型</string>
+    <string name="litert_lm_model">LM Playground</string>
+    <string name="lm_playground_server">LM Playground</string>
+    <string name="install_lm_playground">安装 LM Playground</string>
     <string name="nudge_loop_tick">微移循环刻度</string>
     <string name="remote_gemini">远程（双子座）</string>
     <string name="app_gatekeeper">应用看门人</string>

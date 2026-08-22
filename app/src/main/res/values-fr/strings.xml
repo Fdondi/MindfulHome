@@ -97,7 +97,7 @@
 votre téléphone et utiliser des applications.</string>
     <string name="during_active_intervals_launcher_stays_hidden_af">Pendant les intervalles actifs, le lanceur reste caché après la minuterie.</string>
     <string name="after_this_many_bubbles_switch_to_full_width_ban">Après autant de bulles, passez aux bannières pleine largeur.</string>
-    <string name="private_works_offline_requires_downloading_a_mod">Privé, fonctionne hors ligne. Nécessite le téléchargement d\'un modèle.</string>
+    <string name="private_works_offline_requires_downloading_a_mod">Privé, fonctionne hors ligne. Utilise LM Playground sur cet appareil.</string>
     <string name="couldn_t_open_accessibility_settings_on_this_dev">Impossible d\'ouvrir les paramètres d\'accessibilité sur cet appareil.</string>
     <string name="enable_usage_access_to_read_digital_wellbeing_st">Activez l\'accès à l\'utilisation pour lire les statistiques de bien-être numérique.</string>
     <string name="no_google_account_found_opening_account_setup_u2">Aucun compte Google trouvé. Ouverture de la configuration du compte…</string>
@@ -161,7 +161,7 @@ votre téléphone et utiliser des applications.</string>
     <string name="welcome_to_mindfulhome">Bienvenue sur MindfulHome</string>
     <string name="when_must_you_be_done">Quand DEVEZ-vous avoir terminé ?</string>
     <string name="focus_time_ai_first">Temps de mise au point (IA d\'abord)</string>
-    <string name="on_device_litert_lm">Sur l\'appareil (LiteRT-LM)</string>
+    <string name="on_device_litert_lm">Sur l\'appareil (LM Playground)</string>
     <string name="strikes_before_hiding">Frappe avant de se cacher</string>
     <string name="type_your_response">Tapez votre réponse...</string>
     <string name="what_is_your_mission">Quelle est votre mission ?</string>
@@ -198,7 +198,9 @@ votre téléphone et utiliser des applications.</string>
     <string name="banner_interval">Intervalle de bannière</string>
     <string name="bubble_interval">Intervalle de bulle</string>
     <string name="focus_time_gate">Porte temporelle de mise au point</string>
-    <string name="litert_lm_model">Modèle LiteRT-LM</string>
+    <string name="litert_lm_model">LM Playground</string>
+    <string name="lm_playground_server">LM Playground</string>
+    <string name="install_lm_playground">Installer LM Playground</string>
     <string name="nudge_loop_tick">Tique de boucle de déplacement</string>
     <string name="remote_gemini">À distance (Gémeaux)</string>
     <string name="app_gatekeeper">Gardien de l\'application</string>

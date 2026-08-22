@@ -17,7 +17,7 @@ import androidx.core.app.RemoteInput
 import com.mindfulhome.MainActivity
 import com.mindfulhome.MindfulHomeApp
 import com.mindfulhome.R
-import com.mindfulhome.ai.LiteRtLmManager
+import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.ai.NegotiationManager
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.BackendAuthHelper
@@ -123,7 +123,7 @@ class TimerService : Service() {
 
     // Nudge conversation: notification is the single chat surface.
     private var negotiationManager: NegotiationManager? = null
-    private var lmManager: LiteRtLmManager? = null
+    private var lmManager: LmPlaygroundManager? = null
     private val nudgeMessages = mutableListOf<NudgeMessage>()
     private var pendingExtensionMinutes: Int? = null
     private var pendingExtensionKeepBannerVisible: Boolean = true
@@ -1645,7 +1645,7 @@ class TimerService : Service() {
         logSessionEvent("Starting nudge conversation (package=${packageName.ifBlank { "<none>" }})")
 
         val ctx: Context = this
-        val lm = LiteRtLmManager(ctx)
+        val lm = LmPlaygroundManager(ctx)
         lmManager = lm
 
         val useBackend =
@@ -1683,6 +1683,7 @@ class TimerService : Service() {
 
         serviceScope.launch {
             try {
+                lm.initialize()
                 val result = manager.startNudgeNegotiation(
                     packageName, appLabel,
                     overrunMinutes = 0, nudgeCount = 0,

@@ -136,8 +136,11 @@ class SettingsLogicTest {
 
     @Test
     fun onDeviceModelAndDailySummaryHelpers() {
-        assertTrueContains(onDeviceModelDescription(true, "/x"), "installed")
-        assertTrueContains(onDeviceModelDescription(false, "/models"), "adb push")
+        assertTrueContains(onDeviceModelDescription(true), "installed")
+        assertTrueContains(onDeviceModelDescription(false), "not installed")
+        assertEquals("On-device (LM Playground)", onDeviceModelLabel(true))
+        assertTrueContains(onDeviceModelLabel(false), "not installed")
+        assertTrueContains(lmPlaygroundInstallUris().first(), "market://")
         assertEquals(0, coerceDailySummaryRegenerateN("abc", 0, 10))
         assertEquals(5, coerceDailySummaryRegenerateN("5", 0, 10))
         assertEquals(10, coerceDailySummaryRegenerateN("99", 0, 10))
