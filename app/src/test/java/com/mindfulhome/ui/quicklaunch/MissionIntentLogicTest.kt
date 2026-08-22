@@ -55,6 +55,27 @@ class MissionIntentLogicTest {
     }
 
     @Test
+    fun mapIntentSlotsToUi_showsFolderAppsFromPerPackageResolve() {
+        // Full catalog empty / loading: only slot members resolved.
+        val resolved = mapOf("a" to app("a"), "b" to app("b"))
+        val ui = mapIntentSlotsToUi(
+            listOf(
+                QuickLaunchSlot.Folder(
+                    "Focus",
+                    listOf(
+                        QuickLaunchFolderApp.unlimited("a"),
+                        QuickLaunchFolderApp.unlimited("b"),
+                    ),
+                ),
+            ),
+            resolved,
+        ) { emptyList() }
+        assertEquals(1, ui.size)
+        assertEquals("Focus", ui[0].folderName)
+        assertEquals(listOf("a", "b"), ui[0].apps.map { it.packageName })
+    }
+
+    @Test
     fun reconcileOpenIntentFolder_closesOnMissingOrSingle() {
         val open = QuickLaunchFolderOpen(0, listOf(app("a"), app("b")), "F", null)
         assertNull(reconcileOpenIntentFolder(open, emptyList(), emptyMap()) { emptyList() })

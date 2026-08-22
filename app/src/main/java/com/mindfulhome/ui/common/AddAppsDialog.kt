@@ -18,8 +18,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +42,7 @@ import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.data.AppSlotPlacement
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.icons.MaterialSymbolGlyph
+import kotlinx.coroutines.launch
 
 @Composable
 fun AddAppsDialog(
@@ -47,8 +51,11 @@ fun AddAppsDialog(
     placementByPackage: Map<String, List<AppSlotPlacement>>,
     onAdd: (String) -> Unit,
     onDismiss: () -> Unit,
+    onRefresh: (suspend () -> Unit)? = null,
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var refreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
     val filtered = remember(apps, searchQuery) {
         apps.filter {
             searchQuery.isBlank() ||
@@ -59,7 +66,44 @@ fun AddAppsDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         title = {
-            Text(title)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = title,
+                    modifier = Modifier.weight(1f),
+                )
+                if (onRefresh != null) {
+                    if (refreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier
+                                .padding(end = 4.dp)
+                                .size(24.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        IconButton(
+                            onClick = {
+                                if (refreshing) return@IconButton
+                                refreshing = true
+                                scope.launch {
+                                    try {
+                                        onRefresh()
+                                    } finally {
+                                        refreshing = false
+                                    }
+                                }
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.refresh_app_list),
+                            )
+                        }
+                    }
+                }
+            }
         },
         text = {
             LazyColumn(

@@ -206,6 +206,7 @@ votre téléphone et utiliser des applications.</string>
     <string name="drop_to_remove">Déposer pour supprimer</string>
     <string name="google_account">Compte Google</string>
     <string name="search_apps">Rechercher des applications...</string>
+    <string name="refresh_app_list">Actualiser la liste des applications</string>
     <string name="set_as_default">Définir par défaut</string>
     <string name="hard_deadline">un délai serré ?</string>
     <string name="back_to_timer">Retour au minuteur</string>

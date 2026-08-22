@@ -1,9 +1,10 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.99.1"
+    const val versionName = "0.100.0"
 }
 
+// 0.100.0 - App catalog: per-package folder resolve, atomic refresh, manual picker refresh
 // 0.99.1 - QL: known media packages take precedence over IMAGE/VIDEO category ignore
 // 0.99.0 - Never-block: remove ShouldYouBeHere; QL grace→birds; auto-unrestrict preinstalled (ex media); Karma search
 // 0.98.3 - Conversation grace only while banner reply field is focused (not bird tap)

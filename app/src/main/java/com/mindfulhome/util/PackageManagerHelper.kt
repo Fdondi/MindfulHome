@@ -2,6 +2,7 @@ package com.mindfulhome.util
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
@@ -12,6 +13,9 @@ import com.mindfulhome.model.AppInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,6 +40,15 @@ object PackageManagerHelper {
     @Volatile
     private var cachedLabels: Map<String, String> = emptyMap()
 
+    /** Bumps when [cachedEntries] is replaced; Compose can collect and [peekInstalledApps]. */
+    private val _catalogGeneration = MutableStateFlow(0)
+    val catalogGeneration: StateFlow<Int> = _catalogGeneration.asStateFlow()
+
+    fun hasCatalog(): Boolean = cachedEntries != null
+
+    fun peekInstalledApps(context: Context): List<AppInfo> =
+        cachedEntries?.toAppInfoList(context).orEmpty()
+
     fun precomputeInstalledApps(context: Context) {
         if (cachedEntries != null) return
         preloadScope.launch {
@@ -52,14 +65,44 @@ object PackageManagerHelper {
             if (!forceRefresh) {
                 cachedEntries?.let { return@withLock it.toAppInfoList(context) }
             }
+            // Load first, then swap — never clear the previous catalog before the new one is ready.
             val loaded = withContext(Dispatchers.IO) {
                 loadInstalledApps(context)
             }
             cachedEntries = loaded
             cachedLabels = loaded.associate { it.packageName to it.label }
+            _catalogGeneration.value = _catalogGeneration.value + 1
             loaded.toAppInfoList(context)
         }
     }
+
+    /**
+     * Resolve a single package for folder/strip tiles without waiting on the full catalog.
+     * Prefers the in-memory catalog when present; otherwise queries PackageManager.
+     * Returns null if the package is not installed.
+     */
+    fun resolveApp(context: Context, packageName: String): AppInfo? {
+        cachedEntries?.firstOrNull { it.packageName == packageName }?.let { entry ->
+            return listOf(entry).toAppInfoList(context).first()
+        }
+        return try {
+            val pm = context.packageManager
+            val appInfo = pm.getApplicationInfo(packageName, 0)
+            val label = pm.getApplicationLabel(appInfo).toString()
+            cachedLabels = cachedLabels + (packageName to label)
+            AppInfo(
+                packageName = packageName,
+                label = label,
+                icon = pm.getApplicationIcon(appInfo),
+                isSystemApp = appInfo.flags and ApplicationInfo.FLAG_SYSTEM != 0,
+            )
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
+        }
+    }
+
+    fun resolveAppsByPackage(context: Context, packages: Collection<String>): Map<String, AppInfo> =
+        packages.mapNotNull { pkg -> resolveApp(context, pkg)?.let { pkg to it } }.toMap()
 
     private fun loadInstalledApps(context: Context): List<CachedAppEntry> {
         val pm = context.packageManager
@@ -81,7 +124,7 @@ object PackageManagerHelper {
                     iconState = icon.constantState,
                     iconFallback = if (icon.constantState == null) icon else null,
                     isSystemApp = resolveInfo.activityInfo.applicationInfo.flags and
-                            android.content.pm.ApplicationInfo.FLAG_SYSTEM != 0
+                            ApplicationInfo.FLAG_SYSTEM != 0
                 )
             }
             .sortedBy { it.label.lowercase() }

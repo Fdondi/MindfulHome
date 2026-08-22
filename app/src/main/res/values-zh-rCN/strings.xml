@@ -206,6 +206,7 @@
     <string name="drop_to_remove">放下即可删除</string>
     <string name="google_account">谷歌帐户</string>
     <string name="search_apps">搜索应用程序...</string>
+    <string name="refresh_app_list">刷新应用列表</string>
     <string name="set_as_default">设置为默认值</string>
     <string name="hard_deadline">硬期限？</string>
     <string name="back_to_timer">返回计时器</string>

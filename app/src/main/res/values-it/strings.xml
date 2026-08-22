@@ -206,6 +206,7 @@ il telefono e utilizzare le app.</string>
     <string name="drop_to_remove">Rilascia per rimuovere</string>
     <string name="google_account">Account Google</string>
     <string name="search_apps">Cerca app...</string>
+    <string name="refresh_app_list">Aggiorna elenco app</string>
     <string name="set_as_default">Imposta come predefinito</string>
     <string name="hard_deadline">scadenza difficile?</string>
     <string name="back_to_timer">Torniamo al cronometro</string>

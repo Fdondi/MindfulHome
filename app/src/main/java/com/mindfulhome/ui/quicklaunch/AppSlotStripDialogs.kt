@@ -20,6 +20,7 @@ import com.mindfulhome.locale.IntentFolderNames
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog
 import com.mindfulhome.ui.icons.MaterialSymbolPickerDialog
+import com.mindfulhome.util.PackageManagerHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -215,6 +216,7 @@ private fun AppSlotStripAddDialog(
     onDismiss: () -> Unit,
 ) {
     val addTitle = if (addDialogFolderSlotIndex != null) copy.addToFolderTitle else copy.addDialogTitle
+    val context = LocalContext.current
     AddAppsDialog(
         title = addTitle,
         apps = installedApps,
@@ -225,6 +227,9 @@ private fun AppSlotStripAddDialog(
             }
         },
         onDismiss = onDismiss,
+        onRefresh = {
+            PackageManagerHelper.getInstalledApps(context, forceRefresh = true)
+        },
     )
 }
 

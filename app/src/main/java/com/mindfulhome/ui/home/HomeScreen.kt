@@ -52,7 +52,8 @@ fun HomeScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
-    var allApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+    val catalogGen by PackageManagerHelper.catalogGeneration.collectAsState()
+    val allApps = remember(catalogGen) { PackageManagerHelper.peekInstalledApps(context) }
     var showSearch by remember { mutableStateOf(false) }
     var favoritesStripExpanded by remember { mutableStateOf(false) }
     var suggestedApps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
@@ -81,7 +82,6 @@ fun HomeScreen(
         dragDropState = dragDropState,
         gridItems = gridItems,
         sessionHandle = sessionHandle,
-        onAllAppsLoaded = { allApps = it },
         onSuggestedApps = { suggestedApps = it },
     )
 
@@ -169,7 +169,6 @@ private fun HomeScreenEffects(
     dragDropState: DragDropState,
     gridItems: SnapshotStateList<HomeGridItem>,
     sessionHandle: SessionLogger.SessionHandle?,
-    onAllAppsLoaded: (List<AppInfo>) -> Unit,
     onSuggestedApps: (List<AppInfo>) -> Unit,
 ) {
     val context = LocalContext.current
@@ -204,7 +203,6 @@ private fun HomeScreenEffects(
         Log.d("HomeScreen", "Loading installed apps from shared cache...")
         val apps = PackageManagerHelper.getInstalledApps(context)
         Log.d("HomeScreen", "Loaded ${apps.size} apps")
-        onAllAppsLoaded(apps)
     }
 }
 

@@ -206,6 +206,7 @@ tu teléfono y usar aplicaciones.</string>
     <string name="drop_to_remove">Soltar para eliminar</string>
     <string name="google_account">Cuenta de Google</string>
     <string name="search_apps">Buscar aplicaciones...</string>
+    <string name="refresh_app_list">Actualizar lista de aplicaciones</string>
     <string name="set_as_default">Establecer como predeterminado</string>
     <string name="hard_deadline">¿plazo duro?</string>
     <string name="back_to_timer">Volver al cronómetro</string>

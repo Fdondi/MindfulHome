@@ -12,6 +12,17 @@ fun missingStripPackages(
 ): List<String> =
     rawSlots.flatMap { it.flattenPackages() }.filter { it !in installed }
 
+/** True only after a successful full catalog scan with at least one package. */
+fun shouldPruneUninstalledPackages(catalogLoaded: Boolean, installedPackageCount: Int): Boolean =
+    catalogLoaded && installedPackageCount > 0
+
+/**
+ * UI catalog binding: keep [shown] until a new [ready] snapshot is available.
+ * Refresh must never clear the list before the replacement arrives.
+ */
+fun catalogAppsForDisplay(shown: List<AppInfo>, ready: List<AppInfo>?): List<AppInfo> =
+    ready ?: shown
+
 suspend fun AppRepository.removeFromStrip(kind: AppSlotStripKind, packageName: String) {
     when (kind) {
         AppSlotStripKind.QuickLaunch -> removeFromQuickLaunch(packageName)

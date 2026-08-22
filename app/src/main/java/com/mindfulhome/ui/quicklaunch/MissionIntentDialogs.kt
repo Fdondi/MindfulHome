@@ -24,6 +24,7 @@ import com.mindfulhome.model.AppInfo
 import com.mindfulhome.ui.common.AddAppsDialog
 import com.mindfulhome.ui.common.AddFolderAppDialog
 import com.mindfulhome.ui.icons.MaterialSymbolPickerDialog
+import com.mindfulhome.util.PackageManagerHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -141,6 +142,7 @@ private fun MissionIntentCreateDialogs(
         },
     )
     if (showAddDialog) {
+        val context = LocalContext.current
         AddAppsDialog(
             title = stringResource(R.string.add_app_to_intent_folder),
             apps = installedApps,
@@ -154,6 +156,9 @@ private fun MissionIntentCreateDialogs(
             onDismiss = {
                 onShowAddDialogChange(false)
                 onAddDialogFolderSlotIndexChange(null)
+            },
+            onRefresh = {
+                PackageManagerHelper.getInstalledApps(context, forceRefresh = true)
             },
         )
     }

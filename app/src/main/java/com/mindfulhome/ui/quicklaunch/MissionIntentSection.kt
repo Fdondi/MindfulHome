@@ -41,8 +41,13 @@ fun MissionIntentSection(
     val rawSlots by repository.quickLaunchSlots().collectAsState(initial = emptyList())
     val stripPackages = remember(rawSlots) { rawSlots.flatMap { it.flattenAllowedPackages() }.toSet() }
     val placementByPackage = remember(rawSlots) { placementsByPackage(rawSlots) }
+    val slotPackages = remember(rawSlots) { rawSlots.flatMap { it.flattenPackages() }.toSet() }
+    val catalogGen by PackageManagerHelper.catalogGeneration.collectAsState()
+    val installedApps = remember(catalogGen) { PackageManagerHelper.peekInstalledApps(context) }
+    val resolvedByPkg = remember(slotPackages, catalogGen) {
+        PackageManagerHelper.resolveAppsByPackage(context, slotPackages)
+    }
 
-    var installedApps by remember { mutableStateOf(emptyList<AppInfo>()) }
     var showAddDialog by remember { mutableStateOf(false) }
     var addDialogFolderSlotIndex by remember { mutableStateOf<Int?>(null) }
     var pendingFolderApp by remember { mutableStateOf<AppInfo?>(null) }
@@ -56,27 +61,36 @@ fun MissionIntentSection(
     var folderSymbolInitial by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
-        installedApps = PackageManagerHelper.getInstalledApps(context)
+        PackageManagerHelper.getInstalledApps(context)
+    }
+
+    LaunchedEffect(installedApps) {
+        if (!PackageManagerHelper.hasCatalog()) return@LaunchedEffect
         repository.ensureIntentQuickLaunchInitialized(installedApps.map { it.packageName }.toSet())
     }
 
     LaunchedEffect(rawSlots, installedApps) {
+        if (!shouldPruneUninstalledPackages(
+                PackageManagerHelper.hasCatalog(),
+                installedApps.size,
+            )
+        ) {
+            return@LaunchedEffect
+        }
         missingPackagesInSlots(rawSlots, installedApps.map { it.packageName }.toSet())
             .forEach { pkg -> repository.removeFromQuickLaunch(pkg) }
     }
 
-    LaunchedEffect(rawSlots, installedApps, folderToShow?.slotIndex) {
+    LaunchedEffect(rawSlots, resolvedByPkg, folderToShow?.slotIndex) {
         val open = folderToShow ?: return@LaunchedEffect
-        val map = installedApps.associateBy { it.packageName }
-        folderToShow = reconcileOpenIntentFolder(open, rawSlots, map) { folder ->
-            folder.shortcuts.map { ShortcutUiHelper.pinnedShortcutToAppInfo(context, it, map) }
+        folderToShow = reconcileOpenIntentFolder(open, rawSlots, resolvedByPkg) { folder ->
+            folder.shortcuts.map { ShortcutUiHelper.pinnedShortcutToAppInfo(context, it, resolvedByPkg) }
         }
     }
 
-    val slotUiRows = remember(rawSlots, installedApps) {
-        val map = installedApps.associateBy { it.packageName }
-        mapIntentSlotsToUi(rawSlots, map) { folder ->
-            folder.shortcuts.map { ShortcutUiHelper.pinnedShortcutToAppInfo(context, it, map) }
+    val slotUiRows = remember(rawSlots, resolvedByPkg) {
+        mapIntentSlotsToUi(rawSlots, resolvedByPkg) { folder ->
+            folder.shortcuts.map { ShortcutUiHelper.pinnedShortcutToAppInfo(context, it, resolvedByPkg) }
         }
     }
 

@@ -206,6 +206,7 @@ Ihr Telefon und nutzen Sie Apps.</string>
     <string name="drop_to_remove">Zum Entfernen ablegen</string>
     <string name="google_account">Google-Konto</string>
     <string name="search_apps">Apps suchen...</string>
+    <string name="refresh_app_list">App-Liste aktualisieren</string>
     <string name="set_as_default">Als Standard festlegen</string>
     <string name="hard_deadline">harte Frist?</string>
     <string name="back_to_timer">Zurück zum Timer</string>

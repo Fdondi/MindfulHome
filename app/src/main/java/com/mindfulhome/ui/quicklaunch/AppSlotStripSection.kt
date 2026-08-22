@@ -46,8 +46,12 @@ fun AppSlotStripSection(
     val scope = rememberCoroutineScope()
     val rawSlots by repository.stripSlotsFlow(kind).collectAsState(initial = emptyList())
     val stripPackages = remember(rawSlots) { rawSlots.flatMap { it.flattenPackages() }.toSet() }
+    val catalogGen by PackageManagerHelper.catalogGeneration.collectAsState()
+    val installedApps = remember(catalogGen) { PackageManagerHelper.peekInstalledApps(context) }
+    val resolvedByPkg = remember(stripPackages, catalogGen) {
+        PackageManagerHelper.resolveAppsByPackage(context, stripPackages)
+    }
 
-    var installedApps by remember { mutableStateOf(emptyList<AppInfo>()) }
     var showAddDialog by remember { mutableStateOf(false) }
     var addDialogFolderSlotIndex by remember { mutableStateOf<Int?>(null) }
     var folderToShow by remember { mutableStateOf<QuickLaunchFolderOpen?>(null) }
@@ -61,14 +65,13 @@ fun AppSlotStripSection(
         kind = kind,
         rawSlots = rawSlots,
         installedApps = installedApps,
+        resolvedByPkg = resolvedByPkg,
         folderToShow = folderToShow,
-        onInstalledApps = { installedApps = it },
         onFolderToShowChange = { folderToShow = it },
-        loadInstalled = { PackageManagerHelper.getInstalledApps(context) },
     )
 
-    val slotUiRows = remember(rawSlots, installedApps) {
-        mapSlotsToUi(rawSlots, installedApps.associateBy { it.packageName })
+    val slotUiRows = remember(rawSlots, resolvedByPkg) {
+        mapSlotsToUi(rawSlots, resolvedByPkg)
     }
     val copy = remember(kind) { stripCopy(kind) }
 
@@ -124,25 +127,31 @@ private fun AppSlotStripEffects(
     kind: AppSlotStripKind,
     rawSlots: List<QuickLaunchSlot>,
     installedApps: List<AppInfo>,
+    resolvedByPkg: Map<String, AppInfo>,
     folderToShow: QuickLaunchFolderOpen?,
-    onInstalledApps: (List<AppInfo>) -> Unit,
     onFolderToShowChange: (QuickLaunchFolderOpen?) -> Unit,
-    loadInstalled: suspend () -> List<AppInfo>,
 ) {
+    val context = LocalContext.current
     LaunchedEffect(Unit) {
-        onInstalledApps(loadInstalled())
+        PackageManagerHelper.getInstalledApps(context)
     }
+    // Prune only after a successful full catalog scan — never against an empty/loading list.
     LaunchedEffect(rawSlots, installedApps, kind) {
+        if (!shouldPruneUninstalledPackages(
+                PackageManagerHelper.hasCatalog(),
+                installedApps.size,
+            )
+        ) {
+            return@LaunchedEffect
+        }
         val installed = installedApps.map { it.packageName }.toSet()
-        if (installed.isEmpty()) return@LaunchedEffect
         missingStripPackages(rawSlots, installed).forEach { pkg ->
             repository.removeFromStrip(kind, pkg)
         }
     }
-    LaunchedEffect(rawSlots, installedApps, folderToShow?.slotIndex) {
+    LaunchedEffect(rawSlots, resolvedByPkg, folderToShow?.slotIndex) {
         val open = folderToShow ?: return@LaunchedEffect
-        val installed = installedApps.associateBy { it.packageName }
-        onFolderToShowChange(reconcileOpenFolder(open, rawSlots, installed))
+        onFolderToShowChange(reconcileOpenFolder(open, rawSlots, resolvedByPkg))
     }
 }
 

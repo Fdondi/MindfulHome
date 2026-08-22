@@ -103,6 +103,7 @@
     <string name="remove">削除</string>
     <string name="save">保存</string>
     <string name="search_apps">アプリを検索…</string>
+    <string name="refresh_app_list">アプリ一覧を更新</string>
     <string name="search_apps_2">アプリを検索</string>
     <string name="settings">設定</string>
     <string name="settings_language">言語</string>

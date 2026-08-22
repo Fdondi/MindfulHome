@@ -206,6 +206,7 @@ your phone and use apps.</string>
     <string name="drop_to_remove">Drop to remove</string>
     <string name="google_account">Google Account</string>
     <string name="search_apps">Search apps...</string>
+    <string name="refresh_app_list">Refresh app list</string>
     <string name="set_as_default">Set as default</string>
     <string name="hard_deadline">hard deadline?</string>
     <string name="back_to_timer">Back to timer</string>

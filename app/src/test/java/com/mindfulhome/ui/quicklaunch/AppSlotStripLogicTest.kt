@@ -4,6 +4,7 @@ import com.mindfulhome.data.QuickLaunchFolderApp
 import com.mindfulhome.data.QuickLaunchSlot
 import com.mindfulhome.model.AppInfo
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -148,5 +149,46 @@ class AppSlotStripLogicTest {
         )
         assertEquals(listOf("gone"), missingStripPackages(raw, setOf("a", "b")))
         assertTrue(missingStripPackages(raw, setOf("a", "b", "gone")).isEmpty())
+    }
+
+    @Test
+    fun mapSlotsToUi_usesPerPackageResolveWithoutFullCatalog() {
+        // Simulates folder binding via resolveApp while the full catalog is still empty/loading.
+        val resolvedOnly = mapOf(
+            "a" to app("a"),
+            "b" to app("b"),
+        )
+        val raw = listOf(
+            QuickLaunchSlot.Folder(
+                name = "Pair",
+                apps = listOf(
+                    QuickLaunchFolderApp.unlimited("a"),
+                    QuickLaunchFolderApp.unlimited("b"),
+                ),
+            ),
+        )
+        val ui = mapSlotsToUi(raw, resolvedOnly)
+        assertEquals(1, ui.size)
+        assertEquals(listOf("a", "b"), ui[0].apps.map { it.packageName })
+        assertEquals("Pair", ui[0].folderName)
+    }
+
+    @Test
+    fun shouldPruneUninstalledPackages_requiresLoadedNonEmptyCatalog() {
+        assertFalse(shouldPruneUninstalledPackages(catalogLoaded = false, installedPackageCount = 0))
+        assertFalse(shouldPruneUninstalledPackages(catalogLoaded = false, installedPackageCount = 10))
+        assertFalse(shouldPruneUninstalledPackages(catalogLoaded = true, installedPackageCount = 0))
+        assertTrue(shouldPruneUninstalledPackages(catalogLoaded = true, installedPackageCount = 1))
+    }
+
+    @Test
+    fun catalogDisplayKeepsPreviousUntilRefreshCompletes() {
+        val previous = listOf(app("a"), app("b"))
+        // While refresh is in flight there is no new snapshot yet — keep showing previous.
+        assertEquals(previous, catalogAppsForDisplay(previous, ready = null))
+        val next = listOf(app("a"), app("b"), app("c"))
+        assertEquals(next, catalogAppsForDisplay(previous, ready = next))
+        // Never substitute an empty list mid-refresh via a null ready snapshot.
+        assertEquals(previous, catalogAppsForDisplay(previous, ready = null))
     }
 }
