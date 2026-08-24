@@ -76,7 +76,7 @@
         </activity>
 
         <activity
-            android:name=".GoogleSignInActivity"
+            android:name=".ai.GoogleSignInActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"

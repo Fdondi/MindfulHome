@@ -6,8 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import com.mindfulhome.MainActivity
-import com.mindfulhome.ai.backend.AuthManager
-import kotlinx.coroutines.CompletableDeferred
+import com.mindfulhome.ai.backend.ApiKeyManager
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertTrue
@@ -16,8 +15,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.FileInputStream
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Reproduces pre-Android 14 Credential Manager reporting user-cancel when this
@@ -50,9 +47,11 @@ class GoogleSignInAndroid10InstrumentedTest {
         val scenario = ActivityScenario.launch(MainActivity::class.java)
         try {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-            val deferred = startProductionSignIn(scenario)
+            scenario.onActivity { activity ->
+                GoogleSignInActivity.start(activity, forceAccountPicker = true)
+            }
             Thread.sleep(PROBE_MS)
-            failIfFalseCancel(snapshot(deferred), "after GIS launch")
+            failIfFalseCancel(snapshot(), "after GIS launch")
         } finally {
             scenario.close()
         }
@@ -68,35 +67,12 @@ private data class SignInSnapshot(
     val windowXml: String,
 )
 
-private fun startProductionSignIn(
-    scenario: ActivityScenario<MainActivity>,
-): CompletableDeferred<AuthManager.SignInResult?> {
-    val deferred = CompletableDeferred<AuthManager.SignInResult?>()
-    val started = CountDownLatch(1)
-    scenario.onActivity { activity ->
-        Thread {
-            runBlocking {
-                started.countDown()
-                try {
-                    deferred.complete(
-                        AuthManager.signIn(activity, forceAccountPicker = true),
-                    )
-                } catch (error: Throwable) {
-                    deferred.completeExceptionally(error)
-                }
-            }
-        }.start()
-    }
-    assertTrue("sign-in thread did not start", started.await(5, TimeUnit.SECONDS))
-    return deferred
-}
-
-private fun snapshot(deferred: CompletableDeferred<AuthManager.SignInResult?>): SignInSnapshot {
-    val gotCredential = deferred.isCompleted &&
-        runCatching { runBlocking { deferred.await() } }.getOrNull() != null
+private fun snapshot(): SignInSnapshot {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val gotCredential = runCatching { runBlocking { ApiKeyManager.isSignedIn(context) } }.getOrDefault(false)
     return SignInSnapshot(
         gotCredential = gotCredential,
-        cancellationLogged = AuthManagerLogic.logContainsCredentialCancellation(
+        cancellationLogged = PreUSignInProbe.logContainsCredentialCancellation(
             execShell("logcat -d"),
         ),
         activityDump = execShell("dumpsys activity activities"),
@@ -105,16 +81,16 @@ private fun snapshot(deferred: CompletableDeferred<AuthManager.SignInResult?>): 
 }
 
 private fun failIfFalseCancel(snap: SignInSnapshot, phase: String) {
-    val pickerShowing = AuthManagerLogic.dumpsysShowsGoogleIdPicker(snap.activityDump)
-    val verdict = AuthManagerLogic.preUSignInProbeVerdict(
+    val pickerShowing = PreUSignInProbe.dumpsysShowsGoogleIdPicker(snap.activityDump)
+    val verdict = PreUSignInProbe.verdict(
         cancellationLogged = snap.cancellationLogged,
         signInUiShowing = pickerShowing,
-        emptyHostOnly = AuthManagerLogic.dumpsysShowsEmptySignInHost(snap.activityDump),
+        emptyHostOnly = PreUSignInProbe.dumpsysShowsEmptySignInHost(snap.activityDump),
         gotCredential = snap.gotCredential,
-        accountChooserVisible = AuthManagerLogic.windowDumpShowsAccountChooser(snap.windowXml),
+        accountChooserVisible = PreUSignInProbe.windowDumpShowsAccountChooser(snap.windowXml),
     )
-    if (verdict == AuthManagerLogic.PreUSignInProbeVerdict.UiStillShowing ||
-        verdict == AuthManagerLogic.PreUSignInProbeVerdict.SignedIn
+    if (verdict == PreUSignInProbe.Verdict.UiStillShowing ||
+        verdict == PreUSignInProbe.Verdict.SignedIn
     ) {
         return
     }

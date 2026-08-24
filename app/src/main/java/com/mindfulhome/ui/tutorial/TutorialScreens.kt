@@ -31,15 +31,46 @@ import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.annotation.ArrayRes
+import androidx.annotation.StringRes
 import com.mindfulhome.R
 
-enum class TutorialTopic(val id: String) {
-    WELCOME("welcome"),
-    HOW_IT_WORKS("how_it_works"),
-    APP_TIERS("app_tiers"),
-    LAYOUT("layout"),
-    TODO("todo"),
-    AI_MODEL("ai_model"),
+enum class TutorialTopic(
+    val id: String,
+    @StringRes val titleRes: Int,
+    @StringRes val paragraphRes: Int? = null,
+    @ArrayRes val bulletsRes: Int? = null,
+) {
+    WELCOME(
+        id = "welcome",
+        titleRes = R.string.welcome_to_mindfulhome,
+        paragraphRes = R.string.a_home_launcher_that_helps_you_use_your_phone_mo,
+    ),
+    HOW_IT_WORKS(
+        id = "how_it_works",
+        titleRes = R.string.how_it_works,
+        bulletsRes = R.array.onboarding_philosophy_bullets,
+    ),
+    APP_TIERS(
+        id = "app_tiers",
+        titleRes = R.string.onboarding_app_tiers_title,
+        bulletsRes = R.array.onboarding_app_tiers_bullets,
+    ),
+    LAYOUT(
+        id = "layout",
+        titleRes = R.string.onboarding_layout_title,
+        bulletsRes = R.array.onboarding_layout_bullets,
+    ),
+    TODO(
+        id = "todo",
+        titleRes = R.string.onboarding_todo_title,
+        bulletsRes = R.array.onboarding_todo_bullets,
+    ),
+    AI_MODEL(
+        id = "ai_model",
+        titleRes = R.string.ai_model_options,
+        paragraphRes = R.string.onboarding_ai_model_body,
+    ),
     ;
 
     companion object {
@@ -97,7 +128,7 @@ fun TutorialIndexScreen(
             TutorialTopic.entries.forEachIndexed { index, topic ->
                 if (index > 0) HorizontalDivider()
                 TutorialIndexRow(
-                    title = stringResource(topicTitleRes(topic)),
+                    title = stringResource(topic.titleRes),
                     onClick = { onOpenTopic(topic) },
                 )
             }
@@ -148,7 +179,7 @@ fun TutorialTopicScreen(
         TopAppBar(
             title = {
                 Text(
-                    stringResource(topicTitleRes(topic)),
+                    stringResource(topic.titleRes),
                     fontWeight = FontWeight.SemiBold,
                 )
             },
@@ -206,26 +237,14 @@ fun TutorialTopicScreen(
 
 @Composable
 private fun TutorialTopicBody(topic: TutorialTopic) {
-    when (topic) {
-        TutorialTopic.WELCOME -> {
-            Text(
-                text = stringResource(R.string.a_home_launcher_that_helps_you_use_your_phone_mo),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        TutorialTopic.HOW_IT_WORKS -> TutorialBulletList(R.array.onboarding_philosophy_bullets)
-        TutorialTopic.APP_TIERS -> TutorialBulletList(R.array.onboarding_app_tiers_bullets)
-        TutorialTopic.LAYOUT -> TutorialBulletList(R.array.onboarding_layout_bullets)
-        TutorialTopic.TODO -> TutorialBulletList(R.array.onboarding_todo_bullets)
-        TutorialTopic.AI_MODEL -> {
-            Text(
-                text = stringResource(R.string.onboarding_ai_model_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+    topic.paragraphRes?.let { res ->
+        Text(
+            text = stringResource(res),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
+    topic.bulletsRes?.let { TutorialBulletList(it) }
 }
 
 @Composable
@@ -240,13 +259,4 @@ private fun TutorialBulletList(bulletArrayRes: Int) {
                 .padding(vertical = 6.dp),
         )
     }
-}
-
-private fun topicTitleRes(topic: TutorialTopic): Int = when (topic) {
-    TutorialTopic.WELCOME -> R.string.welcome_to_mindfulhome
-    TutorialTopic.HOW_IT_WORKS -> R.string.how_it_works
-    TutorialTopic.APP_TIERS -> R.string.onboarding_app_tiers_title
-    TutorialTopic.LAYOUT -> R.string.onboarding_layout_title
-    TutorialTopic.TODO -> R.string.onboarding_todo_title
-    TutorialTopic.AI_MODEL -> R.string.ai_model_options
 }

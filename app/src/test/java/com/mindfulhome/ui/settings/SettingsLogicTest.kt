@@ -3,7 +3,6 @@ package com.mindfulhome.ui.settings
 import com.mindfulhome.R
 import com.mindfulhome.settings.SettingsManager
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -164,18 +163,5 @@ class SettingsLogicTest {
         assertTrueContains(dailySummaryRegenerateToastSuffix(2, false, 0, 0), "nothing to refresh")
         assertTrueContains(dailySummaryRegenerateToastSuffix(2, false, 3, 3), "Refreshed 3")
         assertTrueContains(dailySummaryRegenerateToastSuffix(2, false, 3, 1), "of 3")
-        assertEquals("Sign-in rejected. Please try again.", backendSignInErrorMessage(401, null))
-        assertEquals("Your account is pending approval.", backendSignInErrorMessage(403, "PENDING_APPROVAL"))
-        assertEquals("Your account access has been refused.", backendSignInErrorMessage(403, "ACCESS_REFUSED"))
-        assertTrueContains(backendSignInErrorMessage(429, null), "Too many")
-        assertTrueContains(backendSignInErrorMessage(500, null), "HTTP 500")
-    }
-
-    @Test
-    fun shouldOpenAddGoogleAccountAfterNoCredential_onlyWhenCountIsZero() {
-        assertFalse(shouldOpenAddGoogleAccountAfterNoCredential(null))
-        assertTrue(shouldOpenAddGoogleAccountAfterNoCredential(0))
-        assertFalse(shouldOpenAddGoogleAccountAfterNoCredential(1))
-        assertFalse(shouldOpenAddGoogleAccountAfterNoCredential(2))
     }
 }

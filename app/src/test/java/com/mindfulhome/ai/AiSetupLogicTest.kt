@@ -1,6 +1,5 @@
 package com.mindfulhome.ai
 
-import com.mindfulhome.settings.SettingsManager
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -42,24 +41,6 @@ class AiSetupLogicTest {
     fun formatMegabytes_roundsUp() {
         assertEquals("1 MB", AiSetupLogic.formatMegabytes(1L))
         assertEquals("557 MB", AiSetupLogic.formatMegabytes(AiSetupLogic.LOCAL_MODEL_SIZE_BYTES))
-    }
-
-    @Test
-    fun normalizeAiMode_defaultsToGoogleBackend() {
-        assertEquals(SettingsManager.AI_MODE_BACKEND, AiSetupLogic.normalizeAiMode(null))
-        assertEquals(SettingsManager.AI_MODE_BACKEND, AiSetupLogic.normalizeAiMode("bogus"))
-        assertEquals(
-            SettingsManager.AI_MODE_ON_DEVICE,
-            AiSetupLogic.normalizeAiMode(SettingsManager.AI_MODE_ON_DEVICE),
-        )
-        assertEquals(
-            SettingsManager.AI_MODE_NONE,
-            AiSetupLogic.normalizeAiMode(SettingsManager.AI_MODE_NONE),
-        )
-        assertTrue(AiSetupLogic.shouldUseBackend(SettingsManager.AI_MODE_BACKEND))
-        assertTrue(AiSetupLogic.shouldUseOnDevice(SettingsManager.AI_MODE_ON_DEVICE))
-        assertFalse(AiSetupLogic.shouldUseBackend(SettingsManager.AI_MODE_NONE))
-        assertFalse(AiSetupLogic.shouldUseOnDevice(SettingsManager.AI_MODE_NONE))
     }
 
     @Test

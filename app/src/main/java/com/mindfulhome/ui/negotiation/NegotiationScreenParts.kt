@@ -55,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.accompanist.drawablepainter.rememberDrawablePainter
 import com.mindfulhome.model.AppInfo
+import com.mindfulhome.ai.AiMode
 import com.mindfulhome.settings.SettingsManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -277,9 +278,9 @@ internal fun ChatInputBar(
 
 @Composable
 internal fun SessionModelPickerDialog(
-    pickerUseBackend: Boolean,
+    pickerMode: AiMode,
     pickerSelectedModel: String,
-    onPickerUseBackendChange: (Boolean) -> Unit,
+    onPickerModeChange: (AiMode) -> Unit,
     onPickerSelectedModelChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onApply: () -> Unit,
@@ -289,40 +290,25 @@ internal fun SessionModelPickerDialog(
         title = { Text(stringResource(R.string.model_for_this_session)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    RadioButton(
-                        selected = !pickerUseBackend,
-                        onClick = { onPickerUseBackendChange(false) },
-                    )
-                    Text(
-                        text = stringResource(R.string.on_device_litert_lm),
-                        modifier = Modifier.clickable { onPickerUseBackendChange(false) },
-                    )
-                }
-
+                SessionModelPickerRow(
+                    selected = pickerMode == AiMode.ON_DEVICE,
+                    label = stringResource(R.string.on_device_litert_lm),
+                    onClick = { onPickerModeChange(AiMode.ON_DEVICE) },
+                )
+                SessionModelPickerRow(
+                    selected = pickerMode == AiMode.NONE,
+                    label = stringResource(R.string.ai_mode_none),
+                    onClick = { onPickerModeChange(AiMode.NONE) },
+                )
                 SettingsManager.AVAILABLE_MODELS.forEach { option ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(
-                            selected = pickerUseBackend && pickerSelectedModel == option.id,
-                            onClick = {
-                                onPickerUseBackendChange(true)
-                                onPickerSelectedModelChange(option.id)
-                            },
-                        )
-                        Text(
-                            text = option.label,
-                            modifier = Modifier.clickable {
-                                onPickerUseBackendChange(true)
-                                onPickerSelectedModelChange(option.id)
-                            },
-                        )
-                    }
+                    SessionModelPickerRow(
+                        selected = pickerMode == AiMode.BACKEND && pickerSelectedModel == option.id,
+                        label = option.label,
+                        onClick = {
+                            onPickerModeChange(AiMode.BACKEND)
+                            onPickerSelectedModelChange(option.id)
+                        },
+                    )
                 }
             }
         },
@@ -333,6 +319,21 @@ internal fun SessionModelPickerDialog(
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
+}
+
+@Composable
+private fun SessionModelPickerRow(
+    selected: Boolean,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = onClick)
+        Text(text = label, modifier = Modifier.clickable(onClick = onClick))
+    }
 }
 
 private data class ChatBubbleStyle(

@@ -122,7 +122,7 @@ fun OnboardingScreen(
                     )
                     // Recreate would flash Welcome in the old locale if we advanced here.
                     // System default is already the empty locale list, so nothing recreates.
-                    if (OnboardingLogic.shouldAdvanceLanguagePickerInPlace(willRecreate)) {
+                    if (!willRecreate) {
                         languageChosen = true
                     }
                 },
@@ -824,7 +824,7 @@ private fun AccessibilityPermissionStepBody(
             }
         },
         onSkipOrContinue = {
-            if (OnboardingLogic.shouldSkipUsageAccess(hasPermission)) {
+            if (hasPermission) {
                 onGrantedOrStuck()
             } else {
                 onSkipped()

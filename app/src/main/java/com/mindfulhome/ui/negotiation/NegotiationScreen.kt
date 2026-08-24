@@ -22,10 +22,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.credentials.exceptions.NoCredentialException
-import com.mindfulhome.ai.AiSetupLogic
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import com.mindfulhome.ai.AiMode
 import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.ai.GatekeeperUsageConfrontation
+import com.mindfulhome.ai.GoogleSignInActivity
 import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.ai.NegotiationManager
 import com.mindfulhome.ui.settings.onDeviceModelLabel
@@ -233,7 +235,7 @@ private fun NegotiationScreenContent(host: NegotiationHost) {
             onOpenKarma = host.onOpenKarma,
             onOpenSettings = host.onOpenSettings,
             onModelLabelClick = {
-                session.pickerUseBackend = session.sessionUseBackend
+                session.pickerMode = session.sessionMode
                 session.pickerSelectedModel = session.sessionSelectedModel
                 session.showModelPicker = true
             },
@@ -345,9 +347,9 @@ private fun NegotiationScreenOverlays(host: NegotiationHost) {
     )
     if (!session.showModelPicker) return
     SessionModelPickerDialog(
-        pickerUseBackend = session.pickerUseBackend,
+        pickerMode = session.pickerMode,
         pickerSelectedModel = session.pickerSelectedModel,
-        onPickerUseBackendChange = { session.pickerUseBackend = it },
+        onPickerModeChange = { session.pickerMode = it },
         onPickerSelectedModelChange = { session.pickerSelectedModel = it },
         onDismiss = { session.showModelPicker = false },
         onApply = {
@@ -370,22 +372,11 @@ private fun rememberNegotiationSession(
 ): NegotiationSession {
     val lmManager = remember { LmPlaygroundManager(context) }
     val aiMode = remember { SettingsManager.getAIMode(context) }
-    val useBackend = remember { AiSetupLogic.shouldUseBackend(aiMode) }
-    val useOnDevice = remember { AiSetupLogic.shouldUseOnDevice(aiMode) }
     val selectedModel = remember { SettingsManager.getBackendModel(context) }
     val backendAuth = remember {
         BackendAuthHelper(
             signInForExchange = {
-                try {
-                    val result = AuthManager.signInSilent(context)
-                        ?: AuthManager.signIn(context)
-                    if (result?.email != null) {
-                        ApiKeyManager.saveSignedInEmail(context, result.email)
-                    }
-                    result?.idToken
-                } catch (_: NoCredentialException) {
-                    null
-                }
+                AuthManager.signInSilent(context)?.idToken
             },
             getSessionToken = { ApiKeyManager.getSessionToken(context) },
             saveSessionToken = { token, exp ->
@@ -396,13 +387,12 @@ private fun rememberNegotiationSession(
         )
     }
     val developerLogsEnabled = SettingsManager.isDeveloperLogsEnabled(context)
-    return remember(lmManager, backendAuth, useBackend, useOnDevice, selectedModel) {
+    return remember(lmManager, backendAuth, aiMode, selectedModel) {
         NegotiationSession(
             lmManager = lmManager,
             backendAuth = backendAuth,
             developerLogsEnabled = developerLogsEnabled,
-            initialUseBackend = useBackend,
-            initialUseOnDevice = useOnDevice,
+            initialMode = aiMode,
             initialSelectedModel = selectedModel,
             initialUnlockReason = unlockReason,
             repository = repository,
@@ -415,6 +405,13 @@ private fun rememberNegotiationSession(
 @Composable
 private fun NegotiationScreenEffects(host: NegotiationHost) {
     val session = host.session
+    val scope = rememberCoroutineScope()
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (!session.awaitingInteractiveSignIn) return@LifecycleEventEffect
+        scope.launch {
+            resumeInteractiveBackendAuth(session, host.context, host.sessionHandle)
+        }
+    }
     LaunchedEffect(Unit) {
         session.allApps = PackageManagerHelper.getInstalledApps(host.context)
     }
@@ -460,8 +457,7 @@ private class NegotiationSession(
     val lmManager: LmPlaygroundManager,
     val backendAuth: BackendAuthHelper,
     val developerLogsEnabled: Boolean,
-    initialUseBackend: Boolean,
-    initialUseOnDevice: Boolean,
+    initialMode: AiMode,
     initialSelectedModel: String,
     initialUnlockReason: String,
     repository: AppRepository,
@@ -481,27 +477,20 @@ private class NegotiationSession(
     var isLoadingApps by mutableStateOf(false)
     var lastLaunchRequestText by mutableStateOf(initialUnlockReason)
     var conversationNonce by mutableStateOf(0)
-    var sessionUseBackend by mutableStateOf(initialUseBackend)
-    var sessionUseOnDevice by mutableStateOf(initialUseOnDevice)
+    var sessionMode by mutableStateOf(initialMode)
     var sessionSelectedModel by mutableStateOf(initialSelectedModel)
     var showModelPicker by mutableStateOf(false)
-    var pickerUseBackend by mutableStateOf(initialUseBackend)
+    var pickerMode by mutableStateOf(initialMode)
     var pickerSelectedModel by mutableStateOf(initialSelectedModel)
-    var modelLabel by mutableStateOf(
-        when {
-            initialUseBackend -> "$initialSelectedModel (checking auth...)"
-            initialUseOnDevice -> onDeviceModelLabel(LmPlaygroundManager.isInstalled(context))
-            else -> "Scripted"
-
-        },
-    )
+    var awaitingInteractiveSignIn by mutableStateOf(false)
+    var modelLabel by mutableStateOf(aiModeSessionLabel(initialMode, initialSelectedModel, checkingAuth = true))
     var negotiationManager by mutableStateOf(
         NegotiationManager(
             context = context,
             lmManager = lmManager,
             repository = repository,
             karmaManager = karmaManager,
-            backendAuth = if (initialUseBackend) backendAuth else null,
+            backendAuth = if (initialMode.usesBackend) backendAuth else null,
             backendModel = initialSelectedModel,
         ),
     )
@@ -930,9 +919,12 @@ private suspend fun runConversationStart(
     allIntents: List<AppIntent>,
 ) {
     resetConversationUi(session, unlockReason)
-    if (!ensureBackendAuthForSession(session, context, sessionHandle)) return
+    when (ensureBackendAuthForSession(session, context, sessionHandle)) {
+        SessionAuthStart.WaitingInteractive -> return
+        SessionAuthStart.Ready -> Unit
+    }
     updateModelLabelForSession(session, context)
-    if (session.sessionUseOnDevice) {
+    if (session.sessionMode.usesOnDevice) {
         session.lmManager.initialize()
     }
     startConversationByMode(
@@ -987,57 +979,64 @@ private fun resetConversationUi(session: NegotiationSession, unlockReason: Strin
     session.lastLaunchRequestText = extractLaunchQuery(unlockReason)
 }
 
+private enum class SessionAuthStart {
+    Ready,
+    WaitingInteractive,
+}
+
 private suspend fun ensureBackendAuthForSession(
     session: NegotiationSession,
     context: Context,
     sessionHandle: SessionLogger.SessionHandle?,
-): Boolean {
-    if (!session.sessionUseBackend || session.backendAuth.hasToken()) return true
+): SessionAuthStart {
+    if (!session.sessionMode.usesBackend || session.backendAuth.hasToken()) {
+        return SessionAuthStart.Ready
+    }
     session.modelLabel = session.sessionSelectedModel
-    if (!tryCompleteBackendSignIn(session, context, sessionHandle)) return false
-    if (session.backendAuth.hasToken()) return true
+    val result = AuthManager.signInSilent(context)
+    if (result != null) {
+        result.email?.let { ApiKeyManager.saveSignedInEmail(context, it) }
+        session.backendAuth.completeBackendSignIn(result.idToken)
+        return SessionAuthStart.Ready
+    }
+    session.awaitingInteractiveSignIn = true
+    GoogleSignInActivity.start(context)
+    return SessionAuthStart.WaitingInteractive
+}
+
+private suspend fun resumeInteractiveBackendAuth(
+    session: NegotiationSession,
+    context: Context,
+    sessionHandle: SessionLogger.SessionHandle?,
+) {
+    session.awaitingInteractiveSignIn = false
+    if (!session.backendAuth.hasToken()) {
+        val result = AuthManager.signInSilent(context)
+        if (result != null) {
+            result.email?.let { ApiKeyManager.saveSignedInEmail(context, it) }
+            session.backendAuth.completeBackendSignIn(result.idToken)
+        }
+    }
+    if (session.backendAuth.hasToken()) {
+        session.conversationNonce += 1
+        return
+    }
     addChatMessage(
         session,
         sessionHandle,
         "Sign-in was cancelled or failed. You can retry from Settings.",
         isFromUser = false,
     )
-    return false
-}
-
-private suspend fun tryCompleteBackendSignIn(
-    session: NegotiationSession,
-    context: Context,
-    sessionHandle: SessionLogger.SessionHandle?,
-): Boolean {
-    try {
-        val result = AuthManager.signInSilent(context) ?: AuthManager.signIn(context)
-        if (result != null) {
-            if (result.email != null) {
-                ApiKeyManager.saveSignedInEmail(context, result.email)
-            }
-            session.backendAuth.completeBackendSignIn(result.idToken)
-        }
-        return true
-    } catch (_: NoCredentialException) {
-        addChatMessage(
-            session,
-            sessionHandle,
-            "Sign-in was cancelled or failed. You can retry from Settings.",
-            isFromUser = false,
-        )
-        return false
-    }
 }
 
 private suspend fun updateModelLabelForSession(session: NegotiationSession, context: Context) {
-    val usingRemote = session.sessionUseBackend && session.backendAuth.hasToken()
+    val usingRemote = session.sessionMode.usesBackend && session.backendAuth.hasToken()
     val signedInEmail = if (usingRemote) ApiKeyManager.getSignedInEmail(context) else null
     session.modelLabel = if (usingRemote) {
         val emailSuffix = if (signedInEmail != null) " · $signedInEmail" else ""
         "${session.sessionSelectedModel}$emailSuffix"
     } else {
-        onDeviceModelLabel(LmPlaygroundManager.isInstalled(context))
+        aiModeSessionLabel(session.sessionMode, session.sessionSelectedModel)
     }
 }
 
@@ -1245,28 +1244,37 @@ private fun applySessionModelPicker(
     karmaManager: KarmaManager,
 ) {
     session.showModelPicker = false
-    val changed = session.pickerUseBackend != session.sessionUseBackend ||
+    val changed = session.pickerMode != session.sessionMode ||
         session.pickerSelectedModel != session.sessionSelectedModel
     if (!changed) return
 
     session.negotiationManager.endConversation()
-    session.sessionUseBackend = session.pickerUseBackend
-    session.sessionUseOnDevice = !session.pickerUseBackend
+    session.sessionMode = session.pickerMode
     session.sessionSelectedModel = session.pickerSelectedModel
-    session.modelLabel = if (session.sessionUseBackend) {
-        "${session.sessionSelectedModel} (checking auth...)"
-    } else {
-        onDeviceModelLabel(LmPlaygroundManager.isInstalled(context))
-    }
+    session.modelLabel = aiModeSessionLabel(
+        session.sessionMode,
+        session.sessionSelectedModel,
+        checkingAuth = session.sessionMode.usesBackend,
+    )
     session.negotiationManager = NegotiationManager(
         context = context,
         lmManager = session.lmManager,
         repository = repository,
         karmaManager = karmaManager,
-        backendAuth = if (session.sessionUseBackend) session.backendAuth else null,
+        backendAuth = if (session.sessionMode.usesBackend) session.backendAuth else null,
         backendModel = session.sessionSelectedModel,
     )
     session.conversationNonce += 1
+}
+
+private fun aiModeSessionLabel(
+    mode: AiMode,
+    selectedModel: String,
+    checkingAuth: Boolean = false,
+): String = when (mode) {
+    AiMode.BACKEND -> if (checkingAuth) "$selectedModel (checking auth...)" else selectedModel
+    AiMode.ON_DEVICE -> "On-device (LM Playground)"
+    AiMode.NONE -> "Scripted"
 }
 
 private suspend fun rankLaunchSuggestions(

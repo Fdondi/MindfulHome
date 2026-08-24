@@ -228,21 +228,3 @@ fun dailySummaryRegenerateToastSuffix(
                 "others left unchanged after API or JSON errors."
     }
 }
-
-fun backendSignInErrorMessage(statusCode: Int, code: String?): String =
-    com.mindfulhome.ai.backend.backendSignInErrorMessage(statusCode, code)
-
-/**
- * Credential Manager throws `NoCredentialException` when One Tap has no saved
- * credential, even if a Google account is already on the device. Opening
- * [android.provider.Settings.ACTION_ADD_ACCOUNT] then fails because that
- * account already exists.
- *
- * Only launch add-account when we positively know there are zero Google
- * accounts. `null` (unknown) must not launch it.
- */
-fun shouldOpenAddGoogleAccountAfterNoCredential(knownGoogleAccountCount: Int?): Boolean =
-    knownGoogleAccountCount == 0
-
-fun backendSignInErrorMessage(e: com.mindfulhome.ai.backend.BackendHttpException): String =
-    backendSignInErrorMessage(e.statusCode, e.code)

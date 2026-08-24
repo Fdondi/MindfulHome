@@ -15,7 +15,6 @@ import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
-import com.mindfulhome.GoogleSignInActivity
 import com.mindfulhome.ai.AuthManagerLogic
 import com.mindfulhome.ai.AuthManagerLogic.InteractiveGoogleSignInStep
 
@@ -61,61 +60,32 @@ object AuthManager {
     }
 
     /**
-     * Triggers an interactive Google Sign-In and returns a [SignInResult], or null on failure.
-     * Throws [NoCredentialException] only after One Tap and Sign in with Google have both
-     * found no usable credential. Use [signInSilent] first for background token refresh.
+     * Interactive Credential Manager flow. Must run on [com.mindfulhome.ai.GoogleSignInActivity]
+     * so GIS HiddenActivity is not destroyed with the HOME task.
      */
-    suspend fun signIn(
-        context: Context,
-        forceAccountPicker: Boolean = false,
-    ): SignInResult? {
-        if (context is GoogleSignInActivity) {
-            return signInWithCredentialManager(context, forceAccountPicker)
-        }
-        return GoogleSignInActivity.awaitSignIn(context, forceAccountPicker)
-    }
-
     suspend fun signInWithCredentialManager(
         context: Context,
         forceAccountPicker: Boolean = false,
     ): SignInResult? {
-        val first = AuthManagerLogic.initialInteractiveStep(forceAccountPicker)
-        return try {
-            requestSignIn(context, optionFor(first, forceAccountPicker))
-        } catch (e: NoCredentialException) {
-            retryInteractiveAfterNoCredential(context, first, forceAccountPicker, e)
-        } catch (e: GetCredentialProviderConfigurationException) {
-            throw e
-        } catch (e: Exception) {
-            if (AuthManagerLogic.isProviderConfigurationFailure(e)) throw e
-            logInteractiveFailure(e)
-            null
-        }
-    }
-
-    private suspend fun retryInteractiveAfterNoCredential(
-        context: Context,
-        failedStep: InteractiveGoogleSignInStep,
-        forceAccountPicker: Boolean,
-        original: NoCredentialException,
-    ): SignInResult? {
-        val fallback = AuthManagerLogic.fallbackInteractiveStep(failedStep)
-        if (fallback == null) {
-            Log.w(TAG, "No usable Google account for this app")
-            throw original
-        }
-        Log.d(TAG, "No credential for $failedStep; trying $fallback")
-        return try {
-            requestSignIn(context, optionFor(fallback, forceAccountPicker))
-        } catch (e: NoCredentialException) {
-            Log.w(TAG, "No usable Google account for this app")
-            throw e
-        } catch (e: GetCredentialProviderConfigurationException) {
-            throw e
-        } catch (e: Exception) {
-            if (AuthManagerLogic.isProviderConfigurationFailure(e)) throw e
-            logInteractiveFailure(e)
-            null
+        var step = AuthManagerLogic.initialInteractiveStep(forceAccountPicker)
+        while (true) {
+            try {
+                return requestSignIn(context, optionFor(step, forceAccountPicker))
+            } catch (e: NoCredentialException) {
+                val fallback = AuthManagerLogic.fallbackInteractiveStep(step)
+                if (fallback == null) {
+                    Log.w(TAG, "No usable Google account for this app")
+                    throw e
+                }
+                Log.d(TAG, "No credential for $step; trying $fallback")
+                step = fallback
+            } catch (e: GetCredentialProviderConfigurationException) {
+                throw e
+            } catch (e: Exception) {
+                if (AuthManagerLogic.isProviderConfigurationFailure(e)) throw e
+                logInteractiveFailure(e)
+                return null
+            }
         }
     }
 

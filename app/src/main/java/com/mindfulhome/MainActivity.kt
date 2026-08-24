@@ -13,7 +13,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.credentials.exceptions.NoCredentialException
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,7 +25,6 @@ import android.content.SharedPreferences
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import androidx.core.net.toUri
-import com.mindfulhome.ai.AiSetupLogic
 import com.mindfulhome.ai.backend.ApiKeyManager
 import com.mindfulhome.ai.backend.AuthManager
 import com.mindfulhome.ai.backend.BackendAuthHelper
@@ -53,9 +51,7 @@ import com.mindfulhome.ui.settings.IntervalSettingsScreen
 import com.mindfulhome.ui.settings.SettingsScreen
 import com.mindfulhome.ui.theme.MindfulHomeTheme
 import com.mindfulhome.ui.timer.TimerScreen
-import com.mindfulhome.ui.tutorial.TutorialIndexScreen
-import com.mindfulhome.ui.tutorial.TutorialTopic
-import com.mindfulhome.ui.tutorial.TutorialTopicScreen
+import com.mindfulhome.ui.tutorial.tutorialRoutes
 import com.mindfulhome.util.PackageManagerHelper
 import com.mindfulhome.util.QuickLaunchAppRef
 import kotlinx.coroutines.flow.first
@@ -203,31 +199,7 @@ class MainActivity : AppCompatActivity() {
             composable("logs") {
                 LogsScreen(onBack = { navCtrl.popBackStack() })
             }
-            composable("help") {
-                TutorialIndexScreen(
-                    onBack = { navCtrl.popBackStack() },
-                    onOpenTopic = { topic -> navCtrl.navigate("help/${topic.id}") },
-                )
-            }
-            composable("help/{topicId}") { entry ->
-                val topic = TutorialTopic.fromId(
-                    entry.arguments?.getString("topicId").orEmpty(),
-                )
-                if (topic == null) {
-                    LaunchedEffect(Unit) { navCtrl.popBackStack() }
-                } else {
-                    TutorialTopicScreen(
-                        topic = topic,
-                        onBack = { navCtrl.popBackStack() },
-                        onOpenTopic = { nextTopic ->
-                            navCtrl.navigate("help/${nextTopic.id}") {
-                                popUpTo("help") { inclusive = false }
-                                launchSingleTop = true
-                            }
-                        },
-                    )
-                }
-            }
+            tutorialRoutes(navCtrl)
         }
     }
 
@@ -924,7 +896,7 @@ class MainActivity : AppCompatActivity() {
     private fun maybePreflightBackendAuth() {
         val gate = MainActivityLogic.authPreflightGate(
             inProgress = backendAuthPreflightInProgress,
-            isBackendMode = AiSetupLogic.shouldUseBackend(SettingsManager.getAIMode(this)),
+            isBackendMode = SettingsManager.getAIMode(this).usesBackend,
             nowMs = System.currentTimeMillis(),
             lastAttemptMs = backendAuthPreflightLastAttemptMs,
         )

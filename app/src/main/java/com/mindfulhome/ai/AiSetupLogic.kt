@@ -1,9 +1,7 @@
 package com.mindfulhome.ai
 
-import com.mindfulhome.settings.SettingsManager
-
 /**
- * Pure helpers for AI provider setup (Google / local / none).
+ * Pure helpers for on-device model download (space, progress, payload sniffing).
  */
 object AiSetupLogic {
     const val LOCAL_MODEL_SIZE_BYTES = 557L * 1024L * 1024L
@@ -28,23 +26,6 @@ object AiSetupLogic {
         val mb = (bytes + (1024L * 1024L) - 1L) / (1024L * 1024L)
         return "$mb MB"
     }
-
-    fun isKnownAiMode(mode: String): Boolean = when (mode) {
-        SettingsManager.AI_MODE_BACKEND,
-        SettingsManager.AI_MODE_ON_DEVICE,
-        SettingsManager.AI_MODE_NONE,
-        -> true
-        else -> false
-    }
-
-    fun normalizeAiMode(stored: String?): String =
-        if (stored != null && isKnownAiMode(stored)) stored else SettingsManager.AI_MODE_BACKEND
-
-    fun shouldUseBackend(mode: String): Boolean =
-        mode == SettingsManager.AI_MODE_BACKEND
-
-    fun shouldUseOnDevice(mode: String): Boolean =
-        mode == SettingsManager.AI_MODE_ON_DEVICE
 
     fun isLicenseBlockedStatus(statusCode: Int): Boolean =
         statusCode == 401 || statusCode == 403

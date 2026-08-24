@@ -22,13 +22,13 @@ object LocaleHelper {
      * returns false and callers must advance UI themselves.
      */
     fun apply(language: AppLanguage): Boolean {
-        val locales = if (language == AppLanguage.SYSTEM) {
+        val newTags = LocaleHelperLogic.applicationLocaleTags(language)
+        val locales = if (newTags.isEmpty()) {
             LocaleListCompat.getEmptyLocaleList()
         } else {
-            LocaleListCompat.forLanguageTags(language.tag)
+            LocaleListCompat.forLanguageTags(newTags)
         }
         val currentTags = AppCompatDelegate.getApplicationLocales().toLanguageTags()
-        val newTags = locales.toLanguageTags()
         val recreate = LocaleHelperLogic.shouldRecreateActivity(currentTags, newTags)
         Log.d(TAG, "apply language=${language.tag} current=$currentTags new=$newTags recreate=$recreate")
         if (recreate) {

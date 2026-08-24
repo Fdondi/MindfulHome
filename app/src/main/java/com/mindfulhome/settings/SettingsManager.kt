@@ -3,7 +3,7 @@ package com.mindfulhome.settings
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
-import com.mindfulhome.ai.AiSetupLogic
+import com.mindfulhome.ai.AiMode
 import com.mindfulhome.ai.PromptTemplates
 import com.mindfulhome.locale.AppLanguage
 import com.mindfulhome.service.UsageTracker
@@ -24,9 +24,7 @@ object SettingsManager {
 
     // AI mode
     private const val AI_MODE_KEY = "ai_mode"
-    const val AI_MODE_ON_DEVICE = "on_device"
-    const val AI_MODE_BACKEND = "backend"
-    const val AI_MODE_NONE = "none"
+    private const val PENDING_GOOGLE_AI_SETUP_KEY = "pending_google_ai_setup"
 
     // Backend model selection
     private const val BACKEND_MODEL_KEY = "backend_model"
@@ -221,11 +219,18 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
     private fun prefs(context: Context): SharedPreferences =
         context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
-    fun getAIMode(context: Context): String =
-        AiSetupLogic.normalizeAiMode(prefs(context).getString(AI_MODE_KEY, null))
+    fun getAIMode(context: Context): AiMode =
+        AiMode.fromStored(prefs(context).getString(AI_MODE_KEY, null))
 
-    fun setAIMode(context: Context, mode: String) {
-        prefs(context).edit { putString(AI_MODE_KEY, mode) }
+    fun setAIMode(context: Context, mode: AiMode) {
+        prefs(context).edit { putString(AI_MODE_KEY, mode.storageTag) }
+    }
+
+    fun isPendingGoogleAiSetup(context: Context): Boolean =
+        prefs(context).getBoolean(PENDING_GOOGLE_AI_SETUP_KEY, false)
+
+    fun setPendingGoogleAiSetup(context: Context, pending: Boolean) {
+        prefs(context).edit { putBoolean(PENDING_GOOGLE_AI_SETUP_KEY, pending) }
     }
 
     fun getBackendModel(context: Context): String =

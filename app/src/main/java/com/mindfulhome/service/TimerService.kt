@@ -17,7 +17,6 @@ import androidx.core.app.RemoteInput
 import com.mindfulhome.MainActivity
 import com.mindfulhome.MindfulHomeApp
 import com.mindfulhome.R
-import com.mindfulhome.ai.AiSetupLogic
 import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.ai.NegotiationManager
 import com.mindfulhome.ai.backend.ApiKeyManager
@@ -1649,7 +1648,7 @@ class TimerService : Service() {
         val lm = LmPlaygroundManager(ctx)
         lmManager = lm
 
-        val useBackend = AiSetupLogic.shouldUseBackend(SettingsManager.getAIMode(ctx))
+        val useBackend = SettingsManager.getAIMode(ctx).usesBackend
         val selectedModel = SettingsManager.getBackendModel(ctx)
         val backendAuth = if (useBackend) {
             BackendAuthHelper(

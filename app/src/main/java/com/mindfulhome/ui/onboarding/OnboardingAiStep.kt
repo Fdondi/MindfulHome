@@ -1,5 +1,6 @@
 package com.mindfulhome.ui.onboarding
 
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,11 +24,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.mindfulhome.R
-import com.mindfulhome.ai.AuthManagerLogic
+import com.mindfulhome.ai.AiMode
 import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.ai.backend.BackendSignInOutcome
 import com.mindfulhome.ai.backend.backendSignInOutcomeMessage
-import com.mindfulhome.ai.backend.performBackendSignIn
+import com.mindfulhome.ai.consumeCompletedGoogleAiSetup
+import com.mindfulhome.ai.startGoogleAiSetup
 import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.ui.settings.openLmPlaygroundInstall
 import kotlinx.coroutines.CoroutineScope
@@ -39,12 +41,13 @@ internal fun ModelStep(onNext: () -> Unit) {
     val scope = rememberCoroutineScope()
     var playgroundInstalled by remember { mutableStateOf(LmPlaygroundManager.isInstalled(context)) }
     var busy by remember { mutableStateOf(false) }
-    val advanceGoogle = rememberGoogleAdvance(context, onNext)
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         playgroundInstalled = LmPlaygroundManager.isInstalled(context)
-        if (AuthManagerLogic.InteractiveSignInHandoff.consumePersistedSuccess()) {
-            advanceGoogle()
+        if (!SettingsManager.isPendingGoogleAiSetup(context)) return@LifecycleEventEffect
+        scope.launch {
+            if (consumeCompletedGoogleAiSetup(context)) onNext()
+            else busy = false
         }
     }
 
@@ -56,7 +59,7 @@ internal fun ModelStep(onNext: () -> Unit) {
                 scope = scope,
                 context = context,
                 onBusy = { busy = it },
-                onSuccess = advanceGoogle,
+                onSuccess = onNext,
             )
         },
     )
@@ -65,7 +68,7 @@ internal fun ModelStep(onNext: () -> Unit) {
         enabled = !busy,
         playgroundInstalled = playgroundInstalled,
         onChooseInstalled = {
-            SettingsManager.setAIMode(context, SettingsManager.AI_MODE_ON_DEVICE)
+            SettingsManager.setAIMode(context, AiMode.ON_DEVICE)
             onNext()
         },
         onInstall = { openLmPlaygroundInstall(context) },
@@ -74,7 +77,7 @@ internal fun ModelStep(onNext: () -> Unit) {
     NoneAiChoiceButton(
         enabled = !busy,
         onClick = {
-            SettingsManager.setAIMode(context, SettingsManager.AI_MODE_NONE)
+            SettingsManager.setAIMode(context, AiMode.NONE)
             onNext()
         },
     )
@@ -106,30 +109,23 @@ private fun GoogleAiChoiceButton(enabled: Boolean, onClick: () -> Unit) {
     ChoiceCaption(stringResource(R.string.onboarding_ai_google_body))
 }
 
-@Composable
-private fun rememberGoogleAdvance(context: android.content.Context, onNext: () -> Unit): () -> Unit {
-    var advanced by remember { mutableStateOf(false) }
-    return {
-        if (!advanced) {
-            advanced = true
-            SettingsManager.setAIMode(context, SettingsManager.AI_MODE_BACKEND)
-            onNext()
-        }
-    }
-}
-
 private fun startGoogleSignIn(
     scope: CoroutineScope,
-    context: android.content.Context,
+    context: Context,
     onBusy: (Boolean) -> Unit,
     onSuccess: () -> Unit,
 ) {
     onBusy(true)
     scope.launch {
-        val outcome = performBackendSignIn(context)
-        onBusy(false)
-        if (outcome is BackendSignInOutcome.Success) onSuccess()
-        else toastSignInOutcome(context, outcome)
+        val outcome = startGoogleAiSetup(context)
+        when (outcome) {
+            is BackendSignInOutcome.Success -> onSuccess()
+            is BackendSignInOutcome.InteractiveStarted -> Unit
+            else -> {
+                onBusy(false)
+                toastSignInOutcome(context, outcome)
+            }
+        }
     }
 }
 
@@ -179,7 +175,7 @@ private fun ChoiceCaption(text: String, error: Boolean = false) {
     )
 }
 
-private fun toastSignInOutcome(context: android.content.Context, outcome: BackendSignInOutcome) {
+private fun toastSignInOutcome(context: Context, outcome: BackendSignInOutcome) {
     val message = backendSignInOutcomeMessage(context, outcome) ?: return
     Toast.makeText(context, message, Toast.LENGTH_LONG).show()
 }
