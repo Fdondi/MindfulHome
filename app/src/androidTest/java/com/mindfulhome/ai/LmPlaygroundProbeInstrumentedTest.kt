@@ -128,7 +128,7 @@ class LmPlaygroundProbeInstrumentedTest {
             val completion = runBlocking {
                 withTimeout(PROBE_TIMEOUT_MS) { probe.chatCompletionAwait(request) }
             }
-            val text = completion.message.content.orEmpty()
+            val text = completion.message.textContent()
             val models = runCatching { runBlocking { probe.listModels() } }.getOrNull()
             val outcome = ProbeOutcome(
                 label = label,
@@ -141,6 +141,7 @@ class LmPlaygroundProbeInstrumentedTest {
                 models = models?.models?.joinToString { "${it.id} loaded=${it.loaded} tools=${it.capabilities.tools}" },
                 loadedModel = models?.loadedModel,
                 engineBusy = models?.engineBusy,
+                toolCalls = completion.message.toolCalls.joinToString { it.name },
             )
             dump(outcome.toString())
             outcome
@@ -156,6 +157,7 @@ class LmPlaygroundProbeInstrumentedTest {
                 models = null,
                 loadedModel = e.error.loadedModelId,
                 engineBusy = null,
+                toolCalls = null,
             )
             dump(outcome.toString())
             outcome
@@ -171,6 +173,7 @@ class LmPlaygroundProbeInstrumentedTest {
                 models = null,
                 loadedModel = null,
                 engineBusy = null,
+                toolCalls = null,
             )
             dump(outcome.toString())
             outcome
@@ -192,6 +195,7 @@ class LmPlaygroundProbeInstrumentedTest {
         val models: String?,
         val loadedModel: String?,
         val engineBusy: Boolean?,
+        val toolCalls: String?,
     ) {
         val isGenericThinkFailure: Boolean
             get() {

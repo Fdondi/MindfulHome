@@ -55,6 +55,13 @@ class LmPlaygroundSessionLogicTest {
         assertTrue(LmPlaygroundSessionLogic.isUnusableLocalReply("   "))
         assertTrue(LmPlaygroundSessionLogic.isUnusableLocalReply(LmPlaygroundSessionLogic.GENERIC_FAILURE))
         assertFalse(LmPlaygroundSessionLogic.isUnusableLocalReply("Wrap up soon."))
+        assertFalse(LmPlaygroundSessionLogic.isUnusableLocalReply("", toolsApplied = true))
+        assertTrue(
+            LmPlaygroundSessionLogic.isUnusableLocalReply(
+                LmPlaygroundSessionLogic.GENERIC_FAILURE,
+                toolsApplied = true,
+            ),
+        )
     }
 
     @Test

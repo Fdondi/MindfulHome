@@ -1,9 +1,11 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.107.3"
+    const val versionName = "0.107.5"
 }
 
+// 0.107.5 - Keep tool-only on-device replies; do not treat empty content as can't-think
+// 0.107.4 - Restore missing Google/backend sign-in outcomes so the app compiles
 // 0.107.3 - Note: LM Playground emulator tests froze/segfaulted; retry on a larger machine
 // 0.107.2 - Cap LM Playground emulator install: 2 compile workers, skip huge RAM boot
 // 0.107.1 - Script to install local LM Playground debug build on API 30+ emulator

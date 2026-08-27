@@ -39,9 +39,18 @@ object LmPlaygroundSessionLogic {
         }
     }
 
-    fun isUnusableLocalReply(text: String): Boolean {
-        val trimmed = text.trim()
-        return trimmed.isEmpty() || trimmed == GENERIC_FAILURE
+    fun isCannedThinkFailure(text: String): Boolean =
+        text.trim() == GENERIC_FAILURE
+
+    /**
+     * True when the local path should be abandoned. Tool-only assistant
+     * messages have null [com.druk.lmplayground.api.model.ChatMessage.content];
+     * those are usable if a tool already applied.
+     */
+    fun isUnusableLocalReply(text: String, toolsApplied: Boolean = false): Boolean {
+        if (isCannedThinkFailure(text)) return true
+        if (toolsApplied) return false
+        return text.isBlank()
     }
 
     fun announceLocalFailureThenScript(notice: String?, script: String): String {

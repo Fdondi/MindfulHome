@@ -174,6 +174,37 @@ class NegotiationManagerLogicTest {
     }
 
     @Test
+    fun localToolsApplied_anySideEffectCounts() {
+        assertFalse(
+            NegotiationManagerLogic.localToolsApplied(
+                gatekeeperGranted = false,
+                focusGateGranted = false,
+                nudgeExtensionMinutes = 0,
+                launchedPackage = "",
+                showSuggestions = false,
+                usageSummary = "",
+            ),
+        )
+        assertTrue(
+            NegotiationManagerLogic.localToolsApplied(
+                gatekeeperGranted = false,
+                focusGateGranted = false,
+                nudgeExtensionMinutes = 5,
+                launchedPackage = "",
+                showSuggestions = false,
+                usageSummary = "",
+            ),
+        )
+    }
+
+    @Test
+    fun displayLocalReply_keepsToolOnlyBlankAsAck() {
+        assertEquals("", NegotiationManagerLogic.displayLocalReply("", toolsApplied = false, blankAck = "Okay."))
+        assertEquals("Okay.", NegotiationManagerLogic.displayLocalReply("", toolsApplied = true, blankAck = "Okay."))
+        assertEquals("pong", NegotiationManagerLogic.displayLocalReply("pong", toolsApplied = true, blankAck = "Okay."))
+    }
+
+    @Test
     fun parseBackendResult_launchApp_readsPackage() {
         val result = NegotiationManagerLogic.parseBackendResult(
             text = "Launching.",

@@ -1,6 +1,6 @@
 # LM Playground emulator tests
 
-**Last attempt (2026-08-27, ~26 GB laptop):** the Fold AVD froze with **all CPU cores at 100%** while RAM still looked free, then qemu **segfaulted**. Live instrumented tests **did not finish** — do not treat them as passing. Move to a larger machine before retrying.
+**Last run (2026-08-28, Pixel Fold API 34):** Playground connected (`1.9.1-francesco-debug`). Fallback 2/2 and live probe 3/3 passed. `simpleChat` returned `pong`. `nudgeToolChat` was a tool-only reply (empty `content`, `finishReason=tool_calls`) — that is valid, not the generic think failure.
 
 ## What exists
 

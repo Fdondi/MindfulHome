@@ -20,5 +20,5 @@ CLASS_FALLBACK=com.mindfulhome.ai.LocalLmFallbackInstrumentedTest
 CLASS_PROBE=com.mindfulhome.ai.LmPlaygroundProbeInstrumentedTest
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="$CLASS_FALLBACK"
 ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class="$CLASS_PROBE"
-adb -s "$SERIAL" logcat -d -s LmPlaygroundProbe:I NegotiationManager:D LmPlaygroundManager:E > results/test/lm-playground-probe.log
+adb -s "$SERIAL" logcat -d -s LmPlaygroundProbe:I > results/test/lm-playground-probe.log
 echo "Wrote results/test/lm-playground-probe.log"

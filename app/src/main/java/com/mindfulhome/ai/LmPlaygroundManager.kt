@@ -50,7 +50,7 @@ class LmPlaygroundManager(context: Context) {
     suspend fun sendMessage(session: LmPlaygroundSession, message: String): String {
         return try {
             val text = session.send(message)
-            if (LmPlaygroundSessionLogic.isUnusableLocalReply(text)) {
+            if (LmPlaygroundSessionLogic.isCannedThinkFailure(text)) {
                 throw LocalLmFailure(LmPlaygroundSessionLogic.GENERIC_FAILURE)
             }
             text

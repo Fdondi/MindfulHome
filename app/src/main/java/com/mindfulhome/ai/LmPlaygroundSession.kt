@@ -32,9 +32,11 @@ class LmPlaygroundSession(
             val completion = awaitCompletion()
             continuationToken = completion.lmp.continuationToken
             messages += completion.message
-            lastText = completion.message.content.orEmpty().ifBlank { lastText }
+            lastText = completion.message.textContent().ifBlank { lastText }
             val calls = completion.message.toolCalls
-            if (!needsToolRound(completion, calls)) return lastText
+            if (!needsToolRound(completion, calls)) {
+                return lastText
+            }
             appendToolResults(calls)
         }
         return lastText

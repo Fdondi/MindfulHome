@@ -398,6 +398,27 @@ object NegotiationManagerLogic {
         return "[${names.joinToString(", ")}]"
     }
 
+    fun localToolsApplied(
+        gatekeeperGranted: Boolean,
+        focusGateGranted: Boolean,
+        nudgeExtensionMinutes: Int,
+        launchedPackage: String,
+        showSuggestions: Boolean,
+        usageSummary: String,
+    ): Boolean = listOf(
+        gatekeeperGranted,
+        focusGateGranted,
+        nudgeExtensionMinutes > 0,
+        launchedPackage.isNotEmpty(),
+        showSuggestions,
+        usageSummary.isNotEmpty(),
+    ).any { it }
+
+    fun displayLocalReply(text: String, toolsApplied: Boolean, blankAck: String): String {
+        if (!toolsApplied) return text
+        return text.trim().ifBlank { blankAck }
+    }
+
     fun parseOnDeviceResult(
         response: String,
         type: NegotiationType?,

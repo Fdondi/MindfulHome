@@ -312,7 +312,7 @@ class NegotiationManager(
         currentConversation = lmClient.createConversation(systemPrompt, toolSets = listOf(tools))
         val conversation = currentConversation ?: return null
         val response = lmClient.sendMessage(conversation, userContext)
-        if (LmPlaygroundSessionLogic.isUnusableLocalReply(response)) {
+        if (unusableOnDeviceReply(response)) {
             rememberLocalFailure(
                 response.trim().ifBlank { LmPlaygroundSessionLogic.GENERIC_FAILURE },
             )
@@ -323,16 +323,32 @@ class NegotiationManager(
             exchangeCount++
         }
         logDeveloper("$logSuccess (text=${quote(response)})")
-        return parseOnDeviceResult(response)
+        return parseOnDeviceResult(shownOnDeviceReply(response))
     }
 
     private fun logOnDeviceStartFailure(e: Exception) {
-        Log.w(TAG, "on-device start failed, falling back", e)
+        if (e is LocalLmFailure) {
+            Log.w(TAG, "on-device start failed, falling back: ${e.userNotice}")
+        } else {
+            Log.w(TAG, "on-device start failed, falling back", e)
+        }
         logDeveloper(
             "fallback triggered: on-device start failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})",
         )
         currentConversation = null
     }
+
+    private fun unusableOnDeviceReply(response: String): Boolean =
+        LmPlaygroundSessionLogic.isUnusableLocalReply(response, onDeviceToolsApplied())
+
+    private fun onDeviceToolsApplied(): Boolean = NegotiationManagerLogic.localToolsApplied(
+        gatekeeperGranted = gatekeeperTools?.accessGranted == true,
+        focusGateGranted = focusGateTools?.accessGranted == true,
+        nudgeExtensionMinutes = nudgeTools?.extensionMinutes ?: 0,
+        launchedPackage = generalChatTools?.launchedPackage.orEmpty(),
+        showSuggestions = generalChatTools?.showSuggestions == true,
+        usageSummary = gatekeeperTools?.lastUsageHistorySummary.orEmpty(),
+    )
 
     private fun makeGatekeeperTools(): GatekeeperTools {
         val tools = GatekeeperTools()
@@ -708,7 +724,7 @@ class NegotiationManager(
             nudgeTools?.reset()
             generalChatTools?.reset()
             val response = lmClient.sendMessage(conversation, userMessage)
-            if (LmPlaygroundSessionLogic.isUnusableLocalReply(response)) {
+            if (unusableOnDeviceReply(response)) {
                 return failOnDeviceReply(
                     response.trim().ifBlank { LmPlaygroundSessionLogic.GENERIC_FAILURE },
                     e = null,
@@ -718,7 +734,7 @@ class NegotiationManager(
                 exchangeCount++
             }
             logDeveloper("on-device chat response received(text=${quote(response)})")
-            val result = applyLaunchRiskConfirmation(parseOnDeviceResult(response))
+            val result = applyLaunchRiskConfirmation(parseOnDeviceResult(shownOnDeviceReply(response)))
             logDeveloper(
                 "chat assistant response(type=on-device, text=${quote(result.responseText)}, " +
                     "accessGranted=${result.accessGranted}, extensionMinutes=${result.extensionMinutes}, " +
@@ -735,7 +751,10 @@ class NegotiationManager(
     }
 
     private fun failOnDeviceReply(notice: String, e: Exception?): NegotiationResult? {
-        if (e != null) {
+        if (e is LocalLmFailure) {
+            Log.w(TAG, "on-device reply failed, falling back: ${e.userNotice}")
+            logDeveloper("fallback triggered: on-device reply failed (${e.userNotice})")
+        } else if (e != null) {
             Log.e(TAG, "Error in on-device reply", e)
             logDeveloper(
                 "fallback triggered: on-device reply failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})",
@@ -745,6 +764,13 @@ class NegotiationManager(
         abandonOnDeviceConversation("local failure")
         return null
     }
+
+    private fun shownOnDeviceReply(response: String): String =
+        NegotiationManagerLogic.displayLocalReply(
+            text = response,
+            toolsApplied = onDeviceToolsApplied(),
+            blankAck = LocaleHelper.wrap(context).getString(R.string.nudge_scripted_extension_ack),
+        )
 
     private fun parseOnDeviceResult(response: String): NegotiationResult =
         NegotiationManagerLogic.parseOnDeviceResult(

@@ -33,7 +33,7 @@ google-services.json
 # Android Profiling
 *.hprof
 
-backend/
+/backend/
 LMPlayground-server/
 
 .cursor/rules/
