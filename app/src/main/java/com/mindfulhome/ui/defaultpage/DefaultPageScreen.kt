@@ -57,8 +57,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.TodoItem
+import com.mindfulhome.ui.coachmark.CoachmarkIds
+import com.mindfulhome.ui.coachmark.CoachmarkScreen
+import com.mindfulhome.ui.coachmark.ScreenCoachmarkHost
+import com.mindfulhome.ui.coachmark.coachmarkTargetIf
+import com.mindfulhome.ui.coachmark.coachmarkTargets
+import com.mindfulhome.ui.coachmark.defaultPageCoachmarkSpecs
+import com.mindfulhome.ui.coachmark.scrollOffsetToReveal
 import com.mindfulhome.ui.common.VersionLabel
 import com.mindfulhome.ui.quicklaunch.MissionIntentSection
+import io.luminos.LocalCoachmarkController
 import java.text.DateFormat
 import java.util.Calendar
 import java.util.Date
@@ -82,8 +90,8 @@ fun DefaultPageScreen(
     onOpenTimerPlain: () -> Unit,
     onOpenLogs: () -> Unit = {},
     onOpenKarma: () -> Unit = {},
-    onOpenTutorial: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenHelp: () -> Unit = {},
     onStartTodo: (minutes: Int?, intent: String) -> Unit,
     onScreenShown: () -> Unit = {},
 ) {
@@ -95,12 +103,30 @@ fun DefaultPageScreen(
         onScreenShown()
     }
 
+    val defaultTourSteps = coachmarkTargets(defaultPageCoachmarkSpecs(todoItems.isNotEmpty()))
+    ScreenCoachmarkHost(
+        screen = CoachmarkScreen.DEFAULT_PAGE,
+        steps = defaultTourSteps,
+    ) { _ ->
+        val coachmarks = LocalCoachmarkController.current
+        val scrollState = rememberScrollState()
+        LaunchedEffect(coachmarks) {
+            val controller = coachmarks ?: return@LaunchedEffect
+            controller.scrollRequester = { id ->
+                val bounds = controller.getTargetBounds(id)
+                if (bounds != null) {
+                    scrollState.animateScrollTo(
+                        scrollOffsetToReveal(scrollState.value, bounds.top),
+                    )
+                }
+            }
+        }
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .navigationBarsPadding()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -123,7 +149,7 @@ fun DefaultPageScreen(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onOpenTutorial) {
+            IconButton(onClick = onOpenHelp) {
                 Icon(
                     Icons.Default.Info,
                     contentDescription = stringResource(R.string.tutorial),
@@ -140,7 +166,9 @@ fun DefaultPageScreen(
         }
 
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .coachmarkTargetIf(coachmarks, CoachmarkIds.TODO_CARD),
             shape = RoundedCornerShape(14.dp),
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.6f)),
             colors = CardDefaults.cardColors(
@@ -168,6 +196,7 @@ fun DefaultPageScreen(
                                 deadlineEpochMs = next6pmEpochMs()
                             )
                         },
+                        modifier = Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.TODO_ADD),
                     ) {
                         Icon(Icons.Default.Add, contentDescription = stringResource(R.string.add_todo))
                     }
@@ -199,6 +228,7 @@ fun DefaultPageScreen(
                                     )
                                 },
                                 onStart = { onStartTodo(item.expectedDurationMinutes, item.intentText) },
+                                startCoachmark = item.id == todoItems.first().id,
                             )
                         }
                     }
@@ -245,6 +275,7 @@ fun DefaultPageScreen(
             },
         )
     }
+    }
 }
 @Composable
 private fun TodoRow(
@@ -252,10 +283,12 @@ private fun TodoRow(
     onComplete: () -> Unit,
     onEdit: () -> Unit,
     onStart: () -> Unit,
+    startCoachmark: Boolean = false,
 ) {
     val formatter = remember { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT) }
     val deadlineLabel = item.deadlineEpochMs?.let { formatter.format(Date(it)) } ?: "No deadline"
     val durationLabel = item.expectedDurationMinutes?.let { "${it}m" } ?: "n/a"
+    val coachmarks = LocalCoachmarkController.current
 
     Row(
         modifier = Modifier
@@ -276,7 +309,14 @@ private fun TodoRow(
         }
         IconButton(onClick = onComplete) { Icon(Icons.Default.Check, contentDescription = stringResource(R.string.complete)) }
         IconButton(onClick = onEdit) { Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit)) }
-        IconButton(onClick = onStart) { Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.start)) }
+        IconButton(
+            onClick = onStart,
+            modifier = if (startCoachmark) {
+                Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.TODO_START)
+            } else {
+                Modifier
+            },
+        ) { Icon(Icons.Default.PlayArrow, contentDescription = stringResource(R.string.start)) }
     }
 }
 

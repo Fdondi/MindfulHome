@@ -1,9 +1,13 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.102.1"
+    const val versionName = "0.103.3"
 }
 
+// 0.103.3 - Overlay for notifications; restore Info tutorial pages; detail script/cloud/LM Playground
+// 0.103.2 - Replay overlay tour even if the screen already auto-started once this session
+// 0.103.1 - Help (i): replay overlay tour; explain notifications and timer extensions
+// 0.103.0 - Per-screen spotlight coachmarks; drop text tutorial and onboarding explanation pages
 // 0.102.1 - Rebase Google Sign-In extract (AiMode, host activity) onto LM Playground on-device
 // 0.102.0 - Rebase onto LM Playground: keep Google Sign-In host, overlay permission, AI Google/on-device/none
 // 0.101.2 - Use a preloaded LM Playground model even without tool calling; surface real API errors

@@ -22,8 +22,11 @@ import androidx.compose.ui.unit.dp
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.placementsByPackage
 import com.mindfulhome.model.AppInfo
+import com.mindfulhome.ui.coachmark.CoachmarkIds
+import com.mindfulhome.ui.coachmark.coachmarkTargetIf
 import com.mindfulhome.util.PackageManagerHelper
 import com.mindfulhome.util.ShortcutUiHelper
+import io.luminos.LocalCoachmarkController
 import kotlinx.coroutines.launch
 
 @Composable
@@ -96,6 +99,7 @@ fun MissionIntentSection(
 
     val hasEmptyNamedFolder = remember(rawSlots) { hasEmptyNamedIntentFolder(rawSlots) }
     val resumeTile = buildResumeAuxTile(resumeSessionLabel, resumeSessionMinutes, onResumeSession)
+    val coachmarks = LocalCoachmarkController.current
 
     Column(
         modifier = modifier,
@@ -141,8 +145,10 @@ fun MissionIntentSection(
                     label = stringResource(R.string.something_else_question),
                     onClick = onOpenTimerPlain,
                     contentDescription = stringResource(R.string.open_timer_without_prefill),
+                    coachmarkId = CoachmarkIds.QL_SOMETHING_ELSE,
                 ),
             ),
+            modifier = Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.QL_FOLDERS),
         )
     }
 

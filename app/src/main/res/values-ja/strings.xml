@@ -47,33 +47,31 @@
     <string name="focus_time_description">アクティブな時間帯では、タイマー後もランチャーは非表示のままです。Quick Launch 以外のアプリは AI で開きます。</string>
     <string name="get_started">はじめる</string>
     <string name="grant">許可</string>
-    <string name="how_it_works">仕組み</string>
     <string name="intent">意図</string>
     <string name="karma">カルマ</string>
     <string name="language_picker_continue">続ける</string>
     <string name="language_picker_subtitle">後から設定で変更できます。</string>
     <string name="language_picker_title">言語を選択</string>
     <string name="language_system_default">システムのデフォルト</string>
-    <string name="makes_sense">了解</string>
     <string name="max_rounds_label">最大 %1$d</string>
     <string name="min_rounds_label">最小 %1$d</string>
     <string name="no_deadline">期限なし</string>
     <string name="ok">OK</string>
-    <string name="onboarding_ai_model_body">MindfulHome の話し方を選んでください。\n\nGoogle（推奨）— サインインして Gemini を使います。より賢く、端末への負荷も小さいです。\nこの端末 — 空き容量があれば Gemma 3 1B のローカルモデル（約 557 MB）をダウンロードします。小さいモデルは Gemini ほど賢くありません。\nなし — サインインもダウンロードもせず、スクリプトの返信を使います。\n\nスクリプト返信はこの画面での明示的な選択です。後で選んだ方法が使えない場合にも使われます。</string>
+    <string name="onboarding_ai_model_body">MindfulHome の話し方を選びます。\n\nクラウド（推奨）— ログインして Google のサーバー上の Gemini を使う。高性能で端末は軽く、ネットが必要。\n\nローカル — 別アプリ LM Playground を入れ、その中のモデルを使う。プライベートでオフライン。Gemini より弱い。\n\nスクリプト — ログインも別アプリも不要。決まった返答。クラウドやローカルが動かないときも使う。</string>
     <string name="onboarding_ai_google_title">Google (Gemini) — サインイン</string>
-    <string name="onboarding_ai_google_body">推奨。より賢く、端末への負荷も小さいです。</string>
-    <string name="onboarding_ai_local_title">この端末</string>
-    <string name="onboarding_ai_local_body">非公開でオフライン。Gemma 3 1B モデル（約 557 MB）をダウンロードします。</string>
+    <string name="onboarding_ai_google_body">クラウド。推奨。最も高性能で、端末への負担は最も軽い。ネットが必要。</string>
+    <string name="onboarding_ai_local_title">この端末（LM Playground）</string>
+    <string name="onboarding_ai_local_body">別アプリ LM Playground を入れ、そこでローカルモデルを選びます。プライベートでオフライン。Gemini より弱く、容量と RAM を使います。</string>
     <string name="onboarding_ai_local_insufficient_space">容量不足（空き %1$s が必要）</string>
     <string name="onboarding_ai_none_title">なし（スクリプト）</string>
-    <string name="onboarding_ai_none_body">サインインもダウンロードも不要。会話はスクリプト返信です。</string>
+    <string name="onboarding_ai_none_body">Google アカウントも別アプリも不要。固定のスクリプト返答。クラウドや LM Playground が動かないときも使う。</string>
     <string name="onboarding_ai_download">ローカルモデルをダウンロード</string>
     <string name="onboarding_ai_downloading">モデルをダウンロード中… %1$d%%</string>
     <string name="onboarding_ai_download_failed">ローカルモデルをダウンロードできませんでした。接続を確認して再試行してください。</string>
     <string name="onboarding_ai_open_huggingface">HuggingFace を開いて Gemma ライセンスに同意</string>
     <string name="ai_mode_google">Google (Gemini)</string>
     <string name="ai_mode_none">なし（スクリプト）</string>
-    <string name="ai_mode_none_description">会話はスクリプト返信です。Google サインインも端末上モデルも使いません。</string>
+    <string name="ai_mode_none_description">固定のスクリプト返答。Google も LM Playground も使わない。他の選択肢が失敗したときも使う。</string>
     <string name="local_model_download">モデルをダウンロード（557 MB）</string>
     <string name="local_model_insufficient_space">容量不足のためローカルモデルをダウンロードできません。</string>
     <string name="onboarding_continue_if_stuck">続行（固まった場合）</string>
@@ -118,12 +116,62 @@
     <string name="refresh_app_list">アプリ一覧を更新</string>
     <string name="search_apps_2">アプリを検索</string>
     <string name="settings">設定</string>
-    <string name="tutorial">チュートリアル</string>
     <string name="tutorial_title">チュートリアル</string>
     <string name="tutorial_subtitle">使い方を忘れたら、セットアップガイドの各項目をここから見直せます。</string>
     <string name="tutorial_previous">前へ</string>
     <string name="tutorial_next">次へ</string>
     <string name="tutorial_page_of">%1$d / %2$d</string>
+    <string name="how_it_works">仕組み</string>
+    <string name="tutorial">チュートリアル</string>
+    <string name="coachmark_skip">スキップ</string>
+    <string name="coachmark_next">次へ</string>
+    <string name="coachmark_got_it">わかった</string>
+    <string name="coachmark_show_tour">ツアーを表示</string>
+    <string name="help_replay_overlay_tour">オーバーレイツアーを再開</string>
+    <string name="help_notifications_title">通知</string>
+    <string name="help_notifications_body">タイマー動作中は通知にカウントダウンが出ます。時間切れになると、MindfulHome は鳥と短い会話で促します。オーバーレイを許可していればそこに、そうでなければ同じ通知です。そこで返信してください。スパムではありません。タイマーのあとだけです。</string>
+    <string name="help_extension_title">延長を頼む</string>
+    <string name="help_extension_body">その会話で延長を頼めます。AI が延長を出したら “yes” で確認するか、断ってください。アプリを閉じられるなら閉じてください。それが基本です。本当に必要なときだけ頼んで、習慣にしないでください。</string>
+    <string name="coachmark_timer_title">タイマー</string>
+    <string name="coachmark_timer_body">セッションの長さ。タップするとタイマーに戻ります。</string>
+    <string name="coachmark_notifications_title">通知</string>
+    <string name="coachmark_notifications_body">別アプリにいる間、通知がカウントダウンを保ちます。時間切れ：鳥と短い会話 — 許可していればオーバーレイ、なければその通知。そこで返信します。</string>
+    <string name="coachmark_search_title">検索</string>
+    <string name="coachmark_search_body">名前でアプリを探します。</string>
+    <string name="coachmark_karma_title">カルマ</string>
+    <string name="coachmark_karma_body">アプリのスコアを確認します。</string>
+    <string name="coachmark_settings_icon_title">設定</string>
+    <string name="coachmark_settings_icon_body">言語、権限、AI、動作。</string>
+    <string name="coachmark_ai_title">AI</string>
+    <string name="coachmark_ai_body">隠れたアプリに届くためにここで話します。質問したあと、必ず折れます。</string>
+    <string name="coachmark_app_grid_title">アプリ</string>
+    <string name="coachmark_app_grid_body">タップで開く。長押ししてドラッグで並べ替え。</string>
+    <string name="coachmark_favorites_title">お気に入り</string>
+    <string name="coachmark_favorites_body">ドックに置いてすぐ起動するアプリ。</string>
+    <string name="coachmark_todo_card_title">Todo</string>
+    <string name="coachmark_todo_card_body">現実の用事。アプリだけではありません。</string>
+    <string name="coachmark_todo_add_title">Todo を追加</string>
+    <string name="coachmark_todo_add_body">意図、任意の所要時間、期限、優先度。</string>
+    <string name="coachmark_todo_start_title">開始</string>
+    <string name="coachmark_todo_start_body">この項目で埋まったタイマーを開きます。</string>
+    <string name="coachmark_ql_folders_title">Quick Launch</string>
+    <string name="coachmark_ql_folders_body">今やっていること用のフォルダ。タップで起動、長押しで管理。</string>
+    <string name="coachmark_ql_something_else_title">ほかは？</string>
+    <string name="coachmark_ql_something_else_body">Quick Launch にないアプリを開きます。</string>
+    <string name="coachmark_settings_language_title">言語</string>
+    <string name="coachmark_settings_language_body">アプリの言語。またはシステムに合わせる。</string>
+    <string name="coachmark_settings_permissions_title">権限</string>
+    <string name="coachmark_settings_permissions_body">使用状況、オーバーレイ、アプリ切替の検出。</string>
+    <string name="coachmark_settings_notifications_title">通知</string>
+    <string name="coachmark_settings_notifications_body">タイマーのカウントダウンと、オーバーレイがオフのときの終了時チャットに必要です。</string>
+    <string name="coachmark_settings_behavior_title">動作</string>
+    <string name="coachmark_settings_behavior_body">集中時間、間隔、タイマーの促し方。</string>
+    <string name="coachmark_settings_ai_title">AI モデル</string>
+    <string name="coachmark_settings_ai_body">クラウドの Gemini、LM Playground アプリ経由のローカル、またはモデルなしのスクリプト。</string>
+    <string name="coachmark_settings_gate_title">ゲートのプロンプト</string>
+    <string name="coachmark_settings_gate_body">アプリを通す前に AI が聞くこと。</string>
+    <string name="coachmark_settings_daily_title">1日の要約</string>
+    <string name="coachmark_settings_daily_body">その日の使い方の振り返り。</string>
     <string name="settings_language">言語</string>
     <string name="settings_language_description">インターフェースと AI 返信に使うアプリの言語。</string>
     <string name="show_hard_deadline">厳しい締切を表示</string>
@@ -136,13 +184,6 @@
     <string name="strikes_before_hiding_description">ホーム画面から隠されるまでにアプリが溜められる悪いカルマ点数。</string>
     <string name="timing_intervals_description">ポーリング（Quick Launch、使用キャッシュ、ナッジループ）、タイマー通知の更新、すべてのナッジ間隔。大きい刻みほど電池を節約。</string>
     <string name="welcome_to_mindfulhome">MindfulHome へようこそ</string>
-    <string-array name="onboarding_philosophy_bullets">
-        <item>ロック解除のたびにタイマーを設定</item>
-        <item>タイマーを守れたかでアプリにカルマが付く</item>
-        <item>カルマが低いアプリは非表示（ブロックはしない）</item>
-        <item>非表示アプリは AI に話して開く — 尋ねるが、必ず折れる</item>
-        <item>MindfulHome がアプリを強制終了することはない</item>
-    </string-array>
     <string name="intent_folder_search">検索</string>
     <string name="intent_folder_reflect">内省</string>
     <string name="intent_folder_travel">移動</string>
@@ -152,14 +193,24 @@
     <string name="intent_folder_snap">撮影</string>
     <string name="intent_folder_util">その他</string>
     <string name="something_else_question">他のこと？</string>
-    <string name="onboarding_app_tiers_title">アプリの三つの区分</string>
     <string name="onboarding_system_apps_title">プリインストールアプリ</string>
     <string name="onboarding_system_apps_body">システムアプリに見えるものです。電話などが使えるよう、既定では制限しません。MindfulHome に監視させたいものはチェックを外してください。</string>
     <string name="onboarding_system_apps_empty">この端末にプリインストール候補はありません。</string>
     <string name="onboarding_system_apps_continue">続ける</string>
+    <string name="todo_empty_hint">現実のタスクをここに置きます。意図（任意で所要時間や期限）を追加し、Startでタイマーを開きます。</string>
+    <string name="more_capable_requires_google_sign_in_and_interne">クラウド Gemini。ログインとネットが必要。最も高性能で、端末への負担は最も軽い。</string>
+    <string name="private_works_offline_requires_downloading_a_mod">別アプリの LM Playground をこの端末で使います。プライベート、オフライン。そのアプリを入れ、そこでモデルを選びます。</string>
+    <string name="onboarding_app_tiers_title">アプリの三つの区分</string>
     <string name="onboarding_layout_title">ホーム画面の仕組み</string>
     <string name="onboarding_todo_title">Todoリストの役割</string>
-    <string name="todo_empty_hint">現実のタスクをここに置きます。意図（任意で所要時間や期限）を追加し、Startでタイマーを開きます。</string>
+    <string name="tutorial_ai_model_body">MindfulHome は三通りの話し方ができます。設定 → AIモデルで選びます。選んだものが動かないときは、会話はスクリプト返答に戻ります。\n\nクラウド — Google（Gemini）：Google でログイン。ネットが必要。最も高性能で端末は最も軽い：モデルは Google のサーバーで動き、端末では動きません。\n\nローカル — LM Playground（別アプリ）：MindfulHome はローカルモデルを同梱しません。LM Playground を入れ、そのアプリでモデルを入手または選択します。MindfulHome は端末上の LM Playground にチャットを送ります。モデルが用意できればプライベートでオフライン。小さいローカルモデルは Gemini より弱く、容量と RAM を使います。LM Playground が無い・ブロック・ビジーならスクリプト返答になります。\n\nスクリプト — なし：Google アカウントも別アプリもモデルダウンロードも不要。決まった返答。AI を使いたくないときに選びます。クラウドやローカルが使えないときの自動フォールバックでもあります。</string>
+    <string-array name="onboarding_philosophy_bullets">
+        <item>ロック解除のたびにタイマーを設定</item>
+        <item>タイマーを守れたかでアプリにカルマが付く</item>
+        <item>カルマが低いアプリは非表示（ブロックはしない）</item>
+        <item>非表示アプリは AI に話して開く — 尋ねるが、必ず折れる</item>
+        <item>MindfulHome がアプリを強制終了することはない</item>
+    </string-array>
     <string-array name="onboarding_app_tiers_bullets">
         <item>信頼できる — 役に立ち、時間を無駄にしないと分かるアプリ：クイック起動に入れ、タイマーなし</item>
         <item>すばやく不信頼 — 役立つが時間を浪費しうるアプリ：クイック起動に入れ、デフォルトのタイマー付き</item>

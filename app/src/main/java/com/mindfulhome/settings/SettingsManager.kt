@@ -150,6 +150,8 @@ object SettingsManager {
     private const val HIDE_THRESHOLD_KEY = "karma_hide_threshold"
     private const val LAST_KARMA_RECOVERY_EPOCH_DAY_KEY = "last_karma_recovery_epoch_day"
     private const val SYSTEM_APPS_REVIEW_DONE_KEY = "system_apps_unrestricted_review_done"
+    private const val COACHMARK_TOUR_DONE_PREFIX = "coachmark_tour_done_"
+    private const val COACHMARK_REPLAY_SCREEN_KEY = "coachmark_replay_screen"
     const val DEFAULT_HIDE_THRESHOLD = 2
     const val MIN_HIDE_THRESHOLD = 0
     const val MAX_HIDE_THRESHOLD = 10
@@ -926,6 +928,27 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
     fun setSystemAppsReviewDone(context: Context, done: Boolean = true) {
         prefs(context).edit { putBoolean(SYSTEM_APPS_REVIEW_DONE_KEY, done) }
     }
+
+    fun isCoachmarkTourDone(context: Context, screenKey: String): Boolean =
+        prefs(context).getBoolean(coachmarkTourDoneKey(screenKey), false)
+
+    fun setCoachmarkTourDone(context: Context, screenKey: String, done: Boolean = true) {
+        prefs(context).edit { putBoolean(coachmarkTourDoneKey(screenKey), done) }
+    }
+
+    fun requestCoachmarkReplay(context: Context, screenKey: String) {
+        prefs(context).edit { putString(COACHMARK_REPLAY_SCREEN_KEY, screenKey) }
+    }
+
+    fun takePendingCoachmarkReplay(context: Context, screenKey: String): Boolean {
+        val pending = prefs(context).getString(COACHMARK_REPLAY_SCREEN_KEY, null)
+        if (pending != screenKey) return false
+        prefs(context).edit { remove(COACHMARK_REPLAY_SCREEN_KEY) }
+        return true
+    }
+
+    private fun coachmarkTourDoneKey(screenKey: String): String =
+        COACHMARK_TOUR_DONE_PREFIX + screenKey
 
     // ── Screen-off timestamp ────────────────────────────────────────
 

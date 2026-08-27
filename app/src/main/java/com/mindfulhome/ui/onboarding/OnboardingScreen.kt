@@ -43,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringArrayResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -67,7 +66,6 @@ import kotlinx.coroutines.launch
 
 private const val PREF_NAME = "mindfulhome"
 private const val ONBOARDING_STEP_KEY = "onboarding_step"
-private const val ONBOARDING_LAST_STEP = 11
 private const val TAG = "Onboarding"
 
 @Composable
@@ -92,13 +90,28 @@ fun OnboardingScreen(
         )
     }
     var step by remember {
-        mutableIntStateOf(prefs.getInt(ONBOARDING_STEP_KEY, 0).coerceIn(0, ONBOARDING_LAST_STEP))
+        mutableIntStateOf(
+            when (val resume = OnboardingLogic.resumeOnboarding(prefs.getInt(ONBOARDING_STEP_KEY, 0))) {
+                OnboardingLogic.Resume.Complete -> OnboardingLogic.LAST_SETUP_STEP
+                is OnboardingLogic.Resume.Continue -> resume.step
+            },
+        )
+    }
+    val shouldCompleteRemovedExplanation = remember {
+        OnboardingLogic.resumeOnboarding(prefs.getInt(ONBOARDING_STEP_KEY, 0)) is
+            OnboardingLogic.Resume.Complete
     }
 
     fun goToStep(nextStep: Int) {
-        val clamped = nextStep.coerceIn(0, ONBOARDING_LAST_STEP)
+        val clamped = nextStep.coerceIn(0, OnboardingLogic.LAST_SETUP_STEP)
         step = clamped
         prefs.edit().putInt(ONBOARDING_STEP_KEY, clamped).apply()
+    }
+
+    LaunchedEffect(languageChosen, shouldCompleteRemovedExplanation) {
+        if (languageChosen && shouldCompleteRemovedExplanation) {
+            onComplete()
+        }
     }
 
     Column(
@@ -127,6 +140,8 @@ fun OnboardingScreen(
                     }
                 },
             )
+        } else if (shouldCompleteRemovedExplanation) {
+            // Finishing onboarding after removed explanation pages; no UI.
         } else {
             OnboardingStepContent(
                 step = step,
@@ -150,9 +165,8 @@ private fun OnboardingStepContent(
     onGrantUsageAccess: () -> Unit,
 ) {
     when (step) {
-        0 -> WelcomeStep(onNext = { onGoToStep(1) })
-        1 -> PhilosophyStep(onNext = { onGoToStep(2) })
-        2 -> DefaultHomeStep(onNext = { onGoToStep(3) })
+        0 -> WelcomeStep(onNext = { onGoToStep(OnboardingLogic.DEFAULT_HOME_STEP) })
+        1, 2 -> DefaultHomeStep(onNext = { onGoToStep(3) })
         else -> OnboardingPermissionSteps(
             step = step,
             karmaManager = karmaManager,
@@ -182,13 +196,10 @@ private fun OnboardingPermissionSteps(
             onNext = { onGoToStep(7) },
         )
         7 -> ModelStep(onNext = { onGoToStep(8) })
-        8 -> SystemAppsReviewStep(
+        else -> SystemAppsReviewStep(
             karmaManager = karmaManager,
-            onNext = { onGoToStep(9) },
+            onNext = onComplete,
         )
-        9 -> AppTiersStep(onNext = { onGoToStep(10) })
-        10 -> LayoutStep(onNext = { onGoToStep(11) })
-        else -> TodoStep(onNext = onComplete)
     }
 }
 
@@ -227,26 +238,6 @@ private fun WelcomeStep(onNext: () -> Unit) {
     ) {
         Text(stringResource(R.string.get_started))
     }
-}
-
-@Composable
-private fun PhilosophyStep(onNext: () -> Unit) {
-    OnboardingBulletStep(
-        title = stringResource(R.string.how_it_works),
-        bulletArrayRes = R.array.onboarding_philosophy_bullets,
-        buttonLabel = stringResource(R.string.makes_sense),
-        onNext = onNext,
-    )
-}
-
-@Composable
-private fun AppTiersStep(onNext: () -> Unit) {
-    OnboardingBulletStep(
-        title = stringResource(R.string.onboarding_app_tiers_title),
-        bulletArrayRes = R.array.onboarding_app_tiers_bullets,
-        buttonLabel = stringResource(R.string.makes_sense),
-        onNext = onNext,
-    )
 }
 
 @Composable
@@ -343,63 +334,6 @@ private fun SystemAppsReviewStep(
         modifier = Modifier.fillMaxWidth(0.8f),
     ) {
         Text(stringResource(R.string.onboarding_system_apps_continue))
-    }
-}
-
-@Composable
-private fun TodoStep(onNext: () -> Unit) {
-    OnboardingBulletStep(
-        title = stringResource(R.string.onboarding_todo_title),
-        bulletArrayRes = R.array.onboarding_todo_bullets,
-        buttonLabel = stringResource(R.string.start_using_mindfulhome),
-        onNext = onNext,
-    )
-}
-
-@Composable
-private fun LayoutStep(onNext: () -> Unit) {
-    OnboardingBulletStep(
-        title = stringResource(R.string.onboarding_layout_title),
-        bulletArrayRes = R.array.onboarding_layout_bullets,
-        buttonLabel = stringResource(R.string.makes_sense),
-        onNext = onNext,
-    )
-}
-
-@Composable
-private fun OnboardingBulletStep(
-    title: String,
-    bulletArrayRes: Int,
-    buttonLabel: String,
-    onNext: () -> Unit,
-) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.headlineSmall,
-        fontWeight = FontWeight.Bold,
-        textAlign = TextAlign.Center,
-    )
-
-    Spacer(modifier = Modifier.height(24.dp))
-
-    stringArrayResource(bulletArrayRes).forEach { point ->
-        Text(
-            text = "- $point",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
-        )
-    }
-
-    Spacer(modifier = Modifier.height(48.dp))
-
-    Button(
-        onClick = onNext,
-        modifier = Modifier.fillMaxWidth(0.6f),
-    ) {
-        Text(buttonLabel)
     }
 }
 

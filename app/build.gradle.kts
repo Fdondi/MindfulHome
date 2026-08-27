@@ -88,6 +88,9 @@ dependencies {
     // Drawable painter for Compose (render Android Drawables)
     implementation(libs.accompanist.drawablepainter)
 
+    // In-app spotlight coachmarks
+    implementation(libs.lumen.android)
+
     // LM Playground on-device inference (AIDL client)
     implementation(project(":playground-api"))
 

@@ -29,6 +29,10 @@ import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
+import com.mindfulhome.ui.coachmark.CoachmarkScreen
+import com.mindfulhome.ui.coachmark.ScreenCoachmarkHost
+import com.mindfulhome.ui.coachmark.coachmarkTargets
+import com.mindfulhome.ui.coachmark.homeCoachmarkSpecs
 import com.mindfulhome.ui.search.SearchOverlay
 import com.mindfulhome.util.PackageManagerHelper
 import kotlinx.coroutines.Dispatchers
@@ -46,9 +50,9 @@ fun HomeScreen(
     onTimerClick: () -> Unit = {},
     onOpenDefault: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    onOpenTutorial: () -> Unit = {},
     onOpenLogs: () -> Unit = {},
     onOpenKarma: () -> Unit = {},
+    onOpenHelp: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -121,9 +125,9 @@ fun HomeScreen(
         onTimerClick = onTimerClick,
         onOpenDefault = onOpenDefault,
         onOpenSettings = onOpenSettings,
-        onOpenTutorial = onOpenTutorial,
         onOpenLogs = onOpenLogs,
         onOpenKarma = onOpenKarma,
+        onOpenHelp = onOpenHelp,
         onRequestAi = onRequestAi,
         onDragStarted = { item, local, topLeft ->
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -227,9 +231,9 @@ private fun HomeScreenScaffold(
     onTimerClick: () -> Unit,
     onOpenDefault: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenTutorial: () -> Unit,
     onOpenLogs: () -> Unit,
     onOpenKarma: () -> Unit,
+    onOpenHelp: () -> Unit,
     onRequestAi: (String) -> Unit,
     onDragStarted: (HomeGridItem, androidx.compose.ui.geometry.Offset, androidx.compose.ui.geometry.Offset) -> Unit,
     onDragDelta: (androidx.compose.ui.geometry.Offset) -> Unit,
@@ -237,6 +241,11 @@ private fun HomeScreenScaffold(
     onDragCancelled: () -> Unit,
     onAddToDock: (AppInfo) -> Unit,
 ) {
+    val homeTourSteps = coachmarkTargets(homeCoachmarkSpecs())
+    ScreenCoachmarkHost(
+        screen = CoachmarkScreen.HOME,
+        steps = homeTourSteps,
+    ) { _ ->
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -254,7 +263,7 @@ private fun HomeScreenScaffold(
                 onSearchClick = { onShowSearchChange(true) },
                 onLogsClick = onOpenLogs,
                 onKarmaClick = onOpenKarma,
-                onTutorialClick = onOpenTutorial,
+                onTutorialClick = onOpenHelp,
                 onSettingsClick = onOpenSettings,
                 onAiClick = { onRequestAi("") },
             )
@@ -293,6 +302,7 @@ private fun HomeScreenScaffold(
             onDismiss = { onShowSearchChange(false) },
             onAddToDock = onAddToDock,
         )
+    }
     }
 }
 

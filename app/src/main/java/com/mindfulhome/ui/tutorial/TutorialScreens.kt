@@ -16,6 +16,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -69,7 +70,17 @@ enum class TutorialTopic(
     AI_MODEL(
         id = "ai_model",
         titleRes = R.string.ai_model_options,
-        paragraphRes = R.string.onboarding_ai_model_body,
+        paragraphRes = R.string.tutorial_ai_model_body,
+    ),
+    NOTIFICATIONS(
+        id = "notifications",
+        titleRes = R.string.help_notifications_title,
+        paragraphRes = R.string.help_notifications_body,
+    ),
+    EXTENSIONS(
+        id = "extensions",
+        titleRes = R.string.help_extension_title,
+        paragraphRes = R.string.help_extension_body,
     ),
     ;
 
@@ -88,6 +99,7 @@ enum class TutorialTopic(
 @Composable
 fun TutorialIndexScreen(
     onBack: () -> Unit,
+    onReplayOverlayTour: () -> Unit,
     onOpenTopic: (TutorialTopic) -> Unit,
 ) {
     Column(
@@ -125,6 +137,14 @@ fun TutorialIndexScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),
             )
+            Button(
+                onClick = onReplayOverlayTour,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+            ) {
+                Text(stringResource(R.string.help_replay_overlay_tour))
+            }
             TutorialTopic.entries.forEachIndexed { index, topic ->
                 if (index > 0) HorizontalDivider()
                 TutorialIndexRow(

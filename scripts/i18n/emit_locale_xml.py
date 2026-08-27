@@ -42,7 +42,7 @@ def parse_en_order() -> tuple[list[str], dict[str, list[str]]]:
             flags=re.S,
         )
         if not arr:
-            raise SystemExit(f"missing string-array {name} in English strings.xml")
+            continue
         arrays[name] = [
             b.replace("\\'", "'").replace('\\"', '"')
             for b in re.findall(r"<item>(.*?)</item>", arr.group(1), flags=re.S)
@@ -68,6 +68,8 @@ def emit(locale: str) -> None:
     for k in keys:
         lines.append(f'    <string name="{k}">{esc(strings[k])}</string>')
     for name in BULLET_ARRAYS:
+        if name not in en_arrays:
+            continue
         json_key = JSON_BULLET_KEYS[name]
         bullets = data.get(json_key)
         if bullets is None:

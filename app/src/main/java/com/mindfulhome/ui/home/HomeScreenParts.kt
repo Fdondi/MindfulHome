@@ -59,9 +59,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toSize
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.model.AppInfo
+import com.mindfulhome.ui.coachmark.CoachmarkIds
+import com.mindfulhome.ui.coachmark.coachmarkTargetIf
 import com.mindfulhome.ui.common.PullTabShelf
 import com.mindfulhome.ui.quicklaunch.AppSlotStripKind
 import com.mindfulhome.ui.quicklaunch.AppSlotStripSection
+import io.luminos.LocalCoachmarkController
 import kotlin.math.roundToInt
 
 @Composable
@@ -76,30 +79,36 @@ internal fun HomeTopBar(
     onSettingsClick: () -> Unit,
     onAiClick: () -> Unit,
 ) {
+    val coachmarks = LocalCoachmarkController.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        OutlinedButton(onClick = onTimerClick) {
-            Icon(
-                Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(R.string.back_to_timer),
-                tint = MaterialTheme.colorScheme.onBackground,
-            )
-            Icon(
-                Icons.Default.Timer,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onBackground,
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "$durationMinutes min",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.SemiBold,
-            )
+        Box(modifier = Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.HOME_NOTIFICATIONS)) {
+            OutlinedButton(
+                onClick = onTimerClick,
+                modifier = Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.HOME_TIMER),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = stringResource(R.string.back_to_timer),
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+                Icon(
+                    Icons.Default.Timer,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "$durationMinutes min",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
         }
         OutlinedButton(onClick = onHomeClick) {
             Icon(
@@ -109,22 +118,34 @@ internal fun HomeTopBar(
             )
         }
         Spacer(modifier = Modifier.weight(1f))
-        IconButton(onClick = onSearchClick) {
+        IconButton(
+            onClick = onSearchClick,
+            modifier = Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.HOME_SEARCH),
+        ) {
             Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search_apps_2), tint = MaterialTheme.colorScheme.onBackground)
         }
         IconButton(onClick = onLogsClick) {
             Icon(Icons.AutoMirrored.Filled.Article, contentDescription = stringResource(R.string.session_logs_2), tint = MaterialTheme.colorScheme.onBackground)
         }
-        IconButton(onClick = onKarmaClick) {
+        IconButton(
+            onClick = onKarmaClick,
+            modifier = Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.HOME_KARMA),
+        ) {
             Icon(Icons.Default.Stars, contentDescription = stringResource(R.string.karma), tint = MaterialTheme.colorScheme.onBackground)
         }
         IconButton(onClick = onTutorialClick) {
             Icon(Icons.Default.Info, contentDescription = stringResource(R.string.tutorial), tint = MaterialTheme.colorScheme.onBackground)
         }
-        IconButton(onClick = onSettingsClick) {
+        IconButton(
+            onClick = onSettingsClick,
+            modifier = Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.HOME_SETTINGS),
+        ) {
             Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings), tint = MaterialTheme.colorScheme.onBackground)
         }
-        IconButton(onClick = onAiClick) {
+        IconButton(
+            onClick = onAiClick,
+            modifier = Modifier.coachmarkTargetIf(coachmarks, CoachmarkIds.HOME_AI),
+        ) {
             Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = stringResource(R.string.talk_to_ai), tint = MaterialTheme.colorScheme.onBackground)
         }
     }
@@ -177,10 +198,13 @@ internal fun HomeAppGrid(
     onDragCancelled: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val coachmarks = LocalCoachmarkController.current
     LazyVerticalGrid(
         state = gridState,
         columns = GridCells.Fixed(4),
-        modifier = modifier.padding(horizontal = 8.dp),
+        modifier = modifier
+            .padding(horizontal = 8.dp)
+            .coachmarkTargetIf(coachmarks, CoachmarkIds.HOME_APP_GRID),
         contentPadding = PaddingValues(vertical = 8.dp),
         verticalArrangement = Arrangement.Top,
         horizontalArrangement = Arrangement.SpaceEvenly,
@@ -224,10 +248,12 @@ internal fun HomeFavoritesStrip(
     onLaunchApp: (String) -> Unit,
 ) {
     val highlight = favoritesStripHighlighted(dragDropState.hoverTarget)
+    val coachmarks = LocalCoachmarkController.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .navigationBarsPadding()
+            .coachmarkTargetIf(coachmarks, CoachmarkIds.HOME_FAVORITES)
             .then(
                 if (highlight) {
                     Modifier.background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f))

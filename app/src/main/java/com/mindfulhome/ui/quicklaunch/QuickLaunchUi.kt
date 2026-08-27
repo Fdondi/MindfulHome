@@ -42,7 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.mindfulhome.model.AppInfo
+import com.mindfulhome.ui.coachmark.coachmarkTargetIf
 import com.mindfulhome.ui.icons.MaterialSymbolGlyph
+import io.luminos.LocalCoachmarkController
 import kotlin.math.max
 import kotlin.math.min
 
@@ -76,6 +78,7 @@ data class QuickLaunchAuxTile(
     val subtitle: String? = null,
     val onClick: () -> Unit,
     val contentDescription: String,
+    val coachmarkId: String? = null,
 )
 
 private val IntentTileWidth = 74.dp
@@ -461,10 +464,11 @@ fun QuickLaunchWrappedRow(
     tileContent: QuickLaunchTileContent = QuickLaunchTileContent.AppIcons,
     beforeAddAuxTiles: List<QuickLaunchAuxTile> = emptyList(),
     onRemoveSlotAt: ((Int) -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     var boxInRoot by remember { mutableStateOf(Offset.Zero) }
     BoxWithConstraints(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .onGloballyPositioned { coords ->
                 boxInRoot = coords.positionInRoot()
@@ -850,11 +854,15 @@ private fun QuickLaunchGridCell(
 
 @Composable
 private fun QuickLaunchAuxGridCell(aux: QuickLaunchAuxTile) {
+    val coachmarks = LocalCoachmarkController.current
     IntentLabelTile(
         label = aux.label,
         subtitle = aux.subtitle,
         onClick = aux.onClick,
         contentDescription = aux.contentDescription,
+        modifier = aux.coachmarkId?.let { id ->
+            Modifier.coachmarkTargetIf(coachmarks, id)
+        } ?: Modifier,
     )
 }
 

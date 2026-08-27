@@ -25,6 +25,7 @@ room = "2.8.4"
 runner = "1.7.0"
 securityCrypto = "1.1.0"
 workRuntimeKtx = "2.11.2"
+lumen = "1.0.0-beta06"
 
 [libraries]
 accompanist-drawablepainter = { group = "com.google.accompanist", name = "accompanist-drawablepainter", version.ref = "accompanistDrawablepainter" }
@@ -62,3 +63,4 @@ androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-compose-ui-testManifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 compose-material-iconsExtended = { group = "androidx.compose.material", name = "material-icons-extended" }
 compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+lumen-android = { group = "io.github.aldefy", name = "lumen-android", version.ref = "lumen" }

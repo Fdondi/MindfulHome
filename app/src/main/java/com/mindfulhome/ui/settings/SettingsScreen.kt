@@ -41,6 +41,14 @@ import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.service.ForegroundAppAccessibilityService
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.ui.coachmark.CoachmarkIds
+import com.mindfulhome.ui.coachmark.CoachmarkScreen
+import com.mindfulhome.ui.coachmark.ScreenCoachmarkHost
+import com.mindfulhome.ui.coachmark.coachmarkTargetIf
+import com.mindfulhome.ui.coachmark.coachmarkTargets
+import com.mindfulhome.ui.coachmark.scrollOffsetToReveal
+import com.mindfulhome.ui.coachmark.settingsCoachmarkSpecs
+import io.luminos.LocalCoachmarkController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -179,6 +187,24 @@ fun SettingsScreen(
         }
     }
 
+    val settingsTourSteps = coachmarkTargets(settingsCoachmarkSpecs())
+    ScreenCoachmarkHost(
+        screen = CoachmarkScreen.SETTINGS,
+        steps = settingsTourSteps,
+    ) { startTour ->
+        val coachmarks = LocalCoachmarkController.current
+        val scrollState = rememberScrollState()
+        LaunchedEffect(coachmarks) {
+            val controller = coachmarks ?: return@LaunchedEffect
+            controller.scrollRequester = { id ->
+                val bounds = controller.getTargetBounds(id)
+                if (bounds != null) {
+                    scrollState.animateScrollTo(
+                        scrollOffsetToReveal(scrollState.value, bounds.top),
+                    )
+                }
+            }
+        }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -197,10 +223,15 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .verticalScroll(scrollState)
                 .padding(16.dp)
         ) {
-            LanguageSection()
+            LanguageSection(
+                headerModifier = Modifier.coachmarkTargetIf(
+                    coachmarks,
+                    CoachmarkIds.SETTINGS_LANGUAGE,
+                ),
+            )
 
             PermissionsSection(
                 hasUsageStats = hasUsageStats,
@@ -213,9 +244,23 @@ fun SettingsScreen(
                 skippedOverlayPrompt = skippedOverlayPrompt,
                 onSkippedOverlayPromptChange = { skippedOverlayPrompt = it },
                 accessibilityEnabled = accessibilityEnabled,
+                headerModifier = Modifier.coachmarkTargetIf(
+                    coachmarks,
+                    CoachmarkIds.SETTINGS_PERMISSIONS,
+                ),
+                notificationCardModifier = Modifier.coachmarkTargetIf(
+                    coachmarks,
+                    CoachmarkIds.SETTINGS_NOTIFICATIONS,
+                ),
             )
 
-            BehaviorSection(onOpenIntervalSettings = onOpenIntervalSettings)
+            BehaviorSection(
+                onOpenIntervalSettings = onOpenIntervalSettings,
+                headerModifier = Modifier.coachmarkTargetIf(
+                    coachmarks,
+                    CoachmarkIds.SETTINGS_BEHAVIOR,
+                ),
+            )
 
             AiModelSection(
                 aiMode = aiMode,
@@ -230,6 +275,10 @@ fun SettingsScreen(
                 backendModel = backendModel,
                 onBackendModelChange = { backendModel = it },
                 availableModels = availableModels,
+                headerModifier = Modifier.coachmarkTargetIf(
+                    coachmarks,
+                    CoachmarkIds.SETTINGS_AI,
+                ),
             )
 
             GatePromptsSection(
@@ -245,6 +294,10 @@ fun SettingsScreen(
                 focusGateContextTemplate = focusGateContextTemplate,
                 onFocusGateContextTemplateChange = { focusGateContextTemplate = it },
                 onFocusGatePromptsCustomChange = { focusGatePromptsCustom = it },
+                headerModifier = Modifier.coachmarkTargetIf(
+                    coachmarks,
+                    CoachmarkIds.SETTINGS_GATE,
+                ),
             )
 
             DailyLogSummariesSection(
@@ -252,9 +305,14 @@ fun SettingsScreen(
                 onDailySummaryPromptTextChange = { dailySummaryPromptText = it },
                 dailySummaryPromptVersion = dailySummaryPromptVersion,
                 onDailySummaryPromptVersionChange = { dailySummaryPromptVersion = it },
+                headerModifier = Modifier.coachmarkTargetIf(
+                    coachmarks,
+                    CoachmarkIds.SETTINGS_DAILY,
+                ),
             )
 
-            AboutSection()
+            AboutSection(onShowTour = startTour)
         }
+    }
     }
 }

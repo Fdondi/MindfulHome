@@ -52,6 +52,7 @@ internal fun AiModelSection(
     backendModel: String,
     onBackendModelChange: (String) -> Unit,
     availableModels: List<BackendClient.ModelInfo>,
+    headerModifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     var signInInProgress by remember { mutableStateOf(false) }
@@ -60,7 +61,7 @@ internal fun AiModelSection(
         if (signInInProgress) signInInProgress = false
     }
 
-    SectionHeader(stringResource(R.string.ai_model))
+    SectionHeader(stringResource(R.string.ai_model), modifier = headerModifier)
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {

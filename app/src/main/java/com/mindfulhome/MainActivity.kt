@@ -41,6 +41,7 @@ import com.mindfulhome.service.ForegroundAppAccessibilityService
 import com.mindfulhome.service.TimerService
 import com.mindfulhome.service.UsageTracker
 import com.mindfulhome.settings.SettingsManager
+import com.mindfulhome.ui.coachmark.CoachmarkScreen
 import com.mindfulhome.ui.defaultpage.DefaultPageScreen
 import com.mindfulhome.ui.home.HomeScreen
 import com.mindfulhome.ui.logs.LogsScreen
@@ -352,8 +353,8 @@ class MainActivity : AppCompatActivity() {
             },
             onOpenLogs = { navCtrl.navigate("logs") },
             onOpenKarma = { navCtrl.navigate("karma") },
-            onOpenTutorial = { navCtrl.navigate("help") },
             onOpenSettings = { navCtrl.navigate("settings") },
+            onOpenHelp = { navCtrl.navigate("help/${CoachmarkScreen.DEFAULT_PAGE.storageKey}") },
             onStartTodo = { minutes, intentText ->
                 pendingPrefillMinutes = minutes
                 pendingPrefillReason = intentText
@@ -403,9 +404,9 @@ class MainActivity : AppCompatActivity() {
             },
             onOpenDefault = { navigateToDefaultFromRoot(navCtrl) },
             onOpenSettings = { navCtrl.navigate("settings") },
-            onOpenTutorial = { navCtrl.navigate("help") },
             onOpenLogs = { navCtrl.navigate("logs") },
             onOpenKarma = { navCtrl.navigate("karma") },
+            onOpenHelp = { navCtrl.navigate("help/${CoachmarkScreen.HOME.storageKey}") },
         )
     }
 

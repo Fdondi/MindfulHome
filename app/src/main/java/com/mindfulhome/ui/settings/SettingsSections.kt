@@ -50,11 +50,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
-internal fun LanguageSection() {
+internal fun LanguageSection(headerModifier: Modifier = Modifier) {
     val context = LocalContext.current
     var selected by remember { mutableStateOf(SettingsManager.getAppLanguage(context)) }
 
-    SectionHeader(stringResource(R.string.settings_language))
+    SectionHeader(stringResource(R.string.settings_language), modifier = headerModifier)
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
@@ -88,9 +88,11 @@ internal fun PermissionsSection(
     skippedOverlayPrompt: Boolean,
     onSkippedOverlayPromptChange: (Boolean) -> Unit,
     accessibilityEnabled: Boolean,
+    headerModifier: Modifier = Modifier,
+    notificationCardModifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    SectionHeader(stringResource(R.string.permissions))
+    SectionHeader(stringResource(R.string.permissions), modifier = headerModifier)
 
     val usage = permissionCardCopy(
         context,
@@ -126,6 +128,7 @@ internal fun PermissionsSection(
         title = notification.title,
         description = notification.description,
         actionLabel = notification.actionLabel,
+        modifier = notificationCardModifier,
         onAction = {
             SettingsManager.setPermissionPromptSuppressed(
                 context, SettingsManager.PermissionPrompt.NOTIFICATIONS, false
@@ -192,9 +195,12 @@ internal fun PermissionsSection(
 }
 
 @Composable
-internal fun BehaviorSection(onOpenIntervalSettings: () -> Unit) {
+internal fun BehaviorSection(
+    onOpenIntervalSettings: () -> Unit,
+    headerModifier: Modifier = Modifier,
+) {
     val context = LocalContext.current
-    SectionHeader(stringResource(R.string.behavior))
+    SectionHeader(stringResource(R.string.behavior), modifier = headerModifier)
 
     var focusTimeEnabled by remember {
         mutableStateOf(SettingsManager.isFocusTimeEnabled(context))
@@ -600,9 +606,10 @@ internal fun GatePromptsSection(
     focusGateContextTemplate: String,
     onFocusGateContextTemplateChange: (String) -> Unit,
     onFocusGatePromptsCustomChange: (Boolean) -> Unit,
+    headerModifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    SectionHeader(stringResource(R.string.gate_prompts))
+    SectionHeader(stringResource(R.string.gate_prompts), modifier = headerModifier)
 
     GatePromptEditorCard(
         title = stringResource(R.string.app_gatekeeper),
@@ -667,13 +674,14 @@ internal fun DailyLogSummariesSection(
     onDailySummaryPromptTextChange: (String) -> Unit,
     dailySummaryPromptVersion: Int,
     onDailySummaryPromptVersionChange: (Int) -> Unit,
+    headerModifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     var dailySummaryRegenerateN by remember { mutableStateOf("0") }
     var dailySummarySaveBusy by remember { mutableStateOf(false) }
 
-    SectionHeader(stringResource(R.string.daily_log_summaries))
+    SectionHeader(stringResource(R.string.daily_log_summaries), modifier = headerModifier)
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -801,7 +809,7 @@ private fun saveDailySummaryPrompt(
 }
 
 @Composable
-internal fun AboutSection() {
+internal fun AboutSection(onShowTour: () -> Unit) {
     SectionHeader(stringResource(R.string.about))
 
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -818,18 +826,21 @@ internal fun AboutSection() {
             )
             Spacer(modifier = Modifier.height(4.dp))
             VersionLabel()
+            TextButton(onClick = onShowTour, modifier = Modifier.padding(top = 8.dp)) {
+                Text(stringResource(R.string.coachmark_show_tour))
+            }
         }
     }
 }
 
 @Composable
-internal fun SectionHeader(title: String) {
+internal fun SectionHeader(title: String, modifier: Modifier = Modifier) {
     Text(
         text = title,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(bottom = 8.dp),
+        modifier = modifier.padding(bottom = 8.dp),
     )
 }
 
@@ -840,8 +851,9 @@ internal fun SettingsCard(
     actionLabel: String?,
     onAction: () -> Unit,
     actionEnabled: Boolean = true,
+    modifier: Modifier = Modifier,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = title,
