@@ -297,6 +297,22 @@ object NegotiationManagerLogic {
         }.trim()
     }
 
+    fun alreadySaidOpeningInstruction(opening: String): String =
+        "You already opened with: \"$opening\". Continue from there; do not repeat that opening."
+
+    fun mergeSystemPromptWithOpening(
+        systemPrompt: String,
+        opening: String,
+        userContext: String = "",
+    ): String {
+        val withContext = if (userContext.isBlank()) systemPrompt else "$systemPrompt\n\n$userContext"
+        return "$withContext\n\n${alreadySaidOpeningInstruction(opening)}"
+    }
+
+    /** First gate message is always scripted; the model is not invoked yet. */
+    fun scriptedGateOpeningResult(openingText: String): NegotiationResult =
+        NegotiationResult(responseText = openingText, accessGranted = false)
+
     fun formatDailySummariesBriefing(dayToSummary: List<Pair<String, String>>): String? {
         if (dayToSummary.isEmpty()) return null
         val body = dayToSummary.joinToString(separator = "\n\n") { (day, summary) ->

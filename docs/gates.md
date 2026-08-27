@@ -12,7 +12,7 @@ MindfulHome uses short AI conversations before phone time is allowed. The AI gat
 
 Both AI gates share the same UX pattern:
 
-1. AI opens with a question.
+1. The app shows a **scripted** opening (no model call). The backend / on-device model is only invoked after your first reply.
 2. You reply (at least one full back-and-forth before Proceed can appear).
 3. AI may grant access when satisfied, or the app auto-grants at **max rounds** (see below).
 4. **Proceed** appears when access is granted; chat stays open until you tap it.
@@ -59,7 +59,7 @@ Each gate has two editable fields:
 
 Defaults live in `PromptTemplates.DEFAULT_*`. **Save** stores your copy; **Reset to default** restores built-ins.
 
-The model receives: `systemPrompt` + `context template` (resolved) on conversation start. Edits apply to the next gate conversation.
+Conversation start seeds `systemPrompt` + resolved `context template` as history, plus the scripted opening as the model's first turn. The model is not called until you send a message. Edits apply to the next gate conversation.
 
 ### Context template syntax
 

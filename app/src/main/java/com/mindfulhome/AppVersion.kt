@@ -1,9 +1,10 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.102.1"
+    const val versionName = "0.103.0"
 }
 
+// 0.103.0 - Scripted first gate messages; don't call the model until the user replies
 // 0.102.1 - Rebase Google Sign-In extract (AiMode, host activity) onto LM Playground on-device
 // 0.102.0 - Rebase onto LM Playground: keep Google Sign-In host, overlay permission, AI Google/on-device/none
 // 0.101.2 - Use a preloaded LM Playground model even without tool calling; surface real API errors

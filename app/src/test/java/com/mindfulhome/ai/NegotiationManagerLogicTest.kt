@@ -313,6 +313,33 @@ class NegotiationManagerLogicTest {
     }
 
     @Test
+    fun scriptedGateOpeningResult_neverGrants() {
+        val result = NegotiationManagerLogic.scriptedGateOpeningResult("It's focus time.")
+        assertEquals("It's focus time.", result.responseText)
+        assertFalse(result.accessGranted)
+        assertEquals(0, result.extensionMinutes)
+        assertEquals("", result.launchedPackage)
+    }
+
+    @Test
+    fun mergeSystemPromptWithOpening_includesOpeningAndDoNotRepeat() {
+        val merged = NegotiationManagerLogic.mergeSystemPromptWithOpening(
+            systemPrompt = "Be brief.",
+            opening = "Hi there",
+            userContext = "Session is 20 minutes.",
+        )
+        assertTrue(merged.contains("Be brief."))
+        assertTrue(merged.contains("Session is 20 minutes."))
+        assertTrue(merged.contains("Hi there"))
+        assertTrue(merged.contains("do not repeat"))
+        assertEquals(
+            "Be brief.",
+            NegotiationManagerLogic.mergeSystemPromptWithOpening("Be brief.", "Hi")
+                .substringBefore("\n\n"),
+        )
+    }
+
+    @Test
     fun replyRoutingHelpers() {
         assertTrue(NegotiationManagerLogic.shouldIncrementExchangeBeforeReply(NegotiationType.GATEKEEPER))
         assertTrue(NegotiationManagerLogic.shouldIncrementExchangeBeforeReply(NegotiationType.FOCUS_GATE))
