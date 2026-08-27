@@ -34,6 +34,8 @@ google-services.json
 *.hprof
 
 backend/
+LMPlayground-server/
+
 .cursor/rules/
 
 .claude/

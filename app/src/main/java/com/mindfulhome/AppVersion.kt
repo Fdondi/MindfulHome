@@ -1,9 +1,13 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.106.0"
+    const val versionName = "0.107.3"
 }
 
+// 0.107.3 - Note: LM Playground emulator tests froze/segfaulted; retry on a larger machine
+// 0.107.2 - Cap LM Playground emulator install: 2 compile workers, skip huge RAM boot
+// 0.107.1 - Script to install local LM Playground debug build on API 30+ emulator
+// 0.107.0 - Local AI failures announce then script; nudge "N more minutes" still confirms
 // 0.106.0 - Auto QL timers stay transient for Resume tile; birds/conversation unchanged
 // 0.105.0 - Birds stay after a new timer/extension; clear when Home/Default resumes
 // 0.104.2 - Extra focus-gate back-and-forths as the window elapses; never mention the turn floor

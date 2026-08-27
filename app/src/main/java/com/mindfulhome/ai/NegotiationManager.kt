@@ -2,11 +2,13 @@ package com.mindfulhome.ai
 
 import android.content.Context
 import android.util.Log
+import com.mindfulhome.R
 import com.mindfulhome.ai.backend.BackendAuthHelper
 import com.mindfulhome.ai.backend.BackendClient
 import com.mindfulhome.ai.backend.BackendHttpException
 import com.mindfulhome.ai.backend.BackendToolDeclarations
 import com.mindfulhome.data.AppRepository
+import com.mindfulhome.locale.LocaleHelper
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
 import com.mindfulhome.settings.FocusTimeWindowLogic
@@ -19,6 +21,7 @@ import kotlinx.serialization.json.JsonElement
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 
 enum class NegotiationType {
     GATEKEEPER,
@@ -100,6 +103,7 @@ class NegotiationManager(
     private var focusGateTools: FocusGateTools? = null
     private var nudgeTools: NudgeTools? = null
     private var generalChatTools: GeneralChatTools? = null
+    private var localFailureNotice: String? = null
 
     // ── Gatekeeper ───────────────────────────────────────────────────
 
@@ -285,7 +289,14 @@ class NegotiationManager(
     ): NegotiationResult? {
         return try {
             sendOnDeviceStart(systemPrompt, userContext, tools, logSuccess)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LocalLmFailure) {
+            rememberLocalFailure(e.userNotice)
+            logOnDeviceStartFailure(e)
+            null
         } catch (e: Exception) {
+            rememberLocalFailure(LmPlaygroundSessionLogic.GENERIC_FAILURE)
             logOnDeviceStartFailure(e)
             null
         }
@@ -301,6 +312,13 @@ class NegotiationManager(
         currentConversation = lmClient.createConversation(systemPrompt, toolSets = listOf(tools))
         val conversation = currentConversation ?: return null
         val response = lmClient.sendMessage(conversation, userContext)
+        if (LmPlaygroundSessionLogic.isUnusableLocalReply(response)) {
+            rememberLocalFailure(
+                response.trim().ifBlank { LmPlaygroundSessionLogic.GENERIC_FAILURE },
+            )
+            abandonOnDeviceConversation("unusable local start reply")
+            return null
+        }
         if (currentType == NegotiationType.NUDGE) {
             exchangeCount++
         }
@@ -456,7 +474,7 @@ class NegotiationManager(
         exchangeCount++
         val text = PromptTemplates.fallbackNudgeResponse(context, appName, nudgeCount)
         logDeveloper("fallback response used: nudge scripted response (exchangeCount=$exchangeCount)")
-        NegotiationResult(responseText = text)
+        finishWithScriptedLocalFallback(NegotiationResult(responseText = text), userMessage = "")
     }
 
     // ── General chat ─────────────────────────────────────────────────
@@ -597,7 +615,7 @@ class NegotiationManager(
         }
         backendReply(userMessage)?.let { return@withContext it }
         onDeviceReply(userMessage)?.let { return@withContext it }
-        scriptedFallback()
+        scriptedFallback(userMessage)
     }
 
     private fun applyReplyRateLimit(): NegotiationResult? {
@@ -690,6 +708,12 @@ class NegotiationManager(
             nudgeTools?.reset()
             generalChatTools?.reset()
             val response = lmClient.sendMessage(conversation, userMessage)
+            if (LmPlaygroundSessionLogic.isUnusableLocalReply(response)) {
+                return failOnDeviceReply(
+                    response.trim().ifBlank { LmPlaygroundSessionLogic.GENERIC_FAILURE },
+                    e = null,
+                )
+            }
             if (!NegotiationManagerLogic.shouldIncrementExchangeBeforeReply(currentType)) {
                 exchangeCount++
             }
@@ -701,13 +725,25 @@ class NegotiationManager(
                     "launchedPackage=${quote(result.launchedPackage)}, suggestedQuery=${quote(result.suggestedQuery)})",
             )
             applyGatekeeperRoundPolicy(result)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LocalLmFailure) {
+            failOnDeviceReply(e.userNotice, e)
         } catch (e: Exception) {
+            failOnDeviceReply(LmPlaygroundSessionLogic.GENERIC_FAILURE, e)
+        }
+    }
+
+    private fun failOnDeviceReply(notice: String, e: Exception?): NegotiationResult? {
+        if (e != null) {
             Log.e(TAG, "Error in on-device reply", e)
             logDeveloper(
                 "fallback triggered: on-device reply failed (${e.javaClass.simpleName}: ${e.message ?: "<no message>"})",
             )
-            null
         }
+        rememberLocalFailure(notice)
+        abandonOnDeviceConversation("local failure")
+        return null
     }
 
     private fun parseOnDeviceResult(response: String): NegotiationResult =
@@ -722,48 +758,95 @@ class NegotiationManager(
             showSuggestions = generalChatTools?.showSuggestions == true,
         )
 
-    private fun scriptedFallback(): NegotiationResult = when (currentType) {
-        NegotiationType.GATEKEEPER -> {
-            val appName = currentAppPackage.substringAfterLast('.')
-            val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount)
-            val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
-            logDeveloper(
-                "fallback response used: gatekeeper scripted reply in ongoing chat " +
-                    "(grant=$grant, exchangeCount=$exchangeCount, minRounds=$gatekeeperMinRounds)",
-            )
-            applyGatekeeperRoundPolicy(NegotiationResult(responseText = text, accessGranted = grant))
+    private fun scriptedFallback(userMessage: String = ""): NegotiationResult {
+        val base = when (currentType) {
+            NegotiationType.GATEKEEPER -> {
+                val appName = currentAppPackage.substringAfterLast('.')
+                val text = PromptTemplates.fallbackGatekeeperResponse(appName, exchangeCount)
+                val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
+                logDeveloper(
+                    "fallback response used: gatekeeper scripted reply in ongoing chat " +
+                        "(grant=$grant, exchangeCount=$exchangeCount, minRounds=$gatekeeperMinRounds)",
+                )
+                applyGatekeeperRoundPolicy(NegotiationResult(responseText = text, accessGranted = grant))
+            }
+            NegotiationType.FOCUS_GATE -> {
+                val text = PromptTemplates.fallbackFocusGateResponse(
+                    durationMinutes = focusGateDurationMinutes,
+                    declaredIntent = focusGateDeclaredIntent,
+                    exchangeCount = exchangeCount,
+                    remainingFocusTime = focusGateRemainingFocusTime,
+                )
+                val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
+                logDeveloper(
+                    "fallback response used: focus gate scripted reply in ongoing chat " +
+                        "(grant=$grant, exchangeCount=$exchangeCount)",
+                )
+                applyGatekeeperRoundPolicy(NegotiationResult(responseText = text, accessGranted = grant))
+            }
+            NegotiationType.NUDGE -> {
+                exchangeCount++
+                val appName = currentAppPackage.substringAfterLast('.')
+                val text = PromptTemplates.fallbackNudgeResponse(context, appName, exchangeCount - 1)
+                logDeveloper(
+                    "fallback response used: nudge scripted reply in ongoing chat (exchangeCount=$exchangeCount)",
+                )
+                NegotiationResult(responseText = text)
+            }
+            NegotiationType.GENERAL, null -> NegotiationResult(
+                "I'm running without an AI backend right now, so I can't launch apps from here. " +
+                    "Tell me which app you want and I'll show quick launch suggestions.",
+            ).also {
+                logDeveloper(
+                    "fallback response used: general/no-context scripted reply (reason=no backend/on-device conversation)",
+                )
+            }
         }
-        NegotiationType.FOCUS_GATE -> {
-            val text = PromptTemplates.fallbackFocusGateResponse(
-                durationMinutes = focusGateDurationMinutes,
-                declaredIntent = focusGateDeclaredIntent,
-                exchangeCount = exchangeCount,
-                remainingFocusTime = focusGateRemainingFocusTime,
-            )
-            val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
-            logDeveloper(
-                "fallback response used: focus gate scripted reply in ongoing chat " +
-                    "(grant=$grant, exchangeCount=$exchangeCount)",
-            )
-            applyGatekeeperRoundPolicy(NegotiationResult(responseText = text, accessGranted = grant))
+        return finishWithScriptedLocalFallback(base, userMessage)
+    }
+
+    private fun finishWithScriptedLocalFallback(
+        base: NegotiationResult,
+        userMessage: String,
+    ): NegotiationResult {
+        val localized = LocaleHelper.wrap(context)
+        return NegotiationManagerLogic.finishScriptedFallback(
+            base = base,
+            type = currentType,
+            userMessage = userMessage,
+            failureNotice = localizedLocalFailureNotice(consumeLocalFailureNotice()),
+            emptyAck = localized.getString(R.string.nudge_scripted_extension_ack),
+        )
+    }
+
+    private fun rememberLocalFailure(notice: String) {
+        if (localFailureNotice.isNullOrBlank()) {
+            localFailureNotice = notice
         }
-        NegotiationType.NUDGE -> {
-            exchangeCount++
-            val appName = currentAppPackage.substringAfterLast('.')
-            val text = PromptTemplates.fallbackNudgeResponse(context, appName, exchangeCount - 1)
-            logDeveloper(
-                "fallback response used: nudge scripted reply in ongoing chat (exchangeCount=$exchangeCount)",
-            )
-            NegotiationResult(responseText = text)
+    }
+
+    private fun consumeLocalFailureNotice(): String? {
+        val notice = localFailureNotice
+        localFailureNotice = null
+        return notice?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun localizedLocalFailureNotice(raw: String?): String? {
+        val trimmed = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        if (trimmed == LmPlaygroundSessionLogic.GENERIC_FAILURE) {
+            return LocaleHelper.wrap(context).getString(R.string.local_ai_fallback_notice)
         }
-        NegotiationType.GENERAL, null -> NegotiationResult(
-            "I'm running without an AI backend right now, so I can't launch apps from here. " +
-                "Tell me which app you want and I'll show quick launch suggestions.",
-        ).also {
-            logDeveloper(
-                "fallback response used: general/no-context scripted reply (reason=no backend/on-device conversation)",
-            )
+        return trimmed
+    }
+
+    private fun abandonOnDeviceConversation(reason: String) {
+        try {
+            currentConversation?.let { lmClient.closeConversation(it) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing on-device conversation", e)
         }
+        currentConversation = null
+        logDeveloper("on-device conversation abandoned ($reason)")
     }
 
     // ── Cleanup ──────────────────────────────────────────────────────
@@ -775,6 +858,7 @@ class NegotiationManager(
             Log.e(TAG, "Error closing conversation", e)
         }
         currentConversation = null
+        localFailureNotice = null
         currentType = null
         exchangeCount = 0
         currentAppPackage = ""

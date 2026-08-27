@@ -117,6 +117,8 @@ Keyword list: `PromptTemplates.requiresExtraConfirmation`.
 
 Without backend AI or LM Playground, scripted replies in `PromptTemplates.fallback*` run the same round policy. Proceed still requires `fallbackShouldGrantAccess` (≥ 2 user rounds) before access is granted in fallback mode.
 
+If the **on-device** path is attempted and fails (including the canned “I can’t think right now” error), the app **tells you** and then continues with that script instead of leaving the error as the only reply. In a bird-nudge chat, asking for **N more minutes** still offers the existing **Are you sure?** confirmation after that fallback, even without a model calling `grantExtension`.
+
 ## Code map
 
 | Piece | Location |

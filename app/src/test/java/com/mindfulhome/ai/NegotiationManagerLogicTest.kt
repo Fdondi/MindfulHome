@@ -408,4 +408,47 @@ class NegotiationManagerLogicTest {
         )
         assertEquals("[grantAccess]", NegotiationManagerLogic.formatToolDeclarationNames(tools))
     }
+
+    @Test
+    fun parseRequestedExtensionMinutes_readsCommonPhrases() {
+        assertEquals(5, NegotiationManagerLogic.parseRequestedExtensionMinutes("5 more minutes"))
+        assertEquals(10, NegotiationManagerLogic.parseRequestedExtensionMinutes("Can I have 10 minutes?"))
+        assertEquals(15, NegotiationManagerLogic.parseRequestedExtensionMinutes("give me 15 mins please"))
+        assertEquals(7, NegotiationManagerLogic.parseRequestedExtensionMinutes("altro 7 minuti"))
+        assertEquals(120, NegotiationManagerLogic.parseRequestedExtensionMinutes("999 minutes"))
+        assertEquals(null, NegotiationManagerLogic.parseRequestedExtensionMinutes("I need more time"))
+        assertEquals(null, NegotiationManagerLogic.parseRequestedExtensionMinutes("yes"))
+        assertEquals(null, NegotiationManagerLogic.parseRequestedExtensionMinutes("0 minutes"))
+    }
+
+    @Test
+    fun finishScriptedFallback_announcesThenKeepsScript() {
+        val base = NegotiationResult("Your time is up.")
+        val result = NegotiationManagerLogic.finishScriptedFallback(
+            base = base,
+            type = NegotiationType.NUDGE,
+            userMessage = "ok",
+            failureNotice = "I'm having trouble thinking right now. Using the usual script.",
+            emptyAck = "Okay.",
+        )
+        assertTrue(result.responseText.contains("trouble thinking"))
+        assertTrue(result.responseText.contains("Your time is up."))
+        assertEquals(0, result.extensionMinutes)
+    }
+
+    @Test
+    fun finishScriptedFallback_nudgeMinutesAlwaysOffersExtension() {
+        val base = NegotiationResult("Still on Maps.")
+        val result = NegotiationManagerLogic.finishScriptedFallback(
+            base = base,
+            type = NegotiationType.NUDGE,
+            userMessage = "5 more minutes",
+            failureNotice = "I'm having trouble thinking right now. Using the usual script.",
+            emptyAck = "Okay.",
+        )
+        assertEquals(5, result.extensionMinutes)
+        assertTrue(result.accessGranted)
+        assertTrue(result.responseText.contains("trouble thinking"))
+        assertFalse(result.responseText.contains("Still on Maps."))
+    }
 }

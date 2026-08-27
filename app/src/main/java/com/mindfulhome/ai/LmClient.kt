@@ -1,6 +1,15 @@
 package com.mindfulhome.ai
 
 /**
+ * On-device generate failed. [userNotice] is safe to show; callers should then
+ * fall back to the scripted path instead of treating this as a model reply.
+ */
+class LocalLmFailure(
+    val userNotice: String,
+    cause: Throwable? = null,
+) : Exception(userNotice, cause)
+
+/**
  * Narrow LLM surface used by [NegotiationManager].
  *
  * Conversation handles are opaque ([Any]) so unit tests can fake the client

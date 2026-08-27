@@ -33,6 +33,8 @@
     <string name="nudge_error_session_ended">Zeit ist um! Deine Sitzung ist beendet.</string>
     <string name="nudge_fallback_reflect">Nimm dir einen Moment, um zu überlegen, ob du diese App noch brauchst.</string>
     <string name="nudge_error_process_failed">Sorry, das konnte ich nicht verarbeiten. Nimm dir einen Moment zum Nachdenken.</string>
+    <string name="local_ai_fallback_notice">Ich kann gerade nicht richtig nachdenken. Ich nutze das übliche Skript.</string>
+    <string name="nudge_scripted_extension_ack">Okay.</string>
     <string name="nudge_extension_confirm_by_minutes">Dadurch läuft dein Timer erst %1$d Minuten später ab. Bist du sicher?</string>
     <string name="nudge_extension_confirm_at_time">Dadurch läuft dein Timer um %1$s ab. Bist du sicher?</string>
     <string name="nudge_extension_blocked_deadline">Ich kann diese Verlängerung jetzt nicht gewähren – deine harte Deadline ist jetzt das engste Limit.</string>

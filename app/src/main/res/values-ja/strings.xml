@@ -31,6 +31,8 @@
     <string name="nudge_error_session_ended">時間切れ！セッションが終了しました。</string>
     <string name="nudge_fallback_reflect">このアプリがまだ必要か、少し考えてみてください。</string>
     <string name="nudge_error_process_failed">すみません、処理できませんでした。少し考えてみてください。</string>
+    <string name="local_ai_fallback_notice">今はうまく考えられません。いつものスクリプトに切り替えます。</string>
+    <string name="nudge_scripted_extension_ack">わかりました。</string>
     <string name="nudge_extension_confirm_by_minutes">タイマーの期限が %1$d 分遅くなります。よろしいですか？</string>
     <string name="nudge_extension_confirm_at_time">タイマーは %1$s に期限切れになります。よろしいですか？</string>
     <string name="nudge_extension_blocked_deadline">今はその延長を許可できません – ハード期限が最も近い制限です。</string>

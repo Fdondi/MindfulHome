@@ -33,6 +33,8 @@
     <string name="nudge_error_session_ended">Temps écoulé ! Votre session est terminée.</string>
     <string name="nudge_fallback_reflect">Prenez un moment pour réfléchir si vous avez encore besoin de cette app.</string>
     <string name="nudge_error_process_failed">Désolé, je n\'ai pas pu traiter ça. Prenez un moment pour réfléchir.</string>
+    <string name="local_ai_fallback_notice">J\'ai du mal à réfléchir pour le moment. Je passe au script habituel.</string>
+    <string name="nudge_scripted_extension_ack">D\'accord.</string>
     <string name="nudge_extension_confirm_by_minutes">Cela fera expirer votre minuteur %1$d minutes plus tard. Êtes-vous sûr ?</string>
     <string name="nudge_extension_confirm_at_time">Cela fera expirer votre minuteur à %1$s. Êtes-vous sûr ?</string>
     <string name="nudge_extension_blocked_deadline">Je ne peux pas accorder cette extension maintenant – votre échéance stricte est la limite la plus proche.</string>

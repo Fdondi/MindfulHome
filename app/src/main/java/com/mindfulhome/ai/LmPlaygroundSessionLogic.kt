@@ -29,7 +29,28 @@ object LmPlaygroundSessionLogic {
                 detail.ifBlank { "No on-device model is ready in LM Playground." }
             ErrorType.ENGINE_BUSY ->
                 detail.ifBlank { "LM Playground is busy. Please try again in a moment." }
+            ErrorType.ENGINE_UNAVAILABLE ->
+                detail.ifBlank { "LM Playground disconnected." }
+            ErrorType.CAPABILITY_UNAVAILABLE ->
+                detail.ifBlank { "The on-device model cannot handle this request." }
+            ErrorType.CANCELLED ->
+                detail.ifBlank { GENERIC_FAILURE }
             else -> detail.ifBlank { GENERIC_FAILURE }
+        }
+    }
+
+    fun isUnusableLocalReply(text: String): Boolean {
+        val trimmed = text.trim()
+        return trimmed.isEmpty() || trimmed == GENERIC_FAILURE
+    }
+
+    fun announceLocalFailureThenScript(notice: String?, script: String): String {
+        val n = notice?.trim().orEmpty()
+        val s = script.trim()
+        return when {
+            n.isNotEmpty() && s.isNotEmpty() -> "$n\n\n$s"
+            n.isNotEmpty() -> n
+            else -> s
         }
     }
 

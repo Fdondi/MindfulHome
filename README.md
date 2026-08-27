@@ -72,7 +72,7 @@ See [docs/crap.md](docs/crap.md) for the formula, report paths, and optional thr
 During onboarding (and later in Settings) you choose one of:
 
 - **Google (Gemini)** — default. Sign in with Google to use the remote AI service.
-- **On this device** — conversations use [LM Playground](https://github.com/Fdondi/LMPlayground-server) over its exported AIDL API. Install that app, download a GGUF model in it, and enable the inference API (Settings → Advanced). MindfulHome warns in Settings if LM Playground is not installed.
+- **On this device** — conversations use [LM Playground](https://github.com/Fdondi/LMPlayground-server) over its exported AIDL API. Install that app, download a GGUF model in it, and enable the inference API (Settings → Advanced). MindfulHome warns in Settings if LM Playground is not installed. Emulator install/probe notes: [docs/test/lm-playground-emulator.md](docs/test/lm-playground-emulator.md).
 - **None (scripted)** — no sign-in or extra app; conversations use scripted replies.
 
 If you pick Google or on-device and that option later fails, scripted replies are used until you change the setting.

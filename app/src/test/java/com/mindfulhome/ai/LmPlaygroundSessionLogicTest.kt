@@ -4,6 +4,7 @@ import com.druk.lmplayground.api.model.ApiError
 import com.druk.lmplayground.api.model.ErrorType
 import com.druk.lmplayground.api.model.ToolDefinition
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -40,5 +41,30 @@ class LmPlaygroundSessionLogicTest {
 
         val busy = ApiError(message = "", type = ErrorType.ENGINE_BUSY)
         assertTrue(LmPlaygroundSessionLogic.userFacingError(busy).contains("busy"))
+
+        val unavailable = ApiError(message = "", type = ErrorType.ENGINE_UNAVAILABLE)
+        assertTrue(LmPlaygroundSessionLogic.userFacingError(unavailable).contains("disconnected"))
+
+        val capability = ApiError(message = "", type = ErrorType.CAPABILITY_UNAVAILABLE)
+        assertTrue(LmPlaygroundSessionLogic.userFacingError(capability).contains("cannot handle"))
+    }
+
+    @Test
+    fun isUnusableLocalReply_blankAndGeneric() {
+        assertTrue(LmPlaygroundSessionLogic.isUnusableLocalReply(""))
+        assertTrue(LmPlaygroundSessionLogic.isUnusableLocalReply("   "))
+        assertTrue(LmPlaygroundSessionLogic.isUnusableLocalReply(LmPlaygroundSessionLogic.GENERIC_FAILURE))
+        assertFalse(LmPlaygroundSessionLogic.isUnusableLocalReply("Wrap up soon."))
+    }
+
+    @Test
+    fun announceLocalFailureThenScript_joinsOrFallsBack() {
+        assertEquals(
+            "notice\n\nscript",
+            LmPlaygroundSessionLogic.announceLocalFailureThenScript("notice", "script"),
+        )
+        assertEquals("notice", LmPlaygroundSessionLogic.announceLocalFailureThenScript("notice", "  "))
+        assertEquals("script", LmPlaygroundSessionLogic.announceLocalFailureThenScript(null, "script"))
+        assertEquals("", LmPlaygroundSessionLogic.announceLocalFailureThenScript("  ", ""))
     }
 }

@@ -7,6 +7,7 @@ import com.druk.lmplayground.api.LmPlaygroundClient
 import com.druk.lmplayground.api.model.ApiException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * On-device LLM via [LM Playground](https://github.com/Fdondi/LMPlayground-server)
@@ -48,13 +49,21 @@ class LmPlaygroundManager(context: Context) {
 
     suspend fun sendMessage(session: LmPlaygroundSession, message: String): String {
         return try {
-            session.send(message)
+            val text = session.send(message)
+            if (LmPlaygroundSessionLogic.isUnusableLocalReply(text)) {
+                throw LocalLmFailure(LmPlaygroundSessionLogic.GENERIC_FAILURE)
+            }
+            text
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: LocalLmFailure) {
+            throw e
         } catch (e: ApiException) {
             Log.e(TAG, "LM Playground request failed type=${e.error.type} code=${e.error.code}", e)
-            LmPlaygroundSessionLogic.userFacingError(e.error)
+            throw LocalLmFailure(LmPlaygroundSessionLogic.userFacingError(e.error), e)
         } catch (e: Exception) {
             Log.e(TAG, "Error sending message to LM Playground", e)
-            LmPlaygroundSessionLogic.GENERIC_FAILURE
+            throw LocalLmFailure(LmPlaygroundSessionLogic.GENERIC_FAILURE, e)
         }
     }
 

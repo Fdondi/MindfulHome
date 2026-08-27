@@ -33,6 +33,8 @@
     <string name="nudge_error_session_ended">时间到！本次会话已结束。</string>
     <string name="nudge_fallback_reflect">花点时间想想你是否还需要这个应用。</string>
     <string name="nudge_error_process_failed">抱歉，我处理不了。花点时间想想吧。</string>
+    <string name="local_ai_fallback_notice">我现在没法好好思考。改用平常的脚本。</string>
+    <string name="nudge_scripted_extension_ack">好的。</string>
     <string name="nudge_extension_confirm_by_minutes">这将让计时器再晚 %1$d 分钟到期。确定吗？</string>
     <string name="nudge_extension_confirm_at_time">这将让计时器在 %1$s 到期。确定吗？</string>
     <string name="nudge_extension_blocked_deadline">现在无法延长 — 硬性截止时间已是最近的限制。</string>

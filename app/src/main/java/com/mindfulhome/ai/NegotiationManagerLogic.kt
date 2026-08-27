@@ -429,4 +429,51 @@ object NegotiationManagerLogic {
         )
         null -> NegotiationResult(response)
     }
+
+    /**
+     * Minutes the user asked for in a nudge ("5 more minutes", "10 min").
+     * Null when no number is present. Caps at [MAX_SCRIPTED_EXTENSION_MINUTES].
+     */
+    fun parseRequestedExtensionMinutes(userMessage: String): Int? {
+        val match = EXTENSION_MINUTES_REGEX.find(userMessage) ?: return null
+        val n = match.groupValues[1].toIntOrNull() ?: return null
+        if (n < 1) return null
+        return n.coerceAtMost(MAX_SCRIPTED_EXTENSION_MINUTES)
+    }
+
+    /**
+     * After a local-AI miss: tell the user, keep the script, and still honor an
+     * explicit "x more minutes" request so the Are-you-sure confirmation can run.
+     */
+    fun finishScriptedFallback(
+        base: NegotiationResult,
+        type: NegotiationType?,
+        userMessage: String,
+        failureNotice: String?,
+        emptyAck: String,
+    ): NegotiationResult {
+        val minutes = if (type == NegotiationType.NUDGE) {
+            parseRequestedExtensionMinutes(userMessage)
+        } else {
+            null
+        }
+        val body = if (minutes != null) "" else base.responseText
+        val text = LmPlaygroundSessionLogic.announceLocalFailureThenScript(failureNotice, body)
+            .ifBlank { emptyAck }
+        return if (minutes != null) {
+            base.copy(
+                responseText = text,
+                extensionMinutes = minutes,
+                accessGranted = true,
+            )
+        } else {
+            base.copy(responseText = text)
+        }
+    }
+
+    private val EXTENSION_MINUTES_REGEX = Regex(
+        """(?i)(\d{1,3})\s*(?:more\s+)?(?:minutes?|mins?|minuti|minuten|minutos)\b""",
+    )
+
+    const val MAX_SCRIPTED_EXTENSION_MINUTES = 120
 }
