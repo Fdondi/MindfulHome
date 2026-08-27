@@ -337,10 +337,20 @@ class TimerService : Service() {
     }
 
     private fun clearVisibleNudgesCommand() {
+        // Home/default resume: stop spawning and remove birds (new timers leave them up).
+        val hadActiveJob = nudgeJob?.isActive == true
+        nudgeJob?.cancel()
+        _nudgeCount.value = 0
+        clearConversationGrace(reason = "cleared on home")
+        catchUpDebtMs = 0L
+        suppressPredatoryKarmaThisTick = false
         val cleared = overlayManager.dismissAllNudgesIfPresent()
+        if (cleared || hadActiveJob || negotiationManager != null || nudgeMessages.isNotEmpty()) {
+            endNudgeConversation(dismissOverlays = false)
+        }
         Log.d(
             TAG,
-            if (cleared) "ACTION_CLEAR_VISIBLE_NUDGES: removed visible nudges"
+            if (cleared || hadActiveJob) "ACTION_CLEAR_VISIBLE_NUDGES: stopped bird nudges"
             else "ACTION_CLEAR_VISIBLE_NUDGES: no-op (nothing visible)",
         )
     }
@@ -440,7 +450,10 @@ class TimerService : Service() {
     }
 
     private fun resetNudgesForNewTimer() {
-        logSessionEvent("Resetting nudge state for new timer/session")
+        logSessionEvent(
+            "Resetting nudge state for new timer/session (keeping visible birds until home)",
+        )
+        // Stop spawning; leave existing bird overlays until Home/Default clears them.
         nudgeJob?.cancel()
         clearNotificationInteractionWatch(
             reason = "nudge reset for new timer",
@@ -448,7 +461,6 @@ class TimerService : Service() {
         )
         preferBannerFallbackForOverlayTap = false
         SettingsManager.setNudgeBannerFallbackArmed(this, false)
-        overlayManager.dismissAllNudges()
         clearConversationGrace(reason = "nudge reset for new timer")
         catchUpDebtMs = 0L
         suppressPredatoryKarmaThisTick = false
@@ -456,7 +468,7 @@ class TimerService : Service() {
         userAwayOverlayActive = false
         awayShieldShownForCurrentAwayEpisode = false
         lastAwayOverlayTapAtMs = 0L
-        endNudgeConversation()
+        endNudgeConversation(dismissOverlays = false)
     }
 
     private fun startQuickLaunchSession(
@@ -1036,7 +1048,7 @@ class TimerService : Service() {
 
         nudgeJob?.cancel()
         _nudgeCount.value = 0
-        overlayManager.dismissAllNudges()
+        // Keep visible birds until Home/Default; extension only stops further spawning.
 
         val appLabel = getAppLabel(_currentPackage.value)
         logWithSession("Timer extended: **+$extraMinutes min** for $appLabel")
@@ -1911,8 +1923,11 @@ class TimerService : Service() {
         logSessionEvent("Conversation grace expired; catch-up debtMs=$catchUpDebtMs")
     }
 
-    private fun endNudgeConversation() {
-        logSessionEvent("Ending nudge conversation and clearing overlays/notification")
+    private fun endNudgeConversation(dismissOverlays: Boolean = true) {
+        logSessionEvent(
+            if (dismissOverlays) "Ending nudge conversation and clearing overlays/notification"
+            else "Ending nudge conversation (keeping visible bird overlays)",
+        )
         clearPendingExtensionConfirmation()
         clearConversationGrace(reason = "end nudge conversation")
         catchUpDebtMs = 0L
@@ -1921,7 +1936,9 @@ class TimerService : Service() {
         lmManager?.shutdown()
         lmManager = null
         nudgeMessages.clear()
-        overlayManager.dismissAllNudges()
+        if (dismissOverlays) {
+            overlayManager.dismissAllNudges()
+        }
 
         val notificationManager = getSystemService(NotificationManager::class.java)
         notificationManager.cancel(NUDGE_NOTIFICATION_ID)

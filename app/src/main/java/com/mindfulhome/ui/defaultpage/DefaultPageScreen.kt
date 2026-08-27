@@ -55,6 +55,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.data.TodoItem
 import com.mindfulhome.ui.coachmark.CoachmarkIds
@@ -99,7 +101,7 @@ fun DefaultPageScreen(
     val todoItems by repository.sortedOpenTodos().collectAsState(initial = emptyList())
     var editor by remember { mutableStateOf<TodoEditorState?>(null) }
 
-    LaunchedEffect(Unit) {
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         onScreenShown()
     }
 

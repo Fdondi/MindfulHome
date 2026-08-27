@@ -22,12 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import com.mindfulhome.ai.EmbeddingManager
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.AppInfo
 import com.mindfulhome.model.KarmaManager
-import com.mindfulhome.model.TimerState
 import com.mindfulhome.service.TimerService
 import com.mindfulhome.ui.coachmark.CoachmarkScreen
 import com.mindfulhome.ui.coachmark.ScreenCoachmarkHost
@@ -202,10 +203,10 @@ private fun HomeScreenEffects(
             gridItems.addAll(baseGridItems)
         }
     }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        TimerService.clearVisibleNudges(context, sessionHandle)
+    }
     LaunchedEffect(Unit) {
-        if (TimerService.timerState.value !is TimerState.Idle) {
-            TimerService.clearVisibleNudges(context, sessionHandle)
-        }
         Log.d("HomeScreen", "Loading installed apps from shared cache...")
         val apps = PackageManagerHelper.getInstalledApps(context)
         Log.d("HomeScreen", "Loaded ${apps.size} apps")

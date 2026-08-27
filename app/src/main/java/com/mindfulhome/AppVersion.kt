@@ -1,9 +1,10 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.104.2"
+    const val versionName = "0.105.0"
 }
 
+// 0.105.0 - Birds stay after a new timer/extension; clear when Home/Default resumes
 // 0.104.2 - Extra focus-gate back-and-forths as the window elapses; never mention the turn floor
 // 0.104.1 - Focus-time gate opening asks if remaining window time is truly too urgent to wait
 // 0.104.0 - Scripted first gate messages; don't call the model until the user replies

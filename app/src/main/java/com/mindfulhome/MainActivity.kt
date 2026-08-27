@@ -363,7 +363,10 @@ class MainActivity : AppCompatActivity() {
                 shouldShowTimer = true
                 navCtrl.navigate("timer") { popUpTo("default") { inclusive = false } }
             },
-            onScreenShown = { ensureQuickLaunchMonitoringAtHome() },
+            onScreenShown = {
+                ensureQuickLaunchMonitoringAtHome()
+                TimerService.clearVisibleNudges(this@MainActivity, sessionHandle)
+            },
         )
     }
 
