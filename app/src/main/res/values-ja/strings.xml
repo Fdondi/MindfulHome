@@ -44,6 +44,11 @@
     <string name="done">完了</string>
     <string name="enable">有効にする</string>
     <string name="focus_gate_length_description">フォーカスゲートチャットのやり取り回数：「続行」が出るまでの最小、自動許可までの最大。</string>
+    <string name="focus_gate_opening">集中時間の終了まであと %1$s です。本当に待てないほど急ぎですか？</string>
+    <string name="focus_gate_opening_no_remaining">今は集中時間です。本当に待てないほど急ぎですか？</string>
+    <string name="focus_time_remaining_minutes">%1$d 分</string>
+    <string name="focus_time_remaining_hours">%1$d 時間</string>
+    <string name="focus_time_remaining_hours_minutes">%1$d 時間 %2$d 分</string>
     <string name="focus_time_description">アクティブな時間帯では、タイマー後もランチャーは非表示のままです。Quick Launch 以外のアプリは AI で開きます。</string>
     <string name="get_started">はじめる</string>
     <string name="grant">許可</string>

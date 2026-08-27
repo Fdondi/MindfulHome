@@ -52,6 +52,11 @@
     <string name="signed_in_with_google">已使用 Google 登录</string>
     <string name="copy_adb_command">复制 adb 命令</string>
     <string name="focus_gate_length_description">焦点时间门聊天中的来回：在继续出现之前最少，在自动授予访问权限之前最多。</string>
+    <string name="focus_gate_opening">距离专注时间结束还有 %1$s。真的急到等不了吗？</string>
+    <string name="focus_gate_opening_no_remaining">现在是专注时间。真的急到等不了吗？</string>
+    <string name="focus_time_remaining_minutes">%1$d 分钟</string>
+    <string name="focus_time_remaining_hours">%1$d 小时</string>
+    <string name="focus_time_remaining_hours_minutes">%1$d 小时 %2$d 分钟</string>
     <string name="quick_return_window_description">如果您返回此窗口并且计时器仍在运行，请跳过计时器屏幕。</string>
     <string name="timing_intervals_description">轮询（快速启动、使用缓存、微移循环）、计时器通知刷新以及所有微移计时间隔。较大的步数可以节省电池。</string>
     <string name="strikes_before_hiding_description">一个应用程序在从主屏幕隐藏之前累积了多少恶业点。</string>

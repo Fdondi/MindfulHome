@@ -12,7 +12,7 @@ MindfulHome uses short AI conversations before phone time is allowed. The AI gat
 
 Both AI gates share the same UX pattern:
 
-1. The app shows a **scripted** opening (no model call). The backend / on-device model is only invoked after your first reply.
+1. The app shows a **scripted** opening (no model call). For the focus-time gate this is remaining time in the current window plus an urgency check. The backend / on-device model is only invoked after your first reply.
 2. You reply (at least one full back-and-forth before Proceed can appear).
 3. AI may grant access when satisfied, or the app auto-grants at **max rounds** (see below).
 4. **Proceed** appears when access is granted; chat stays open until you tap it.
@@ -95,6 +95,9 @@ Conversation start seeds `systemPrompt` + resolved `context template` as history
 | `{declaredIntent}` | Reason entered on timer screen |
 | `{focusWindowDescription}` | Active focus window label |
 | `{minRounds}` | Min rounds (from Settings, default 1) |
+| `{remainingFocusTime}` | Friendly remaining time until the current focus interval ends |
+
+The focus-time gate **opening** is a localized scripted line: remaining time in the current hour range, then “is it really so urgent you can’t wait?” — not a model refusal.
 
 ### Caution keywords
 

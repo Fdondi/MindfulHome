@@ -81,6 +81,7 @@ class NegotiationManager(
     private var gatekeeperMaxRounds = 0
     private var focusGateDurationMinutes = 0
     private var focusGateDeclaredIntent = ""
+    private var focusGateRemainingFocusTime = ""
 
     // Rate limiter: hard cap of 10 messages per 60 seconds
     private val replyTimestamps = ArrayDeque<Long>()
@@ -358,6 +359,10 @@ class NegotiationManager(
         exchangeCount = 0
         focusGateDurationMinutes = durationMinutes
         focusGateDeclaredIntent = declaredIntent
+        val remainingMinutes = SettingsManager.remainingFocusMinutesNow(context)
+        focusGateRemainingFocusTime = remainingMinutes
+            ?.let { PromptTemplates.formatRemainingFocusTime(context, it) }
+            .orEmpty()
 
         gatekeeperMinRounds = SettingsManager.getFocusGateMinRounds(context)
         gatekeeperMaxRounds = SettingsManager.getFocusGateMaxRounds(context)
@@ -369,12 +374,9 @@ class NegotiationManager(
             declaredIntent = declaredIntent,
             focusWindowDescription = focusWindowDescription,
             minRoundsBeforeGrant = gatekeeperMinRounds,
+            remainingFocusTime = focusGateRemainingFocusTime,
         )
-        val opening = PromptTemplates.fallbackFocusGateResponse(
-            durationMinutes = durationMinutes,
-            declaredIntent = declaredIntent,
-            exchangeCount = 0,
-        )
+        val opening = PromptTemplates.focusGateOpening(context, focusGateRemainingFocusTime)
         prepareScriptedGateConversation(
             systemPrompt = systemPrompt,
             userContext = userContext,
@@ -716,6 +718,7 @@ class NegotiationManager(
                 durationMinutes = focusGateDurationMinutes,
                 declaredIntent = focusGateDeclaredIntent,
                 exchangeCount = exchangeCount,
+                remainingFocusTime = focusGateRemainingFocusTime,
             )
             val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
             logDeveloper(
@@ -763,6 +766,7 @@ class NegotiationManager(
         gatekeeperMaxRounds = 0
         focusGateDurationMinutes = 0
         focusGateDeclaredIntent = ""
+        focusGateRemainingFocusTime = ""
         usingBackend = false
         backendHistory.clear()
         backendTools = null

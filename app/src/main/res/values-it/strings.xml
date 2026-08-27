@@ -52,6 +52,11 @@
     <string name="signed_in_with_google">Accesso effettuato con Google</string>
     <string name="copy_adb_command">Copia il comando adb</string>
     <string name="focus_gate_length_description">Avanti e indietro nella chat del focus time gate: minimo prima che possa apparire Procedi, massimo prima che l\'accesso venga concesso automaticamente.</string>
+    <string name="focus_gate_opening">Hai %1$s prima della fine del tempo di concentrazione. È davvero così urgente che non puoi aspettare?</string>
+    <string name="focus_gate_opening_no_remaining">È tempo di concentrazione. È davvero così urgente che non puoi aspettare?</string>
+    <string name="focus_time_remaining_minutes">%1$d minuti</string>
+    <string name="focus_time_remaining_hours">%1$d ore</string>
+    <string name="focus_time_remaining_hours_minutes">%1$d ore %2$d minuti</string>
     <string name="quick_return_window_description">Se torni in questa finestra e un timer è ancora in esecuzione, salta la schermata del timer.</string>
     <string name="timing_intervals_description">Polling (avvio rapido, cache di utilizzo, ciclo di sollecito), aggiornamento delle notifiche del timer e tutti gli intervalli di temporizzazione dei solleciti. I passaggi più grandi consentono di risparmiare batteria.</string>
     <string name="strikes_before_hiding_description">Quanti punti karma negativi accumula un\'app prima che venga nascosta dalla schermata principale.</string>

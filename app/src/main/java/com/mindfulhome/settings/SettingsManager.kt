@@ -9,7 +9,6 @@ import com.mindfulhome.locale.AppLanguage
 import com.mindfulhome.service.UsageTracker
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Calendar
 import java.util.Locale
 
 /**
@@ -636,6 +635,17 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         }
     }
 
+    fun remainingFocusMinutesNow(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Int? {
+        if (!isFocusTimeEnabled(context)) return null
+        return FocusTimeWindowLogic.remainingMinutesInActiveWindow(
+            minuteOfDay = minuteOfDay(nowMs),
+            intervals = getFocusTimeIntervals(context),
+        )
+    }
+
     private fun formatMinutesOfDay(minutes: Int): String {
         val normalized = minutes.coerceIn(0, MINUTES_PER_DAY - 1)
         val hour = normalized / 60
@@ -978,30 +988,20 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         if (raw.isBlank()) return emptySet()
         return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     }
-    private fun minuteOfDay(nowMs: Long): Int {
-        val calendar = Calendar.getInstance()
-        calendar.timeInMillis = nowMs
-        val hour = calendar.get(Calendar.HOUR_OF_DAY)
-        val minute = calendar.get(Calendar.MINUTE)
-        return hour * 60 + minute
-    }
+    private fun minuteOfDay(nowMs: Long): Int =
+        FocusTimeWindowLogic.minuteOfDayFromEpochMs(nowMs)
 
     private fun isMinuteWithinInterval(
         minuteOfDay: Int,
         startMinutes: Int,
         endMinutes: Int,
-    ): Boolean {
-        val start = startMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
-        val end = endMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
-        if (start == end) return true
-        return if (start < end) {
-            minuteOfDay in start until end
-        } else {
-            minuteOfDay >= start || minuteOfDay < end
-        }
-    }
+    ): Boolean = FocusTimeWindowLogic.isMinuteWithinInterval(
+        minuteOfDay = minuteOfDay,
+        startMinutes = startMinutes,
+        endMinutes = endMinutes,
+    )
 
-    private const val MINUTES_PER_DAY = 24 * 60
+    private const val MINUTES_PER_DAY = FocusTimeWindowLogic.MINUTES_PER_DAY
 
     private fun snapToNearest(value: Long, options: LongArray): Long {
         if (options.isEmpty()) return value

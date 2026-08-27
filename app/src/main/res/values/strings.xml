@@ -52,6 +52,11 @@
     <string name="signed_in_with_google">Signed in with Google</string>
     <string name="copy_adb_command">Copy adb Command</string>
     <string name="focus_gate_length_description">Back-and-forths in the focus time gate chat: minimum before Proceed can appear, maximum before access is granted automatically.</string>
+    <string name="focus_gate_opening">You have %1$s before the end of focus time. Is it really so urgent you can\'t wait?</string>
+    <string name="focus_gate_opening_no_remaining">It\'s focus time. Is it really so urgent you can\'t wait?</string>
+    <string name="focus_time_remaining_minutes">%1$d minutes</string>
+    <string name="focus_time_remaining_hours">%1$d hours</string>
+    <string name="focus_time_remaining_hours_minutes">%1$d hours %2$d minutes</string>
     <string name="quick_return_window_description">If you come back within this window and a timer is still running, skip the timer screen.</string>
     <string name="timing_intervals_description">Polling (Quick Launch, usage cache, nudge loop), timer notification refresh, and all nudge timing intervals. Larger steps save battery.</string>
     <string name="strikes_before_hiding_description">How many bad-karma points an app accumulates before it is hidden from the home screen.</string>

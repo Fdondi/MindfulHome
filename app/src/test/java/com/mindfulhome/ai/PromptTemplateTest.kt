@@ -125,6 +125,31 @@ class PromptTemplateTest {
     }
 
     @Test
+    fun defaultFocusGateTemplate_includesRemainingTimeWhenPresent() {
+        val result = applyDefaultFocusGate(declaredIntent = "", remainingFocusTime = "45 minutes")
+        assertTrue(result.contains("Time left in this window: 45 minutes."))
+    }
+
+    @Test
+    fun defaultFocusGateTemplate_omitsRemainingTimeWhenBlank() {
+        val result = applyDefaultFocusGate(declaredIntent = "", remainingFocusTime = "")
+        assertFalse(result.contains("Time left in this window"))
+    }
+
+    @Test
+    fun fallbackFocusGateOpening_usesRemainingTime() {
+        assertEquals(
+            "You have 45 minutes before the end of focus time. Is it really so urgent you can't wait?",
+            PromptTemplates.fallbackFocusGateResponse(
+                durationMinutes = 25,
+                declaredIntent = "",
+                exchangeCount = 0,
+                remainingFocusTime = "45 minutes",
+            ),
+        )
+    }
+
+    @Test
     fun defaultFocusGateTemplate_includesDeclaredIntentWhenPresent() {
         val result = applyDefaultFocusGate(declaredIntent = "reply to one email")
         assertTrue(result.contains("Declared intent: \"reply to one email\"."))
@@ -214,7 +239,10 @@ class PromptTemplateTest {
         ),
     )
 
-    private fun applyDefaultFocusGate(declaredIntent: String): String =
+    private fun applyDefaultFocusGate(
+        declaredIntent: String,
+        remainingFocusTime: String = "2 hours",
+    ): String =
         PromptTemplates.applyTemplate(
             PromptTemplates.DEFAULT_FOCUS_GATE_CONTEXT_TEMPLATE,
             mapOf(
@@ -222,6 +250,7 @@ class PromptTemplateTest {
                 "declaredIntent" to declaredIntent,
                 "focusWindowDescription" to "Evening",
                 "minRounds" to "2",
+                "remainingFocusTime" to remainingFocusTime,
             ),
         )
 }
