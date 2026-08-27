@@ -642,6 +642,7 @@ class TimerServiceLogicTest {
         ) as TimerServiceCommand.Start
         assertEquals(90_000L, fromMs.durationMs)
         assertEquals(null, fromMs.hardDeadlineAtMs)
+        assertTrue(fromMs.countsForResumeTile)
 
         val fromMin = mapIntentToCommand(
             action = TimerService.ACTION_START,
@@ -655,6 +656,26 @@ class TimerServiceLogicTest {
         ) as TimerServiceCommand.Start
         assertEquals(180_000L, fromMin.durationMs)
         assertEquals(9_999L, fromMin.hardDeadlineAtMs)
+        assertTrue(fromMin.countsForResumeTile)
+
+        val transient = mapIntentToCommand(
+            action = TimerService.ACTION_START,
+            quickLaunchSessionActive = false,
+            durationMsExtra = 60_000L,
+            durationMinutes = 1,
+            packageName = "com.app",
+            hardDeadlineRaw = 0L,
+            allowedPackages = null,
+            probeReason = "probe",
+            countsForResumeTile = false,
+        ) as TimerServiceCommand.Start
+        assertFalse(transient.countsForResumeTile)
+    }
+
+    @Test
+    fun shouldSaveLastSessionForResumeTile_onlyExplicit() {
+        assertTrue(shouldSaveLastSessionForResumeTile(true))
+        assertFalse(shouldSaveLastSessionForResumeTile(false))
     }
 
     @Test

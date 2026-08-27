@@ -8,7 +8,7 @@ MindfulHome uses short AI conversations before phone time is allowed. The AI gat
 |------|------|---------|
 | **Focus time gate** | Timer starts during a focus-time window | Check that spending phone time now matches your declared intent (not which app you'll use). |
 | **App gatekeeper** | Opening a hidden (karma-hidden) app | Ask why you need it, surface your per-app note and recent usage, push for intentional use. |
-| **Bird nudges** | Timer expired, or Quick Launch grace (`baseGrace / \|karma\|`) used up | Overlay birds nag in place. Predatory birds ignored after a real timer (or QL bird path) cost karma −1. Returning to a suspended timed session **resumes invisibly** with no confrontation UI. |
+| **Bird nudges** | Timer expired, or Quick Launch grace (`baseGrace / \|karma\|`) used up | Overlay birds nag in place. Predatory birds ignored after a real timer (or QL bird path) cost karma −1. Returning to a suspended timed session **resumes invisibly** with no confrontation UI. Automatic Quick Launch timed apps use the same birds/conversation as explicit timers, but do **not** populate the default-page Resume tile — only explicitly set timers do. |
 
 Both AI gates share the same UX pattern:
 

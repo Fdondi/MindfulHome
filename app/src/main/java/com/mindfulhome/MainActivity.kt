@@ -593,6 +593,7 @@ class MainActivity : AppCompatActivity() {
         val timerState = TimerService.timerState.value
         val currentPkg = TimerService.currentPackage.value
         if (timerState !is TimerState.Counting || currentPkg.isEmpty()) return
+        if (!TimerService.sessionCountsForResumeTile()) return
         val startedAtMs = TimerService.sessionStartedAtMs.value.takeIf { it > 0L }
             ?: (System.currentTimeMillis() - (timerState.totalMs - timerState.remainingMs).coerceAtLeast(0L))
         val totalDurationMs = timerState.totalMs.coerceAtLeast(1_000L)
@@ -857,6 +858,7 @@ class MainActivity : AppCompatActivity() {
             durationMinutes = durationMinutes,
             packageName = ownerPackage,
             sessionHandle = handle,
+            countsForResumeTile = false,
         )
         TimerService.trackApp(this, ownerPackage, handle)
         if (QuickLaunchAppRef.isShortcutKey(packageName)) {

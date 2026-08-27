@@ -214,6 +214,7 @@ class TimerService : Service() {
             hardDeadlineRaw = intent?.getLongExtra(EXTRA_HARD_DEADLINE_AT_MS, 0L) ?: 0L,
             allowedPackages = intent?.getStringArrayListExtra(EXTRA_ALLOWED_PACKAGES),
             probeReason = intent?.getStringExtra(EXTRA_PROBE_REASON) ?: "probe",
+            countsForResumeTile = intent?.getBooleanExtra(EXTRA_COUNTS_FOR_RESUME_TILE, true) ?: true,
         )
 
     private fun handleCommand(command: TimerServiceCommand, intent: Intent?) {
@@ -239,9 +240,15 @@ class TimerService : Service() {
         logSessionEvent(
             "ACTION_START requested: durationMs=${command.durationMs} " +
                 "package=${command.packageName.ifBlank { "<none>" }} " +
-                "hardDeadlineAtMs=${command.hardDeadlineAtMs ?: 0L}",
+                "hardDeadlineAtMs=${command.hardDeadlineAtMs ?: 0L} " +
+                "countsForResumeTile=${command.countsForResumeTile}",
         )
-        startTimer(command.durationMs, command.packageName, command.hardDeadlineAtMs)
+        startTimer(
+            command.durationMs,
+            command.packageName,
+            command.hardDeadlineAtMs,
+            countsForResumeTile = command.countsForResumeTile,
+        )
     }
 
     private fun handleStartQuickLaunchCommand(command: TimerServiceCommand.StartQuickLaunch) {
@@ -386,8 +393,13 @@ class TimerService : Service() {
 
     // ── Timer lifecycle ──────────────────────────────────────────────
 
-    private fun startTimer(durationMs: Long, packageName: String, hardDeadlineAtMs: Long?) {
-        prepareNewTimedSession(durationMs, packageName, hardDeadlineAtMs)
+    private fun startTimer(
+        durationMs: Long,
+        packageName: String,
+        hardDeadlineAtMs: Long?,
+        countsForResumeTile: Boolean = true,
+    ) {
+        prepareNewTimedSession(durationMs, packageName, hardDeadlineAtMs, countsForResumeTile)
         startForeground(TIMER_NOTIFICATION_ID, buildTimerNotification(durationMs))
         timerJob?.cancel()
         timerJob = serviceScope.launch { runCountdownLoop(packageName) }
@@ -397,6 +409,7 @@ class TimerService : Service() {
         durationMs: Long,
         packageName: String,
         hardDeadlineAtMs: Long?,
+        countsForResumeTile: Boolean = true,
     ) {
         sessionGeneration++
         // Committing to a timed session — expiry from here is birds/notification only.
@@ -409,6 +422,7 @@ class TimerService : Service() {
         overlayManager.dismissQuickLaunchFrame()
         SettingsManager.clearLastSession(this)
         SettingsManager.setTimerRunning(this, true)
+        _sessionCountsForResumeTile = countsForResumeTile
         _sessionStartedAtMs.value = System.currentTimeMillis()
         _currentPackage.value = packageName
         timerSessionTotalMs = durationMs
@@ -416,7 +430,8 @@ class TimerService : Service() {
         _timerState.value = TimerState.Counting(durationMs, durationMs)
         logSessionEvent(
             "Timer state -> Counting (totalMs=$durationMs, startedAtMs=${_sessionStartedAtMs.value}, " +
-                "package=${packageName.ifBlank { "<none>" }}, hardDeadlineAtMs=${hardDeadlineAtMs ?: 0L})",
+                "package=${packageName.ifBlank { "<none>" }}, hardDeadlineAtMs=${hardDeadlineAtMs ?: 0L}, " +
+                "countsForResumeTile=$countsForResumeTile)",
         )
     }
 
@@ -476,10 +491,13 @@ class TimerService : Service() {
         allowedPackages: Set<String>,
     ) {
         sessionGeneration++
-        // Suspend any running timer session so it can be resumed later.
+        // Suspend any running timer session so it can be resumed later (explicit timers only).
         val state = _timerState.value
         val pkg = _currentPackage.value
-        if (state is TimerState.Counting && pkg.isNotEmpty()) {
+        if (state is TimerState.Counting &&
+            pkg.isNotEmpty() &&
+            shouldSaveLastSessionForResumeTile(_sessionCountsForResumeTile)
+        ) {
             val now = System.currentTimeMillis()
             val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
                 ?: (now - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
@@ -968,7 +986,7 @@ class TimerService : Service() {
         )
         clearQuickLaunchExitCandidate()
         overlayManager.dismissQuickLaunchFrame()
-        startTimer(saved.remainingMs, saved.packageName, null)
+        startTimer(saved.remainingMs, saved.packageName, null, countsForResumeTile = true)
         return true
     }
 
@@ -986,7 +1004,12 @@ class TimerService : Service() {
         logWithSession(
             "Timed app opened externally: **$label** — starting **$limitMinutes min** timer",
         )
-        startTimer(limitMinutes * 60_000L, packageName, null)
+        startTimer(
+            limitMinutes * 60_000L,
+            packageName,
+            null,
+            countsForResumeTile = false,
+        )
         return true
     }
 
@@ -1056,7 +1079,12 @@ class TimerService : Service() {
         when (state) {
             is TimerState.Expired -> {
                 val pkg = _currentPackage.value
-                startTimer(extraMinutes * 60 * 1000L, pkg, hardDeadlineAtMs)
+                startTimer(
+                    extraMinutes * 60 * 1000L,
+                    pkg,
+                    hardDeadlineAtMs,
+                    countsForResumeTile = _sessionCountsForResumeTile,
+                )
             }
             is TimerState.Counting -> {
                 val newRemaining = state.remainingMs + extraMs
@@ -1520,6 +1548,13 @@ class TimerService : Service() {
         remainingMs: Long,
         totalMs: Long,
     ) {
+        if (!shouldSaveLastSessionForResumeTile(_sessionCountsForResumeTile)) {
+            logWithSession(
+                "Skipped resume tile for auto Quick Launch timer: $appLabel " +
+                    "(${((remainingMs + 59_999L) / 60_000L).toInt()} min left)",
+            )
+            return
+        }
         val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
             ?: (System.currentTimeMillis() - (totalMs - remainingMs).coerceAtLeast(0L))
         if (pkg.isEmpty()) return
@@ -1596,7 +1631,10 @@ class TimerService : Service() {
     ) {
         val startedAtMs = _sessionStartedAtMs.value.takeIf { it > 0L }
             ?: (suspendedAtMs - (state.totalMs - state.remainingMs).coerceAtLeast(0L))
-        if (pkg.isNotEmpty()) {
+        val elapsedMs = (suspendedAtMs - startedAtMs).coerceAtLeast(0L)
+        val remainingMs = (state.totalMs - elapsedMs).coerceAtLeast(0L)
+        val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
+        if (pkg.isNotEmpty() && shouldSaveLastSessionForResumeTile(_sessionCountsForResumeTile)) {
             SettingsManager.saveLastSession(
                 context = this@TimerService,
                 packageName = pkg,
@@ -1604,14 +1642,16 @@ class TimerService : Service() {
                 startedAtMs = startedAtMs,
                 suspendedAtMs = suspendedAtMs,
             )
+            logWithSession(
+                "Session suspended (screen off): $appLabel " +
+                    "($remainingMinutes min remaining)",
+            )
+        } else {
+            logWithSession(
+                "Screen off during auto Quick Launch timer: $appLabel " +
+                    "($remainingMinutes min left; not saved for Resume tile)",
+            )
         }
-        val elapsedMs = (suspendedAtMs - startedAtMs).coerceAtLeast(0L)
-        val remainingMs = (state.totalMs - elapsedMs).coerceAtLeast(0L)
-        val remainingMinutes = ((remainingMs + 59_999L) / 60_000L).toInt()
-        logWithSession(
-            "Session suspended (screen off): $appLabel " +
-                "($remainingMinutes min remaining)",
-        )
     }
 
     private fun finishScreenOffSuspend(quickLaunchActive: Boolean) {
@@ -2309,6 +2349,8 @@ class TimerService : Service() {
         const val EXTRA_PROBE_REASON = "probe_reason"
         const val EXTRA_ALLOWED_PACKAGES = "allowed_packages"
         const val EXTRA_SESSION_TOKEN = "session_token"
+        /** False for automatic Quick Launch timed apps — they must not feed the Resume tile. */
+        const val EXTRA_COUNTS_FOR_RESUME_TILE = "counts_for_resume_tile"
 
         private const val KEY_TEXT_REPLY = "key_text_reply"
         private const val EXTRA_QUICK_REPLY_TEXT = "extra_quick_reply_text"
@@ -2322,6 +2364,11 @@ class TimerService : Service() {
         private val _sessionStartedAtMs = MutableStateFlow(0L)
         val sessionStartedAtMs: StateFlow<Long> = _sessionStartedAtMs
 
+        @Volatile
+        private var _sessionCountsForResumeTile: Boolean = true
+        /** Whether the active timed session should populate the default-page Resume tile. */
+        fun sessionCountsForResumeTile(): Boolean = _sessionCountsForResumeTile
+
         private val _nudgeCount = MutableStateFlow(0)
         val nudgeCount: StateFlow<Int> = _nudgeCount
 
@@ -2331,6 +2378,7 @@ class TimerService : Service() {
             packageName: String,
             sessionHandle: SessionLogger.SessionHandle? = null,
             hardDeadlineMinutes: Int? = null,
+            countsForResumeTile: Boolean = true,
         ) {
             val hardDeadlineAtMs = hardDeadlineMinutes
                 ?.coerceAtLeast(1)
@@ -2339,6 +2387,7 @@ class TimerService : Service() {
                 action = ACTION_START
                 putExtra(EXTRA_DURATION_MINUTES, durationMinutes)
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
+                putExtra(EXTRA_COUNTS_FOR_RESUME_TILE, countsForResumeTile)
                 if (hardDeadlineAtMs != null) {
                     putExtra(EXTRA_HARD_DEADLINE_AT_MS, hardDeadlineAtMs)
                 }
@@ -2352,11 +2401,13 @@ class TimerService : Service() {
             durationMs: Long,
             packageName: String,
             sessionHandle: SessionLogger.SessionHandle? = null,
+            countsForResumeTile: Boolean = true,
         ) {
             val intent = Intent(context, TimerService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_DURATION_MS, durationMs.coerceAtLeast(1_000L))
                 putExtra(EXTRA_PACKAGE_NAME, packageName)
+                putExtra(EXTRA_COUNTS_FOR_RESUME_TILE, countsForResumeTile)
                 attachSession(sessionHandle)
             }
             context.startForegroundService(intent)

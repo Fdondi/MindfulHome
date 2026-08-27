@@ -516,6 +516,8 @@ sealed class TimerServiceCommand {
         val durationMs: Long,
         val packageName: String,
         val hardDeadlineAtMs: Long?,
+        /** Explicit timers feed the Resume tile; auto Quick Launch timers do not. */
+        val countsForResumeTile: Boolean = true,
     ) : TimerServiceCommand()
 
     data class StartQuickLaunch(
@@ -544,6 +546,13 @@ sealed class TimerServiceCommand {
 }
 
 /**
+ * Auto Quick Launch timers use the same birds/conversation as explicit timers, but must not
+ * populate the default-page Resume tile. Only explicitly set timers count for resume.
+ */
+internal fun shouldSaveLastSessionForResumeTile(countsForResumeTile: Boolean): Boolean =
+    countsForResumeTile
+
+/**
  * Pure intent → command mapping. Side effects stay in the service dispatcher.
  */
 internal fun mapIntentToCommand(
@@ -555,6 +564,7 @@ internal fun mapIntentToCommand(
     hardDeadlineRaw: Long,
     allowedPackages: List<String>?,
     probeReason: String,
+    countsForResumeTile: Boolean = true,
 ): TimerServiceCommand {
     if (action == null) {
         return if (quickLaunchSessionActive) {
@@ -571,7 +581,7 @@ internal fun mapIntentToCommand(
             } else {
                 durationMinutes * 60 * 1000L
             }
-            TimerServiceCommand.Start(durationMs, packageName, hardDeadlineAtMs)
+            TimerServiceCommand.Start(durationMs, packageName, hardDeadlineAtMs, countsForResumeTile)
         }
         TimerService.ACTION_START_QUICK_LAUNCH_SESSION -> TimerServiceCommand.StartQuickLaunch(
             packageName = packageName,
