@@ -1,9 +1,10 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.103.1"
+    const val versionName = "0.103.2"
 }
 
+// 0.103.2 - Extra focus-gate back-and-forths as the window elapses; never mention the turn floor
 // 0.103.1 - Focus-time gate opening asks if remaining window time is truly too urgent to wait
 // 0.103.0 - Scripted first gate messages; don't call the model until the user replies
 // 0.102.1 - Rebase Google Sign-In extract (AiMode, host activity) onto LM Playground on-device

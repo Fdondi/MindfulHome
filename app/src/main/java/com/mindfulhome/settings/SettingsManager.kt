@@ -49,6 +49,9 @@ object SettingsManager {
     const val DEFAULT_FOCUS_GATE_MAX_ROUNDS = 1
     const val MIN_FOCUS_GATE_ROUNDS = 1
     const val MAX_FOCUS_GATE_ROUNDS = 6
+    const val DEFAULT_EXTRA_ROUND_EVERY_MINUTES = 15
+    const val MIN_EXTRA_ROUND_EVERY_MINUTES = 0
+    const val MAX_EXTRA_ROUND_EVERY_MINUTES = 60
 
     // Escalation threshold (number of nudge cycles before forcing back to timer)
     private const val ESCALATION_THRESHOLD_KEY = "escalation_nudge_threshold"
@@ -433,6 +436,7 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
     data class FocusInterval(
         val startMinutes: Int,
         val endMinutes: Int,
+        val extraRoundEveryMinutes: Int = DEFAULT_EXTRA_ROUND_EVERY_MINUTES,
     )
 
     enum class PermissionPrompt {
@@ -587,25 +591,12 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         val raw = prefs(context).getString(FOCUS_TIME_INTERVALS_KEY, "") ?: ""
         if (raw.isBlank()) return emptyList()
         return raw.split(",")
-            .mapNotNull { token ->
-                val parts = token.split("-")
-                if (parts.size != 2) return@mapNotNull null
-                val start = parts[0].toIntOrNull() ?: return@mapNotNull null
-                val end = parts[1].toIntOrNull() ?: return@mapNotNull null
-                FocusInterval(
-                    startMinutes = start.coerceIn(0, MINUTES_PER_DAY - 1),
-                    endMinutes = end.coerceIn(0, MINUTES_PER_DAY - 1),
-                )
-            }
+            .mapNotNull { token -> FocusTimeWindowLogic.parseFocusIntervalToken(token) }
     }
 
     fun setFocusTimeIntervals(context: Context, intervals: List<FocusInterval>) {
         val serialized = intervals
-            .map { interval ->
-                val start = interval.startMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
-                val end = interval.endMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
-                "$start-$end"
-            }
+            .map { interval -> FocusTimeWindowLogic.serializeFocusInterval(interval) }
             .joinToString(",")
         prefs(context).edit { putString(FOCUS_TIME_INTERVALS_KEY, serialized) }
     }
@@ -641,6 +632,17 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
     ): Int? {
         if (!isFocusTimeEnabled(context)) return null
         return FocusTimeWindowLogic.remainingMinutesInActiveWindow(
+            minuteOfDay = minuteOfDay(nowMs),
+            intervals = getFocusTimeIntervals(context),
+        )
+    }
+
+    fun activeFocusIntervalNow(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis(),
+    ): FocusInterval? {
+        if (!isFocusTimeEnabled(context)) return null
+        return FocusTimeWindowLogic.matchingInterval(
             minuteOfDay = minuteOfDay(nowMs),
             intervals = getFocusTimeIntervals(context),
         )

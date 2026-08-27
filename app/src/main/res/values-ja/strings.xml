@@ -49,6 +49,9 @@
     <string name="focus_time_remaining_minutes">%1$d 分</string>
     <string name="focus_time_remaining_hours">%1$d 時間</string>
     <string name="focus_time_remaining_hours_minutes">%1$d 時間 %2$d 分</string>
+    <string name="focus_escalate_description">この時間帯の後半ほど、「続行」の前に会話が増えます。</string>
+    <string name="focus_escalate_every_label">%1$d 分ごと</string>
+    <string name="focus_escalate_off">追加なし</string>
     <string name="focus_time_description">アクティブな時間帯では、タイマー後もランチャーは非表示のままです。Quick Launch 以外のアプリは AI で開きます。</string>
     <string name="get_started">はじめる</string>
     <string name="grant">許可</string>

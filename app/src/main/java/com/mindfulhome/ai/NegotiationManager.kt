@@ -9,6 +9,7 @@ import com.mindfulhome.ai.backend.BackendToolDeclarations
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
+import com.mindfulhome.settings.FocusTimeWindowLogic
 import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.util.PackageManagerHelper
 import kotlinx.coroutines.Dispatchers
@@ -364,8 +365,27 @@ class NegotiationManager(
             ?.let { PromptTemplates.formatRemainingFocusTime(context, it) }
             .orEmpty()
 
-        gatekeeperMinRounds = SettingsManager.getFocusGateMinRounds(context)
-        gatekeeperMaxRounds = SettingsManager.getFocusGateMaxRounds(context)
+        val nowMs = System.currentTimeMillis()
+        val activeInterval = SettingsManager.activeFocusIntervalNow(context, nowMs)
+        val elapsed = if (activeInterval == null) {
+            0
+        } else {
+            FocusTimeWindowLogic.elapsedMinutesSinceIntervalStart(
+                minuteOfDay = FocusTimeWindowLogic.minuteOfDayFromEpochMs(nowMs),
+                startMinutes = activeInterval.startMinutes,
+                endMinutes = activeInterval.endMinutes,
+            )
+        }
+        val budget = FocusTimeWindowLogic.focusGateRoundBudget(
+            baseMin = SettingsManager.getFocusGateMinRounds(context),
+            baseMax = SettingsManager.getFocusGateMaxRounds(context),
+            elapsedMinutes = elapsed,
+            extraRoundEveryMinutes = activeInterval?.extraRoundEveryMinutes
+                ?: SettingsManager.DEFAULT_EXTRA_ROUND_EVERY_MINUTES,
+            cap = SettingsManager.MAX_FOCUS_GATE_ROUNDS,
+        )
+        gatekeeperMinRounds = budget.first
+        gatekeeperMaxRounds = budget.second
 
         val systemPrompt = PromptTemplates.focusGateSystemPrompt(context)
         val userContext = PromptTemplates.buildFocusGateUserContext(

@@ -7,6 +7,7 @@ import android.net.Uri
 import com.mindfulhome.R
 import com.mindfulhome.ai.LmPlaygroundManager
 import com.mindfulhome.settings.SettingsManager
+import kotlin.math.roundToInt
 
 data class PermissionCardCopy(
     val title: String,
@@ -160,6 +161,14 @@ fun suggestedNewInterval(
     val seed = existing.lastOrNull()?.endMinutes ?: (9 * 60)
     val end = (seed + 60) % (24 * 60)
     return SettingsManager.FocusInterval(startMinutes = seed, endMinutes = end)
+}
+
+fun snapExtraRoundEveryMinutes(raw: Float): Int {
+    val stepped = (raw / 5f).roundToInt() * 5
+    return stepped.coerceIn(
+        SettingsManager.MIN_EXTRA_ROUND_EVERY_MINUTES,
+        SettingsManager.MAX_EXTRA_ROUND_EVERY_MINUTES,
+    )
 }
 
 /** Returns [raw] when empty or all digits; otherwise null (reject non-digit input). */

@@ -36,6 +36,8 @@ object PromptTemplates {
         You do NOT care which app they might use later, and you must NOT launch or discuss specific apps.
         Call grantTimeAccess only when you are genuinely satisfied with their answers.
         Never grant before the minimum round count in the user context.
+        Never mention rounds, turns, quotas, or that number to the user.
+        Push back with genuine reasons: remaining focus time, whether the intent can wait, whether it is truly urgent.
         One sentence replies only. Be casual and friendly.
         Follow the round policy provided in the user context.
     """.trimIndent()
@@ -47,6 +49,7 @@ object PromptTemplates {
         Ask why they need it and gently push for intentional use.
         Call grantAccess only when you are genuinely satisfied with their reason.
         Never grant before the minimum round count in the user context.
+        Never mention rounds, turns, quotas, or that number to the user.
         If you need more context, you may call queryRecentUsageSessions(limit) to inspect recent behavior before deciding.
         If the user context includes confrontation evidence, your first reply must confront them with that exact evidence first.
         Follow the round policy provided in the user context.
@@ -58,6 +61,7 @@ object PromptTemplates {
         Verify whether spending phone time now is intentional and aligned with that intent.
         Do not ask about or reference specific apps.
         Do NOT call grantTimeAccess before round {minRounds}.
+        Never mention {minRounds}, rounds, or turns to the user.
         Only call grantTimeAccess when you are genuinely satisfied — never grant before round {minRounds}.
     """.trimIndent()
 
@@ -65,6 +69,7 @@ object PromptTemplates {
         User wants to open {appName} (karma {karmaScore}, opened {totalOpens} times, overran {totalOverruns} times, requested today {timesRequestedToday}).
         [[The user has this to say about the app: "{appNote}". ]][[{cautionGate}That note contains cautionary language — take it seriously and push back before granting. ]]Focus mode active: {focusModeActive}.
         [[Recent usage evidence: {confrontationBrief} ]]Do NOT call grantAccess before round {minRounds}.
+        Never mention {minRounds}, rounds, or turns to the user.
         Only call grantAccess when you are genuinely satisfied — never grant before round {minRounds}.
     """.trimIndent()
 

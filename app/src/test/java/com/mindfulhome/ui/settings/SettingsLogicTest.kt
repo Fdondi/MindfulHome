@@ -57,6 +57,7 @@ class SettingsLogicTest {
         val first = suggestedNewInterval(emptyList())
         assertEquals(9 * 60, first.startMinutes)
         assertEquals(10 * 60, first.endMinutes)
+        assertEquals(SettingsManager.DEFAULT_EXTRA_ROUND_EVERY_MINUTES, first.extraRoundEveryMinutes)
 
         val next = suggestedNewInterval(
             listOf(SettingsManager.FocusInterval(8 * 60, 9 * 60 + 30)),
@@ -69,6 +70,14 @@ class SettingsLogicTest {
         )
         assertEquals(23 * 60 + 30, wraps.startMinutes)
         assertEquals(30, wraps.endMinutes)
+    }
+
+    @Test
+    fun snapExtraRoundEveryMinutes_stepsOfFive() {
+        assertEquals(0, snapExtraRoundEveryMinutes(0f))
+        assertEquals(15, snapExtraRoundEveryMinutes(14f))
+        assertEquals(15, snapExtraRoundEveryMinutes(16f))
+        assertEquals(60, snapExtraRoundEveryMinutes(62f))
     }
 
     @Test

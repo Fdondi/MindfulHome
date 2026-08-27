@@ -35,6 +35,10 @@ A **round** is one completed back-and-forth: your message after the AI has spoke
 
 **Focus time gate:** min 1, max 1 by default; both configurable in Settings → Behavior → Focus Gate Length (1–6, max is kept ≥ min).
 
+After the window has been running, min rounds increase by 1 for every **X minutes already elapsed** in the current interval (X is per hour range, default 15; 0 turns this off). Effective min is capped at 6. Stored max is lifted if it would sit below that min.
+
+The chat never mentions this floor. The model is told the number privately and must push back with genuine reasons (remaining time, whether the intent can wait). If it tries to grant early, the app blocks Proceed and keeps or rewrites the reply without talking about turns.
+
 **App gatekeeper:** min from karma and context:
 
 - Base: `ceil(ln(1 + negativeKarma))`, floored at 1

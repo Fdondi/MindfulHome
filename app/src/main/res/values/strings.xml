@@ -57,6 +57,9 @@
     <string name="focus_time_remaining_minutes">%1$d minutes</string>
     <string name="focus_time_remaining_hours">%1$d hours</string>
     <string name="focus_time_remaining_hours_minutes">%1$d hours %2$d minutes</string>
+    <string name="focus_escalate_description">Later in this window, the chat asks more before Proceed.</string>
+    <string name="focus_escalate_every_label">every %1$d min</string>
+    <string name="focus_escalate_off">no extra</string>
     <string name="quick_return_window_description">If you come back within this window and a timer is still running, skip the timer screen.</string>
     <string name="timing_intervals_description">Polling (Quick Launch, usage cache, nudge loop), timer notification refresh, and all nudge timing intervals. Larger steps save battery.</string>
     <string name="strikes_before_hiding_description">How many bad-karma points an app accumulates before it is hidden from the home screen.</string>

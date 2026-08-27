@@ -94,7 +94,27 @@ class NegotiationManagerLogicTest {
             maxRounds = 6,
         )
         assertFalse(result.accessGranted)
-        assertTrue(result.responseText.contains("One more quick reflection before I open it."))
+        assertEquals("ok", result.responseText)
+        assertFalse(result.responseText.contains("round", ignoreCase = true))
+        assertFalse(result.responseText.contains("turn", ignoreCase = true))
+    }
+
+    @Test
+    fun applyGatekeeperRoundPolicy_rewritesPermissionWithoutMentioningTurns() {
+        val result = NegotiationManagerLogic.applyGatekeeperRoundPolicy(
+            result = NegotiationResult("Go ahead.", accessGranted = true),
+            negotiationType = NegotiationType.FOCUS_GATE,
+            exchangeCount = 0,
+            minRounds = 2,
+            maxRounds = 4,
+        )
+        assertFalse(result.accessGranted)
+        assertEquals(
+            "Can this wait until focus time ends, or is there a real deadline?",
+            result.responseText,
+        )
+        assertFalse(result.responseText.contains("round", ignoreCase = true))
+        assertFalse(result.responseText.contains("turn", ignoreCase = true))
     }
 
     @Test
@@ -243,7 +263,9 @@ class NegotiationManagerLogicTest {
         )
         assertFalse(result.accessGranted)
         assertTrue(result.responseText.contains("You've convinced me."))
-        assertTrue(result.responseText.contains("One more quick reflection before I open it."))
+        assertFalse(result.responseText.contains("One more quick reflection"))
+        assertFalse(result.responseText.contains("round", ignoreCase = true))
+        assertFalse(result.responseText.contains("turn", ignoreCase = true))
     }
 
     @Test

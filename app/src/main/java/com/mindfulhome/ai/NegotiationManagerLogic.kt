@@ -90,12 +90,7 @@ object NegotiationManagerLogic {
         if (exchangeCount < effectiveMin) {
             if (!result.accessGranted) return result
             return result.copy(
-                responseText = result.responseText +
-                    if (isFocusGate) {
-                        "\n\nOne more quick reflection before I let you proceed."
-                    } else {
-                        "\n\nOne more quick reflection before I open it."
-                    },
+                responseText = rewriteEarlyGrantResponse(result.responseText, isFocusGate),
                 accessGranted = false,
             )
         }
@@ -113,6 +108,33 @@ object NegotiationManagerLogic {
         }
 
         return result
+    }
+
+    fun looksLikeOpenPermission(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.contains('?')) return false
+        val lower = trimmed.lowercase()
+        val phrases = listOf(
+            "go ahead",
+            "you can proceed",
+            "granted",
+            "go for it",
+            "you're good",
+            "you are good",
+            "i'll let you",
+            "i will let you",
+            "enjoy your",
+        )
+        return phrases.any { lower.contains(it) }
+    }
+
+    fun rewriteEarlyGrantResponse(text: String, isFocusGate: Boolean): String {
+        if (!looksLikeOpenPermission(text)) return text
+        return if (isFocusGate) {
+            "Can this wait until focus time ends, or is there a real deadline?"
+        } else {
+            "What's the concrete reason you need this right now?"
+        }
     }
 
     /**

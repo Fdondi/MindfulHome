@@ -57,6 +57,9 @@
     <string name="focus_time_remaining_minutes">%1$d minuti</string>
     <string name="focus_time_remaining_hours">%1$d ore</string>
     <string name="focus_time_remaining_hours_minutes">%1$d ore %2$d minuti</string>
+    <string name="focus_escalate_description">Più avanti in questa fascia, la chat chiede di più prima di Procedi.</string>
+    <string name="focus_escalate_every_label">ogni %1$d min</string>
+    <string name="focus_escalate_off">niente extra</string>
     <string name="quick_return_window_description">Se torni in questa finestra e un timer è ancora in esecuzione, salta la schermata del timer.</string>
     <string name="timing_intervals_description">Polling (avvio rapido, cache di utilizzo, ciclo di sollecito), aggiornamento delle notifiche del timer e tutti gli intervalli di temporizzazione dei solleciti. I passaggi più grandi consentono di risparmiare batteria.</string>
     <string name="strikes_before_hiding_description">Quanti punti karma negativi accumula un\'app prima che venga nascosta dalla schermata principale.</string>
