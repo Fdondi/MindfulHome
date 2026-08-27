@@ -9,7 +9,6 @@ import com.mindfulhome.locale.AppLanguage
 import com.mindfulhome.service.UsageTracker
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.Calendar
 import java.util.Locale
 
 /**
@@ -50,6 +49,9 @@ object SettingsManager {
     const val DEFAULT_FOCUS_GATE_MAX_ROUNDS = 1
     const val MIN_FOCUS_GATE_ROUNDS = 1
     const val MAX_FOCUS_GATE_ROUNDS = 6
+    const val DEFAULT_EXTRA_ROUND_EVERY_MINUTES = 15
+    const val MIN_EXTRA_ROUND_EVERY_MINUTES = 0
+    const val MAX_EXTRA_ROUND_EVERY_MINUTES = 60
 
     // Escalation threshold (number of nudge cycles before forcing back to timer)
     private const val ESCALATION_THRESHOLD_KEY = "escalation_nudge_threshold"
@@ -436,6 +438,7 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
     data class FocusInterval(
         val startMinutes: Int,
         val endMinutes: Int,
+        val extraRoundEveryMinutes: Int = DEFAULT_EXTRA_ROUND_EVERY_MINUTES,
     )
 
     enum class PermissionPrompt {
@@ -590,25 +593,12 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         val raw = prefs(context).getString(FOCUS_TIME_INTERVALS_KEY, "") ?: ""
         if (raw.isBlank()) return emptyList()
         return raw.split(",")
-            .mapNotNull { token ->
-                val parts = token.split("-")
-                if (parts.size != 2) return@mapNotNull null
-                val start = parts[0].toIntOrNull() ?: return@mapNotNull null
-                val end = parts[1].toIntOrNull() ?: return@mapNotNull null
-                FocusInterval(
-                    startMinutes = start.coerceIn(0, MINUTES_PER_DAY - 1),
-                    endMinutes = end.coerceIn(0, MINUTES_PER_DAY - 1),
-                )
-            }
+            .mapNotNull { token -> FocusTimeWindowLogic.parseFocusIntervalToken(token) }
     }
 
     fun setFocusTimeIntervals(context: Context, intervals: List<FocusInterval>) {
         val serialized = intervals
-            .map { interval ->
-                val start = interval.startMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
-                val end = interval.endMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
-                "$start-$end"
-            }
+            .map { interval -> FocusTimeWindowLogic.serializeFocusInterval(interval) }
             .joinToString(",")
         prefs(context).edit { putString(FOCUS_TIME_INTERVALS_KEY, serialized) }
     }
@@ -636,6 +626,28 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         return intervals.joinToString("; ") { interval ->
             "${formatMinutesOfDay(interval.startMinutes)}–${formatMinutesOfDay(interval.endMinutes)}"
         }
+    }
+
+    fun remainingFocusMinutesNow(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis(),
+    ): Int? {
+        if (!isFocusTimeEnabled(context)) return null
+        return FocusTimeWindowLogic.remainingMinutesInActiveWindow(
+            minuteOfDay = minuteOfDay(nowMs),
+            intervals = getFocusTimeIntervals(context),
+        )
+    }
+
+    fun activeFocusIntervalNow(
+        context: Context,
+        nowMs: Long = System.currentTimeMillis(),
+    ): FocusInterval? {
+        if (!isFocusTimeEnabled(context)) return null
+        return FocusTimeWindowLogic.matchingInterval(
+            minuteOfDay = minuteOfDay(nowMs),
+            intervals = getFocusTimeIntervals(context),
+        )
     }
 
     private fun formatMinutesOfDay(minutes: Int): String {
@@ -1001,30 +1013,20 @@ Be concise, with 3-7 bullet points max, and one short concluding sentence.
         if (raw.isBlank()) return emptySet()
         return raw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
     }
-    private fun minuteOfDay(nowMs: Long): Int {
-        val calendar = Calendar.getInstance()
-        calendar.timeInMillis = nowMs
-        val hour = calendar.get(Calendar.HOUR_OF_DAY)
-        val minute = calendar.get(Calendar.MINUTE)
-        return hour * 60 + minute
-    }
+    private fun minuteOfDay(nowMs: Long): Int =
+        FocusTimeWindowLogic.minuteOfDayFromEpochMs(nowMs)
 
     private fun isMinuteWithinInterval(
         minuteOfDay: Int,
         startMinutes: Int,
         endMinutes: Int,
-    ): Boolean {
-        val start = startMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
-        val end = endMinutes.coerceIn(0, MINUTES_PER_DAY - 1)
-        if (start == end) return true
-        return if (start < end) {
-            minuteOfDay in start until end
-        } else {
-            minuteOfDay >= start || minuteOfDay < end
-        }
-    }
+    ): Boolean = FocusTimeWindowLogic.isMinuteWithinInterval(
+        minuteOfDay = minuteOfDay,
+        startMinutes = startMinutes,
+        endMinutes = endMinutes,
+    )
 
-    private const val MINUTES_PER_DAY = 24 * 60
+    private const val MINUTES_PER_DAY = FocusTimeWindowLogic.MINUTES_PER_DAY
 
     private fun snapToNearest(value: Long, options: LongArray): Long {
         if (options.isEmpty()) return value

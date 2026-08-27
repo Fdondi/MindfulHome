@@ -246,57 +246,21 @@ internal fun BehaviorSection(
                 )
             } else {
                 focusTimeIntervals.forEachIndexed { index, interval ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(
-                            modifier = Modifier.weight(1f),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            TextButton(onClick = {
-                                showTimePicker(
-                                    context = context,
-                                    initialMinutes = interval.startMinutes,
-                                ) { pickedStart ->
-                                    val updated = focusTimeIntervals.toMutableList()
-                                    updated[index] = interval.copy(startMinutes = pickedStart)
-                                    focusTimeIntervals = updated
-                                    SettingsManager.setFocusTimeIntervals(context, updated)
-                                }
-                            }) {
-                                Text(formatMinutesOfDay(interval.startMinutes))
-                            }
-                            Text(
-                                text = " - ",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            TextButton(onClick = {
-                                showTimePicker(
-                                    context = context,
-                                    initialMinutes = interval.endMinutes,
-                                ) { pickedEnd ->
-                                    val updated = focusTimeIntervals.toMutableList()
-                                    updated[index] = interval.copy(endMinutes = pickedEnd)
-                                    focusTimeIntervals = updated
-                                    SettingsManager.setFocusTimeIntervals(context, updated)
-                                }
-                            }) {
-                                Text(formatMinutesOfDay(interval.endMinutes))
-                            }
-                        }
-                        TextButton(onClick = {
+                    FocusIntervalEditor(
+                        interval = interval,
+                        onChange = { updatedInterval ->
+                            val updated = focusTimeIntervals.toMutableList()
+                            updated[index] = updatedInterval
+                            focusTimeIntervals = updated
+                            SettingsManager.setFocusTimeIntervals(context, updated)
+                        },
+                        onRemove = {
                             val updated = focusTimeIntervals.toMutableList()
                             updated.removeAt(index)
                             focusTimeIntervals = updated
                             SettingsManager.setFocusTimeIntervals(context, updated)
-                        }) {
-                            Text(stringResource(R.string.remove))
-                        }
-                    }
+                        },
+                    )
                 }
             }
 
@@ -943,6 +907,92 @@ private fun GatePromptEditorCard(
                     Text(stringResource(R.string.reset_to_default))
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FocusIntervalEditor(
+    interval: SettingsManager.FocusInterval,
+    onChange: (SettingsManager.FocusInterval) -> Unit,
+    onRemove: () -> Unit,
+) {
+    val context = LocalContext.current
+    var extraEvery by remember(interval.extraRoundEveryMinutes) {
+        mutableFloatStateOf(interval.extraRoundEveryMinutes.toFloat())
+    }
+    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(
+                modifier = Modifier.weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = {
+                    showTimePicker(
+                        context = context,
+                        initialMinutes = interval.startMinutes,
+                    ) { pickedStart ->
+                        onChange(interval.copy(startMinutes = pickedStart))
+                    }
+                }) {
+                    Text(formatMinutesOfDay(interval.startMinutes))
+                }
+                Text(
+                    text = " - ",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = {
+                    showTimePicker(
+                        context = context,
+                        initialMinutes = interval.endMinutes,
+                    ) { pickedEnd ->
+                        onChange(interval.copy(endMinutes = pickedEnd))
+                    }
+                }) {
+                    Text(formatMinutesOfDay(interval.endMinutes))
+                }
+            }
+            TextButton(onClick = onRemove) {
+                Text(stringResource(R.string.remove))
+            }
+        }
+        Text(
+            text = stringResource(R.string.focus_escalate_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 4.dp),
+        ) {
+            Slider(
+                value = extraEvery,
+                onValueChange = { extraEvery = it },
+                onValueChangeFinished = {
+                    val snapped = snapExtraRoundEveryMinutes(extraEvery)
+                    extraEvery = snapped.toFloat()
+                    onChange(interval.copy(extraRoundEveryMinutes = snapped))
+                },
+                valueRange = SettingsManager.MIN_EXTRA_ROUND_EVERY_MINUTES.toFloat()..
+                    SettingsManager.MAX_EXTRA_ROUND_EVERY_MINUTES.toFloat(),
+                steps = (SettingsManager.MAX_EXTRA_ROUND_EVERY_MINUTES -
+                    SettingsManager.MIN_EXTRA_ROUND_EVERY_MINUTES) / 5 - 1,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = if (extraEvery.toInt() <= 0) {
+                    stringResource(R.string.focus_escalate_off)
+                } else {
+                    stringResource(R.string.focus_escalate_every_label, extraEvery.toInt())
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+            )
         }
     }
 }

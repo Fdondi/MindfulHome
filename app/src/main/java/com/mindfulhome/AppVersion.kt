@@ -1,9 +1,12 @@
 package com.mindfulhome
 
 object AppVersion {
-    const val versionName = "0.103.3"
+    const val versionName = "0.104.2"
 }
 
+// 0.104.2 - Extra focus-gate back-and-forths as the window elapses; never mention the turn floor
+// 0.104.1 - Focus-time gate opening asks if remaining window time is truly too urgent to wait
+// 0.104.0 - Scripted first gate messages; don't call the model until the user replies
 // 0.103.3 - Overlay for notifications; restore Info tutorial pages; detail script/cloud/LM Playground
 // 0.103.2 - Replay overlay tour even if the screen already auto-started once this session
 // 0.103.1 - Help (i): replay overlay tour; explain notifications and timer extensions

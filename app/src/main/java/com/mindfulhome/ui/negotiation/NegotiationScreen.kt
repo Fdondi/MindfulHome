@@ -1076,7 +1076,6 @@ private suspend fun startGatekeeperConversation(
     negotiationMode: NegotiationMode,
 ) {
     SessionLogger.log(sessionHandle, "AI negotiation started for **$appLabel** via ${session.modelLabel}")
-    session.isWaitingForAi = true
     val usageConfrontation = SettingsManager
         .getLastTimerUsageSnapshot(context)
         ?.let { snapshot ->
@@ -1106,7 +1105,6 @@ private suspend fun startGatekeeperConversation(
     )
     session.logDevBoundary(sessionHandle, "chat_to_app gatekeeper_start_result ${summarizeResult(result)}")
     addChatMessage(session, sessionHandle, result.responseText, isFromUser = false)
-    session.isWaitingForAi = false
     applyNegotiationOutcome(session, negotiationMode, result, packageName, appLabel, sessionHandle)
 }
 
@@ -1121,7 +1119,6 @@ private suspend fun startFocusGateConversation(
     appLabel: String,
 ) {
     SessionLogger.log(sessionHandle, "Focus time gate started via ${session.modelLabel}")
-    session.isWaitingForAi = true
     val result = session.negotiationManager.startFocusGateNegotiation(
         durationMinutes = durationMinutes,
         declaredIntent = unlockReason,
@@ -1129,7 +1126,6 @@ private suspend fun startFocusGateConversation(
     )
     session.logDevBoundary(sessionHandle, "chat_to_app focus_gate_start_result ${summarizeResult(result)}")
     addChatMessage(session, sessionHandle, result.responseText, isFromUser = false)
-    session.isWaitingForAi = false
     applyNegotiationOutcome(session, negotiationMode, result, packageName, appLabel, sessionHandle)
 }
 

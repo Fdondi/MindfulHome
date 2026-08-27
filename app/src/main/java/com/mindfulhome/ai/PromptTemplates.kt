@@ -4,6 +4,7 @@ import android.content.Context
 import com.mindfulhome.R
 import com.mindfulhome.locale.AppLanguage
 import com.mindfulhome.locale.LocaleHelper
+import com.mindfulhome.settings.FocusTimeWindowLogic
 import com.mindfulhome.settings.SettingsManager
 
 /**
@@ -35,6 +36,8 @@ object PromptTemplates {
         You do NOT care which app they might use later, and you must NOT launch or discuss specific apps.
         Call grantTimeAccess only when you are genuinely satisfied with their answers.
         Never grant before the minimum round count in the user context.
+        Never mention rounds, turns, quotas, or that number to the user.
+        Push back with genuine reasons: remaining focus time, whether the intent can wait, whether it is truly urgent.
         One sentence replies only. Be casual and friendly.
         Follow the round policy provided in the user context.
     """.trimIndent()
@@ -46,17 +49,19 @@ object PromptTemplates {
         Ask why they need it and gently push for intentional use.
         Call grantAccess only when you are genuinely satisfied with their reason.
         Never grant before the minimum round count in the user context.
+        Never mention rounds, turns, quotas, or that number to the user.
         If you need more context, you may call queryRecentUsageSessions(limit) to inspect recent behavior before deciding.
         If the user context includes confrontation evidence, your first reply must confront them with that exact evidence first.
         Follow the round policy provided in the user context.
     """.trimIndent()
 
     val DEFAULT_FOCUS_GATE_CONTEXT_TEMPLATE = """
-        Focus time is active ({focusWindowDescription}).
+        Focus time is active ({focusWindowDescription}). [[Time left in this window: {remainingFocusTime}. ]]
         User set a {durationMinutes} minute session. [[Declared intent: "{declaredIntent}". ]]
         Verify whether spending phone time now is intentional and aligned with that intent.
         Do not ask about or reference specific apps.
         Do NOT call grantTimeAccess before round {minRounds}.
+        Never mention {minRounds}, rounds, or turns to the user.
         Only call grantTimeAccess when you are genuinely satisfied — never grant before round {minRounds}.
     """.trimIndent()
 
@@ -64,6 +69,7 @@ object PromptTemplates {
         User wants to open {appName} (karma {karmaScore}, opened {totalOpens} times, overran {totalOverruns} times, requested today {timesRequestedToday}).
         [[The user has this to say about the app: "{appNote}". ]][[{cautionGate}That note contains cautionary language — take it seriously and push back before granting. ]]Focus mode active: {focusModeActive}.
         [[Recent usage evidence: {confrontationBrief} ]]Do NOT call grantAccess before round {minRounds}.
+        Never mention {minRounds}, rounds, or turns to the user.
         Only call grantAccess when you are genuinely satisfied — never grant before round {minRounds}.
     """.trimIndent()
 
@@ -76,7 +82,7 @@ object PromptTemplates {
             "{cautionGate} (auto: non-empty when the note matches caution keywords — use only to gate a [[...]] block)"
 
     val FOCUS_GATE_CONTEXT_PLACEHOLDERS =
-        "{durationMinutes}, {declaredIntent}, {focusWindowDescription}, {minRounds}"
+        "{durationMinutes}, {declaredIntent}, {focusWindowDescription}, {minRounds}, {remainingFocusTime}"
 
     fun focusGateSystemPrompt(context: Context): String =
         withReplyLanguage(context, SettingsManager.getFocusGateSystemPromptResolved(context))
@@ -134,6 +140,7 @@ object PromptTemplates {
         declaredIntent: String,
         focusWindowDescription: String,
         minRoundsBeforeGrant: Int,
+        remainingFocusTime: String = "",
     ): String {
         val template = SettingsManager.getFocusGateContextTemplateResolved(context)
         return applyTemplate(
@@ -143,6 +150,7 @@ object PromptTemplates {
                 "declaredIntent" to declaredIntent.trim(),
                 "focusWindowDescription" to focusWindowDescription,
                 "minRounds" to minRoundsBeforeGrant.toString(),
+                "remainingFocusTime" to remainingFocusTime.trim(),
             ),
         )
     }
@@ -228,16 +236,48 @@ object PromptTemplates {
     ): String =
         "Timer expired $overrunMinutes min ago on $appName (karma $karmaScore). Nudge #${nudgeCount + 1}."
 
+    fun formatRemainingFocusTime(context: Context, remainingMinutes: Int): String {
+        val loc = LocaleHelper.wrap(context)
+        val parts = FocusTimeWindowLogic.durationParts(remainingMinutes)
+        return when {
+            parts.hours <= 0 ->
+                loc.getString(R.string.focus_time_remaining_minutes, parts.minutes.coerceAtLeast(1))
+            parts.minutes == 0 ->
+                loc.getString(R.string.focus_time_remaining_hours, parts.hours)
+            else ->
+                loc.getString(
+                    R.string.focus_time_remaining_hours_minutes,
+                    parts.hours,
+                    parts.minutes,
+                )
+        }
+    }
+
+    fun focusGateOpening(context: Context, remainingFocusTime: String): String {
+        val loc = LocaleHelper.wrap(context)
+        val trimmed = remainingFocusTime.trim()
+        return if (trimmed.isBlank()) {
+            loc.getString(R.string.focus_gate_opening_no_remaining)
+        } else {
+            loc.getString(R.string.focus_gate_opening, trimmed)
+        }
+    }
+
     fun fallbackFocusGateResponse(
         durationMinutes: Int,
         declaredIntent: String,
         exchangeCount: Int,
+        remainingFocusTime: String = "",
     ): String {
         val intentSuffix = declaredIntent.trim().takeIf { it.isNotBlank() }
             ?.let { " You said: \"$it\"." }
             .orEmpty()
         return when (exchangeCount) {
-            0 -> "It's focus time, and you're starting a $durationMinutes minute session.$intentSuffix Is this really how you want to spend it?"
+            0 -> if (remainingFocusTime.isNotBlank()) {
+                "You have $remainingFocusTime before the end of focus time. Is it really so urgent you can't wait?"
+            } else {
+                "It's focus time, and you're starting a $durationMinutes minute session.$intentSuffix Is this really how you want to spend it?"
+            }
             1 -> "Got it. What would intentional use of this window look like for you?"
             else -> "If you're still sure, tap Proceed when you're ready — use the time mindfully."
         }

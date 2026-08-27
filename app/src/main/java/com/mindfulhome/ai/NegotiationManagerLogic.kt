@@ -90,12 +90,7 @@ object NegotiationManagerLogic {
         if (exchangeCount < effectiveMin) {
             if (!result.accessGranted) return result
             return result.copy(
-                responseText = result.responseText +
-                    if (isFocusGate) {
-                        "\n\nOne more quick reflection before I let you proceed."
-                    } else {
-                        "\n\nOne more quick reflection before I open it."
-                    },
+                responseText = rewriteEarlyGrantResponse(result.responseText, isFocusGate),
                 accessGranted = false,
             )
         }
@@ -113,6 +108,33 @@ object NegotiationManagerLogic {
         }
 
         return result
+    }
+
+    fun looksLikeOpenPermission(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.contains('?')) return false
+        val lower = trimmed.lowercase()
+        val phrases = listOf(
+            "go ahead",
+            "you can proceed",
+            "granted",
+            "go for it",
+            "you're good",
+            "you are good",
+            "i'll let you",
+            "i will let you",
+            "enjoy your",
+        )
+        return phrases.any { lower.contains(it) }
+    }
+
+    fun rewriteEarlyGrantResponse(text: String, isFocusGate: Boolean): String {
+        if (!looksLikeOpenPermission(text)) return text
+        return if (isFocusGate) {
+            "Can this wait until focus time ends, or is there a real deadline?"
+        } else {
+            "What's the concrete reason you need this right now?"
+        }
     }
 
     /**
@@ -296,6 +318,22 @@ object NegotiationManagerLogic {
             appendLine(dailySummariesBriefing)
         }.trim()
     }
+
+    fun alreadySaidOpeningInstruction(opening: String): String =
+        "You already opened with: \"$opening\". Continue from there; do not repeat that opening."
+
+    fun mergeSystemPromptWithOpening(
+        systemPrompt: String,
+        opening: String,
+        userContext: String = "",
+    ): String {
+        val withContext = if (userContext.isBlank()) systemPrompt else "$systemPrompt\n\n$userContext"
+        return "$withContext\n\n${alreadySaidOpeningInstruction(opening)}"
+    }
+
+    /** First gate message is always scripted; the model is not invoked yet. */
+    fun scriptedGateOpeningResult(openingText: String): NegotiationResult =
+        NegotiationResult(responseText = openingText, accessGranted = false)
 
     fun formatDailySummariesBriefing(dayToSummary: List<Pair<String, String>>): String? {
         if (dayToSummary.isEmpty()) return null

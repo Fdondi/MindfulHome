@@ -52,6 +52,14 @@
     <string name="signed_in_with_google">Iniciado sesión con Google</string>
     <string name="copy_adb_command">Copiar comando adb</string>
     <string name="focus_gate_length_description">Avances y idas y venidas en el chat de la puerta de tiempo de enfoque: mínimo antes de que pueda aparecer Proceder, máximo antes de que se otorgue el acceso automáticamente.</string>
+    <string name="focus_gate_opening">Te quedan %1$s antes de que termine el tiempo de concentración. ¿Es realmente tan urgente que no puedes esperar?</string>
+    <string name="focus_gate_opening_no_remaining">Es tiempo de concentración. ¿Es realmente tan urgente que no puedes esperar?</string>
+    <string name="focus_time_remaining_minutes">%1$d minutos</string>
+    <string name="focus_time_remaining_hours">%1$d horas</string>
+    <string name="focus_time_remaining_hours_minutes">%1$d horas %2$d minutos</string>
+    <string name="focus_escalate_description">Más adelante en esta ventana, el chat pregunta más antes de Proceder.</string>
+    <string name="focus_escalate_every_label">cada %1$d min</string>
+    <string name="focus_escalate_off">sin extra</string>
     <string name="quick_return_window_description">Si regresa a esta ventana y todavía hay un cronómetro en ejecución, omita la pantalla del cronómetro.</string>
     <string name="timing_intervals_description">Sondeo (inicio rápido, caché de uso, bucle de empuje), actualización de notificaciones con temporizador y todos los intervalos de tiempo de empuje. Los pasos más grandes ahorran batería.</string>
     <string name="strikes_before_hiding_description">Cuántos puntos de mal karma acumula una aplicación antes de ocultarla de la pantalla de inicio.</string>

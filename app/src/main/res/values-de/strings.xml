@@ -52,6 +52,14 @@
     <string name="signed_in_with_google">Mit Google angemeldet</string>
     <string name="copy_adb_command">Kopieren Sie den adb-Befehl</string>
     <string name="focus_gate_length_description">Hin und Her im Fokus-Time-Gate-Chat: Minimum, bevor Proceed angezeigt werden kann, Maximum, bevor der Zugriff automatisch gewährt wird.</string>
+    <string name="focus_gate_opening">Du hast noch %1$s bis zum Ende der Fokuszeit. Ist es wirklich so dringend, dass du nicht warten kannst?</string>
+    <string name="focus_gate_opening_no_remaining">Es ist Fokuszeit. Ist es wirklich so dringend, dass du nicht warten kannst?</string>
+    <string name="focus_time_remaining_minutes">%1$d Minuten</string>
+    <string name="focus_time_remaining_hours">%1$d Stunden</string>
+    <string name="focus_time_remaining_hours_minutes">%1$d Stunden %2$d Minuten</string>
+    <string name="focus_escalate_description">Später in diesem Fenster fragt der Chat mehr, bevor Fortfahren erscheint.</string>
+    <string name="focus_escalate_every_label">alle %1$d Min.</string>
+    <string name="focus_escalate_off">kein Extra</string>
     <string name="quick_return_window_description">Wenn Sie in dieses Fenster zurückkehren und noch ein Timer läuft, überspringen Sie den Timer-Bildschirm.</string>
     <string name="timing_intervals_description">Abfragen (Schnellstart, Nutzungscache, Nudge-Schleife), Aktualisierung der Timer-Benachrichtigung und alle Nudge-Timing-Intervalle. Größere Schritte sparen Batterie.</string>
     <string name="strikes_before_hiding_description">Wie viele schlechte Karma-Punkte eine App ansammelt, bevor sie vom Startbildschirm ausgeblendet wird.</string>

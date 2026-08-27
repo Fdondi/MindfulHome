@@ -12,7 +12,7 @@ MindfulHome uses short AI conversations before phone time is allowed. The AI gat
 
 Both AI gates share the same UX pattern:
 
-1. AI opens with a question.
+1. The app shows a **scripted** opening (no model call). For the focus-time gate this is remaining time in the current window plus an urgency check. The backend / on-device model is only invoked after your first reply.
 2. You reply (at least one full back-and-forth before Proceed can appear).
 3. AI may grant access when satisfied, or the app auto-grants at **max rounds** (see below).
 4. **Proceed** appears when access is granted; chat stays open until you tap it.
@@ -34,6 +34,10 @@ A **round** is one completed back-and-forth: your message after the AI has spoke
 ### Default round limits
 
 **Focus time gate:** min 1, max 1 by default; both configurable in Settings → Behavior → Focus Gate Length (1–6, max is kept ≥ min).
+
+After the window has been running, min rounds increase by 1 for every **X minutes already elapsed** in the current interval (X is per hour range, default 15; 0 turns this off). Effective min is capped at 6. Stored max is lifted if it would sit below that min.
+
+The chat never mentions this floor. The model is told the number privately and must push back with genuine reasons (remaining time, whether the intent can wait). If it tries to grant early, the app blocks Proceed and keeps or rewrites the reply without talking about turns.
 
 **App gatekeeper:** min from karma and context:
 
@@ -59,7 +63,7 @@ Each gate has two editable fields:
 
 Defaults live in `PromptTemplates.DEFAULT_*`. **Save** stores your copy; **Reset to default** restores built-ins.
 
-The model receives: `systemPrompt` + `context template` (resolved) on conversation start. Edits apply to the next gate conversation.
+Conversation start seeds `systemPrompt` + resolved `context template` as history, plus the scripted opening as the model's first turn. The model is not called until you send a message. Edits apply to the next gate conversation.
 
 ### Context template syntax
 
@@ -95,6 +99,9 @@ The model receives: `systemPrompt` + `context template` (resolved) on conversati
 | `{declaredIntent}` | Reason entered on timer screen |
 | `{focusWindowDescription}` | Active focus window label |
 | `{minRounds}` | Min rounds (from Settings, default 1) |
+| `{remainingFocusTime}` | Friendly remaining time until the current focus interval ends |
+
+The focus-time gate **opening** is a localized scripted line: remaining time in the current hour range, then “is it really so urgent you can’t wait?” — not a model refusal.
 
 ### Caution keywords
 

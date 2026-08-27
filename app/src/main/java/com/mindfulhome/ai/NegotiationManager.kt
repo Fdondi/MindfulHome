@@ -9,6 +9,7 @@ import com.mindfulhome.ai.backend.BackendToolDeclarations
 import com.mindfulhome.data.AppRepository
 import com.mindfulhome.logging.SessionLogger
 import com.mindfulhome.model.KarmaManager
+import com.mindfulhome.settings.FocusTimeWindowLogic
 import com.mindfulhome.settings.SettingsManager
 import com.mindfulhome.util.PackageManagerHelper
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +82,7 @@ class NegotiationManager(
     private var gatekeeperMaxRounds = 0
     private var focusGateDurationMinutes = 0
     private var focusGateDeclaredIntent = ""
+    private var focusGateRemainingFocusTime = ""
 
     // Rate limiter: hard cap of 10 messages per 60 seconds
     private val replyTimestamps = ArrayDeque<Long>()
@@ -139,23 +141,87 @@ class NegotiationManager(
             requiresExtraConfirmation = extraRiskConfirmation,
             confrontationBrief = confrontationBrief,
         )
-
-        tryBackendStart(
+        val opening = PromptTemplates.fallbackGatekeeperResponse(
+            appName = appName,
+            exchangeCount = 0,
+            confrontationBrief = confrontationBrief,
+        )
+        prepareScriptedGateConversation(
             systemPrompt = systemPrompt,
             userContext = userContext,
-            tools = BackendToolDeclarations.GATEKEEPER_TOOLS,
-            logSuccess = "backend gatekeeper start succeeded",
-            logFailPrefix = "backend gatekeeper",
-        )?.let { return@withContext applyGatekeeperRoundPolicy(it) }
+            openingText = opening,
+            backendTools = BackendToolDeclarations.GATEKEEPER_TOOLS,
+            onDeviceTools = { makeGatekeeperTools() },
+            onDeviceLogSuccess = "on-device gatekeeper conversation initialized",
+        )
+        logDeveloper("scripted gatekeeper opening used (no model generate)")
+        NegotiationManagerLogic.scriptedGateOpeningResult(opening)
+    }
 
-        tryOnDeviceStart(
+    private suspend fun prepareScriptedGateConversation(
+        systemPrompt: String,
+        userContext: String,
+        openingText: String,
+        backendTools: List<Map<String, JsonElement>>,
+        onDeviceTools: () -> LocalLmToolSet,
+        onDeviceLogSuccess: String,
+    ) {
+        val backendPrompt = NegotiationManagerLogic.mergeSystemPromptWithOpening(
             systemPrompt = systemPrompt,
+            opening = openingText,
+        )
+        if (seedBackendConversationIfAvailable(backendPrompt, userContext, backendTools, openingText)) {
+            return
+        }
+        val onDevicePrompt = NegotiationManagerLogic.mergeSystemPromptWithOpening(
+            systemPrompt = systemPrompt,
+            opening = openingText,
             userContext = userContext,
-            tools = makeGatekeeperTools(),
-            logSuccess = "on-device gatekeeper start succeeded",
-        )?.let { return@withContext applyGatekeeperRoundPolicy(it) }
+        )
+        initOnDeviceConversationIfAvailable(onDevicePrompt, onDeviceTools(), onDeviceLogSuccess)
+    }
 
-        scriptedGatekeeperFallback(appName, confrontationBrief)
+    private suspend fun seedBackendConversationIfAvailable(
+        systemPrompt: String,
+        userContext: String,
+        tools: List<Map<String, JsonElement>>,
+        openingText: String,
+    ): Boolean {
+        if (backendAuth == null || !backendAuth.hasToken()) {
+            logBackendUnavailableFallback()
+            return false
+        }
+        usingBackend = true
+        backendHistory.clear()
+        backendTools = tools
+        backendHistory.add(userContent("$systemPrompt\n\n$userContext"))
+        backendHistory.add(modelContent(openingText))
+        logDeveloper(
+            "backend conversation seeded without generate " +
+                "(model=$backendModel, opening=${quote(openingText)})",
+        )
+        return true
+    }
+
+    private fun initOnDeviceConversationIfAvailable(
+        systemPrompt: String,
+        tools: LocalLmToolSet,
+        logSuccess: String,
+    ): Boolean {
+        if (!lmClient.modelReady) {
+            logDeveloper("fallback reason: LM Playground not ready for on-device start")
+            return false
+        }
+        return try {
+            usingBackend = false
+            currentConversation = lmClient.createConversation(systemPrompt, toolSets = listOf(tools))
+            if (currentConversation == null) return false
+            logDeveloper(logSuccess)
+            true
+        } catch (e: Exception) {
+            logOnDeviceStartFailure(e)
+            false
+        }
     }
 
     private suspend fun tryBackendStart(
@@ -294,9 +360,32 @@ class NegotiationManager(
         exchangeCount = 0
         focusGateDurationMinutes = durationMinutes
         focusGateDeclaredIntent = declaredIntent
+        val remainingMinutes = SettingsManager.remainingFocusMinutesNow(context)
+        focusGateRemainingFocusTime = remainingMinutes
+            ?.let { PromptTemplates.formatRemainingFocusTime(context, it) }
+            .orEmpty()
 
-        gatekeeperMinRounds = SettingsManager.getFocusGateMinRounds(context)
-        gatekeeperMaxRounds = SettingsManager.getFocusGateMaxRounds(context)
+        val nowMs = System.currentTimeMillis()
+        val activeInterval = SettingsManager.activeFocusIntervalNow(context, nowMs)
+        val elapsed = if (activeInterval == null) {
+            0
+        } else {
+            FocusTimeWindowLogic.elapsedMinutesSinceIntervalStart(
+                minuteOfDay = FocusTimeWindowLogic.minuteOfDayFromEpochMs(nowMs),
+                startMinutes = activeInterval.startMinutes,
+                endMinutes = activeInterval.endMinutes,
+            )
+        }
+        val budget = FocusTimeWindowLogic.focusGateRoundBudget(
+            baseMin = SettingsManager.getFocusGateMinRounds(context),
+            baseMax = SettingsManager.getFocusGateMaxRounds(context),
+            elapsedMinutes = elapsed,
+            extraRoundEveryMinutes = activeInterval?.extraRoundEveryMinutes
+                ?: SettingsManager.DEFAULT_EXTRA_ROUND_EVERY_MINUTES,
+            cap = SettingsManager.MAX_FOCUS_GATE_ROUNDS,
+        )
+        gatekeeperMinRounds = budget.first
+        gatekeeperMaxRounds = budget.second
 
         val systemPrompt = PromptTemplates.focusGateSystemPrompt(context)
         val userContext = PromptTemplates.buildFocusGateUserContext(
@@ -305,35 +394,23 @@ class NegotiationManager(
             declaredIntent = declaredIntent,
             focusWindowDescription = focusWindowDescription,
             minRoundsBeforeGrant = gatekeeperMinRounds,
+            remainingFocusTime = focusGateRemainingFocusTime,
         )
-
-        tryBackendStart(
+        val opening = PromptTemplates.focusGateOpening(context, focusGateRemainingFocusTime)
+        prepareScriptedGateConversation(
             systemPrompt = systemPrompt,
             userContext = userContext,
-            tools = BackendToolDeclarations.FOCUS_GATE_TOOLS,
-            logSuccess = "backend focus gate start succeeded",
-            logFailPrefix = "Backend focus gate",
-        )?.let { return@withContext applyGatekeeperRoundPolicy(it) }
-
-        val focusTools = FocusGateTools()
-        focusGateTools = focusTools
-        tryOnDeviceStart(
-            systemPrompt = systemPrompt,
-            userContext = userContext,
-            tools = focusTools,
-            logSuccess = "on-device focus gate start succeeded",
-        )?.let { return@withContext applyGatekeeperRoundPolicy(it) }
-
-        val text = PromptTemplates.fallbackFocusGateResponse(
-            durationMinutes = durationMinutes,
-            declaredIntent = declaredIntent,
-            exchangeCount = exchangeCount,
+            openingText = opening,
+            backendTools = BackendToolDeclarations.FOCUS_GATE_TOOLS,
+            onDeviceTools = {
+                val focusTools = FocusGateTools()
+                focusGateTools = focusTools
+                focusTools
+            },
+            onDeviceLogSuccess = "on-device focus gate conversation initialized",
         )
-        val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
-        logDeveloper("fallback response used: focus gate scripted response (grant=$grant, exchangeCount=$exchangeCount)")
-        applyGatekeeperRoundPolicy(
-            NegotiationResult(responseText = text, accessGranted = grant),
-        )
+        logDeveloper("scripted focus gate opening used (no model generate)")
+        NegotiationManagerLogic.scriptedGateOpeningResult(opening)
     }
 
     // ── Nudge ────────────────────────────────────────────────────────
@@ -661,6 +738,7 @@ class NegotiationManager(
                 durationMinutes = focusGateDurationMinutes,
                 declaredIntent = focusGateDeclaredIntent,
                 exchangeCount = exchangeCount,
+                remainingFocusTime = focusGateRemainingFocusTime,
             )
             val grant = PromptTemplates.fallbackShouldGrantAccess(exchangeCount)
             logDeveloper(
@@ -708,6 +786,7 @@ class NegotiationManager(
         gatekeeperMaxRounds = 0
         focusGateDurationMinutes = 0
         focusGateDeclaredIntent = ""
+        focusGateRemainingFocusTime = ""
         usingBackend = false
         backendHistory.clear()
         backendTools = null

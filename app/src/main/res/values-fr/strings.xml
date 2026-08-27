@@ -52,6 +52,14 @@
     <string name="signed_in_with_google">Connecté avec Google</string>
     <string name="copy_adb_command">Copier la commande adb</string>
     <string name="focus_gate_length_description">Aller-retours dans le chat du focus time gate : minimum avant que Proceed puisse apparaître, maximum avant que l\'accès soit accordé automatiquement.</string>
+    <string name="focus_gate_opening">Il te reste %1$s avant la fin du temps de concentration. Est-ce vraiment trop urgent pour attendre ?</string>
+    <string name="focus_gate_opening_no_remaining">C\'est le temps de concentration. Est-ce vraiment trop urgent pour attendre ?</string>
+    <string name="focus_time_remaining_minutes">%1$d minutes</string>
+    <string name="focus_time_remaining_hours">%1$d heures</string>
+    <string name="focus_time_remaining_hours_minutes">%1$d heures %2$d minutes</string>
+    <string name="focus_escalate_description">Plus tard dans cette fenêtre, le chat pose plus de questions avant Proceed.</string>
+    <string name="focus_escalate_every_label">toutes les %1$d min</string>
+    <string name="focus_escalate_off">pas d\'extra</string>
     <string name="quick_return_window_description">Si vous revenez dans cette fenêtre et qu\'une minuterie est toujours en cours d\'exécution, ignorez l\'écran de la minuterie.</string>
     <string name="timing_intervals_description">Interrogation (lancement rapide, cache d\'utilisation, boucle de poussée), actualisation des notifications de minuterie et tous les intervalles de synchronisation de poussée. Des marches plus grandes permettent d\'économiser la batterie.</string>
     <string name="strikes_before_hiding_description">Combien de points de mauvais karma une application accumule avant d’être masquée de l’écran d’accueil.</string>
